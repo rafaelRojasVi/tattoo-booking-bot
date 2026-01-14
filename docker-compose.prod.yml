@@ -1,0 +1,42 @@
+# Production docker-compose file
+# Usage: docker compose -f docker-compose.prod.yml up -d
+
+services:
+  api:
+    # Use versioned image from registry (update version as needed)
+    image: ghcr.io/${GITHUB_REPOSITORY:-your-org/tattoo-booking-bot}:latest
+    # Or use a specific version:
+    # image: ghcr.io/${GITHUB_REPOSITORY:-your-org/tattoo-booking-bot}:0.1.0
+    env_file: .env
+    ports:
+      - "8000:8000"
+    depends_on:
+      - db
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  db:
+    image: postgres:16
+    env_file: .env
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-app}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-app}
+      POSTGRES_DB: ${POSTGRES_DB:-app}
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-app}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  pgdata:
