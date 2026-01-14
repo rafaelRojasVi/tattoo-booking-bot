@@ -50,35 +50,31 @@ Write-Host ""
 
 # Update VERSION file
 $NewVersion | Out-File -FilePath $VersionFile -Encoding utf8 -NoNewline
-Write-Host "✓ Updated VERSION file" -ForegroundColor Green
+Write-Host "Updated VERSION file" -ForegroundColor Green
 
-# Detect default branch from remote
+# Detect default branch
 $CurrentBranch = git rev-parse --abbrev-ref HEAD
-$DefaultBranch = $null
 
-# Try to get default branch from remote HEAD
-$RemoteHead = git symbolic-ref refs/remotes/origin/HEAD 2>$null
-if ($RemoteHead) {
-    $DefaultBranch = $RemoteHead -replace 'refs/remotes/origin/', ''
-} else {
-    # Fallback: check remote show output
-    $RemoteInfo = git remote show origin 2>$null
-    if ($RemoteInfo) {
-        $HeadLine = $RemoteInfo | Select-String 'HEAD branch'
-        if ($HeadLine) {
-            $DefaultBranch = ($HeadLine -split ':')[1].Trim()
-        }
+# Try to get default branch from remote show
+$DefaultBranch = $null
+$RemoteInfo = git remote show origin 2>&1
+$HeadLine = $RemoteInfo | Select-String 'HEAD branch'
+if ($HeadLine) {
+    $LineText = $HeadLine.Line
+    if ($LineText -match 'HEAD branch:\s+(\S+)') {
+        $DefaultBranch = $matches[1]
     }
 }
 
-# Final fallback: try common defaults
-if (-not $DefaultBranch) {
-    if (git show-ref --verify --quiet refs/heads/master) {
+# Fallback: check which remote branch exists
+if (-not $DefaultBranch -or $DefaultBranch -eq "" -or $DefaultBranch -like "*http*") {
+    $RemoteBranches = git branch -r
+    if ($RemoteBranches | Select-String 'origin/master') {
         $DefaultBranch = "master"
-    } elseif (git show-ref --verify --quiet refs/heads/main) {
+    } elseif ($RemoteBranches | Select-String 'origin/main') {
         $DefaultBranch = "main"
     } else {
-        $DefaultBranch = "master"  # ultimate fallback
+        $DefaultBranch = "master"
     }
 }
 
@@ -91,15 +87,15 @@ if ($CurrentBranch -ne $DefaultBranch) {
     Write-Host "Please switch to the default branch first:" -ForegroundColor Cyan
     Write-Host "  git checkout $DefaultBranch" -ForegroundColor White
     Write-Host "  git pull origin $DefaultBranch" -ForegroundColor White
-    git checkout $VersionFile  # Revert VERSION file
+    git checkout $VersionFile
     exit 1
 }
 
-# Check for uncommitted changes (not including VERSION)
+# Check for uncommitted changes - VERSION file is allowed
 $UncommittedModified = git diff --name-only HEAD 2>$null | Where-Object { $_ -ne "VERSION" }
 $UncommittedUntracked = git ls-files --others --exclude-standard | Where-Object { $_ -ne "VERSION" }
 if ($UncommittedModified -or $UncommittedUntracked) {
-    Write-Host "Warning: You have uncommitted changes (excluding VERSION)" -ForegroundColor Yellow
+    Write-Host "Warning: You have uncommitted changes" -ForegroundColor Yellow
     if ($UncommittedModified) {
         Write-Host "Modified files:" -ForegroundColor Yellow
         $UncommittedModified | ForEach-Object { Write-Host "  $_" }
@@ -111,35 +107,35 @@ if ($UncommittedModified -or $UncommittedUntracked) {
     $Prompt = "Continue with release anyway? [y/N]"
     $Continue = Read-Host $Prompt
     if ($Continue -ne "y" -and $Continue -ne "Y") {
-        git checkout $VersionFile  # Revert VERSION file
+        git checkout $VersionFile
         exit 1
     }
 }
 
 # Stage VERSION file
 git add $VersionFile
-Write-Host "✓ Staged VERSION file" -ForegroundColor Green
+Write-Host "Staged VERSION file" -ForegroundColor Green
 
 # Commit
 git commit -m "chore(release): $TagVersion"
-Write-Host "✓ Committed version bump" -ForegroundColor Green
+Write-Host "Committed version bump" -ForegroundColor Green
 
 # Create annotated tag
 git tag -a $TagVersion -m $TagVersion
-Write-Host "✓ Created tag $TagVersion" -ForegroundColor Green
+Write-Host "Created tag $TagVersion" -ForegroundColor Green
 
 # Push default branch and tags
 Write-Host ""
 Write-Host "Pushing to origin/$DefaultBranch..." -ForegroundColor Cyan
 git push origin $DefaultBranch
-Write-Host "✓ Pushed $DefaultBranch branch" -ForegroundColor Green
+Write-Host "Pushed $DefaultBranch branch" -ForegroundColor Green
 
 Write-Host "Pushing tags..." -ForegroundColor Cyan
 git push origin $TagVersion
-Write-Host "✓ Pushed tag $TagVersion" -ForegroundColor Green
+Write-Host "Pushed tag $TagVersion" -ForegroundColor Green
 
 Write-Host ""
-Write-Host "🎉 Release $TagVersion published!" -ForegroundColor Green
+Write-Host "Release $TagVersion published!" -ForegroundColor Green
 Write-Host ""
 Write-Host "GitHub Actions will now:" -ForegroundColor Cyan
 Write-Host "  - Validate version matches tag"
