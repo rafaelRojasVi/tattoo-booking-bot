@@ -26,7 +26,8 @@ jobs:
         id: file-version
         run: |
           if [ -f VERSION ]; then
-            VERSION=$(cat VERSION | tr -d '[:space:]')
+            # Remove BOM and whitespace
+            VERSION=$(cat VERSION | sed 's/^\xEF\xBB\xBF//' | tr -d '[:space:]')
             echo "file_version=$VERSION" >> $GITHUB_OUTPUT
             echo "File version: $VERSION"
           else

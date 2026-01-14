@@ -16,8 +16,8 @@ if (-not (Test-Path $VersionFile)) {
     exit 1
 }
 
-# Get current version
-$CurrentVersion = (Get-Content $VersionFile).Trim()
+# Get current version (remove BOM and whitespace)
+$CurrentVersion = (Get-Content $VersionFile -Raw).Trim() -replace '^\uFEFF', ''
 $VersionParts = $CurrentVersion -split '\.'
 $Major = [int]$VersionParts[0]
 $Minor = [int]$VersionParts[1]
@@ -48,8 +48,10 @@ Write-Host "New version: $NewVersion" -ForegroundColor Green
 Write-Host "Tag: $TagVersion" -ForegroundColor Green
 Write-Host ""
 
-# Update VERSION file
-$NewVersion | Out-File -FilePath $VersionFile -Encoding utf8 -NoNewline
+# Update VERSION file (without BOM)
+$VersionPath = Join-Path (Get-Location) $VersionFile
+$Utf8NoBom = New-Object System.Text.UTF8Encoding $false
+[System.IO.File]::WriteAllText($VersionPath, $NewVersion, $Utf8NoBom)
 Write-Host "Updated VERSION file" -ForegroundColor Green
 
 # Detect default branch
