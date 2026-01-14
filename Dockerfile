@@ -11,16 +11,13 @@ LABEL org.opencontainers.image.description="WhatsApp-based tattoo booking bot"
 LABEL org.opencontainers.image.version="${VERSION}"
 LABEL org.opencontainers.image.created="${BUILD_DATE}"
 LABEL org.opencontainers.image.revision="${VCS_REF}"
-LABEL org.opencontainers.image.source="https://github.com/${GITHUB_REPOSITORY:-unknown}"
+LABEL org.opencontainers.image.source="https://github.com/rafaelRojasVi/tattoo-booking-bot"
 
 WORKDIR /app
 
 RUN pip install --no-cache-dir fastapi uvicorn[standard] pydantic-settings sqlalchemy psycopg2-binary stripe httpx alembic
 
 COPY . /app
-
-# Copy version file if it exists
-COPY VERSION /app/VERSION 2>/dev/null || echo "${VERSION}" > /app/VERSION
 
 EXPOSE 8000
 
