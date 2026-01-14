@@ -32,7 +32,7 @@ jobs:
         run: |
           pytest tests/ -v
         env:
-          DATABASE_URL: sqlite:///:memory:
+          DATABASE_URL: "sqlite:///:memory:"
           WHATSAPP_VERIFY_TOKEN: test_token
           WHATSAPP_ACCESS_TOKEN: test_token
           WHATSAPP_PHONE_NUMBER_ID: test_id
