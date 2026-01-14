@@ -18,8 +18,14 @@ down: ## Stop services
 logs: ## Show logs
 	docker compose logs -f api
 
-test: ## Run tests
-	docker compose exec api pytest tests/ -v
+test: ## Run tests locally
+	pytest tests/ -v
+
+test-docker: ## Run tests in Docker
+	docker compose -f docker-compose.test.yml run --rm test
+
+test-watch: ## Run tests in watch mode
+	pytest-watch tests/ -v
 
 version-bump: ## Bump version (usage: make version-bump TYPE=patch)
 	@if [ -z "$(TYPE)" ]; then \

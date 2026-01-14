@@ -1,0 +1,18 @@
+# Docker Compose for running tests
+# Usage: docker compose -f docker-compose.test.yml run --rm test
+
+services:
+  test:
+    build: .
+    volumes:
+      - ./:/app
+    environment:
+      DATABASE_URL: "sqlite:///:memory:"
+      WHATSAPP_VERIFY_TOKEN: test_token
+      WHATSAPP_ACCESS_TOKEN: test_token
+      WHATSAPP_PHONE_NUMBER_ID: test_id
+      STRIPE_SECRET_KEY: sk_test_test
+      STRIPE_WEBHOOK_SECRET: whsec_test
+      FRESHA_BOOKING_URL: https://test.com
+    command: pytest tests/ -v
+    working_dir: /app

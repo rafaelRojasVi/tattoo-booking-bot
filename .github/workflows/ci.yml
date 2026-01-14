@@ -21,7 +21,7 @@ jobs:
       - name: Install dependencies
         run: |
           pip install --upgrade pip
-          pip install fastapi uvicorn[standard] pydantic-settings sqlalchemy psycopg2-binary stripe httpx alembic pytest pytest-asyncio httpx
+          pip install fastapi uvicorn[standard] pydantic-settings sqlalchemy psycopg2-binary stripe httpx alembic pytest
       
       - name: Run linter
         run: |
@@ -30,9 +30,15 @@ jobs:
       
       - name: Run tests
         run: |
-          pytest tests/ -v || echo "No tests yet"
+          pytest tests/ -v
         env:
-          DATABASE_URL: postgresql://test:test@localhost/test
+          DATABASE_URL: sqlite:///:memory:
+          WHATSAPP_VERIFY_TOKEN: test_token
+          WHATSAPP_ACCESS_TOKEN: test_token
+          WHATSAPP_PHONE_NUMBER_ID: test_id
+          STRIPE_SECRET_KEY: sk_test_test
+          STRIPE_WEBHOOK_SECRET: whsec_test
+          FRESHA_BOOKING_URL: https://test.com
 
   build:
     runs-on: ubuntu-latest

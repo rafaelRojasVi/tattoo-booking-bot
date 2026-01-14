@@ -15,7 +15,7 @@ LABEL org.opencontainers.image.source="https://github.com/rafaelRojasVi/tattoo-b
 
 WORKDIR /app
 
-RUN pip install --no-cache-dir fastapi uvicorn[standard] pydantic-settings sqlalchemy psycopg2-binary stripe httpx alembic
+RUN pip install --no-cache-dir fastapi uvicorn[standard] pydantic-settings sqlalchemy psycopg2-binary stripe httpx alembic pytest
 
 COPY . /app
 
