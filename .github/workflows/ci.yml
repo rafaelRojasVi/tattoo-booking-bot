@@ -12,34 +12,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-      
-      - name: Build test image
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          push: false
-          tags: test-image:latest
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-      
-      - name: Run tests in Docker
+      - name: Run tests in Docker (using docker-compose)
         run: |
-          docker run --rm \
-            -e DATABASE_URL="sqlite:///:memory:" \
-            -e WHATSAPP_VERIFY_TOKEN=test_token \
-            -e WHATSAPP_ACCESS_TOKEN=test_token \
-            -e WHATSAPP_PHONE_NUMBER_ID=test_id \
-            -e STRIPE_SECRET_KEY=sk_test_test \
-            -e STRIPE_WEBHOOK_SECRET=whsec_test \
-            -e FRESHA_BOOKING_URL=https://test.com \
-            test-image:latest \
-            pytest tests/ -v
+          docker compose -f docker-compose.test.yml build
+          docker compose -f docker-compose.test.yml run --rm test
       
       - name: Run linter in Docker
         run: |
-          docker run --rm test-image:latest sh -c "pip install ruff && ruff check app/ || true"
+          docker compose -f docker-compose.test.yml run --rm test sh -c "pip install ruff && ruff check app/ || true"
 
   build:
     runs-on: ubuntu-latest
