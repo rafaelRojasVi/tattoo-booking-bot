@@ -12,6 +12,8 @@ from app.services.questions import (
     is_last_question,
 )
 from app.services.messaging import send_whatsapp_message, format_summary_message
+from app.services.sheets import log_lead_to_sheets
+from app.services.action_tokens import generate_action_tokens_for_lead
 
 
 # Core statuses (proposal lifecycle)
@@ -31,6 +33,12 @@ STATUS_REJECTED = "REJECTED"
 # Housekeeping statuses
 STATUS_ABANDONED = "ABANDONED"
 STATUS_STALE = "STALE"
+STATUS_OPTOUT = "OPTOUT"  # Client opted out (STOP/UNSUBSCRIBE)
+
+# Payment-related statuses (future features)
+STATUS_DEPOSIT_EXPIRED = "DEPOSIT_EXPIRED"  # Deposit link sent but not paid after X days
+STATUS_REFUNDED = "REFUNDED"  # Stripe refund event or manual refund
+STATUS_CANCELLED = "CANCELLED"  # Client cancels after paying / before booking
 
 # Legacy (kept for backward compatibility)
 STATUS_NEEDS_MANUAL_FOLLOW_UP = "NEEDS_MANUAL_FOLLOW_UP"  # Maps to NEEDS_FOLLOW_UP
@@ -152,6 +160,22 @@ async def handle_inbound_message(
             "lead_status": lead.status,
         }
     
+    elif lead.status == STATUS_OPTOUT:
+        # Client opted out - allow them to opt back in by sending any message
+        if message_text.strip().upper() in ["START", "RESUME", "CONTINUE", "YES"]:
+            # Opt back in - reset to NEW to restart
+            lead.status = STATUS_NEW
+            lead.current_step = 0
+            db.commit()
+            return await _handle_new_lead(db, lead, dry_run)
+        else:
+            # Still opted out - acknowledge but don't send automated messages
+            return {
+                "status": "opted_out",
+                "message": "You're currently unsubscribed. Send 'START' to resume.",
+                "lead_status": lead.status,
+            }
+    
     elif lead.status in [STATUS_ABANDONED, STATUS_STALE]:
         # Inactive leads - allow restart
         lead.status = STATUS_NEW
@@ -225,8 +249,13 @@ async def _handle_qualifying_lead(
             "message": "Invalid question step",
         }
     
+    # Check for STOP/UNSUBSCRIBE opt-out
+    message_upper = message_text.strip().upper()
+    if message_upper in ["STOP", "UNSUBSCRIBE", "OPT OUT", "OPTOUT"]:
+        return await _handle_opt_out(db, lead, dry_run)
+    
     # Check for ARTIST handover request
-    if message_text.strip().upper() == "ARTIST":
+    if message_upper == "ARTIST":
         return await _handle_artist_handover(db, lead, dry_run)
     
     # Save the answer
@@ -285,6 +314,42 @@ async def _handle_qualifying_lead(
     }
 
 
+async def _handle_opt_out(
+    db: Session,
+    lead: Lead,
+    dry_run: bool,
+) -> dict:
+    """Handle STOP/UNSUBSCRIBE opt-out request - stop all outbound messages."""
+    # Set status to OPTOUT
+    lead.status = STATUS_OPTOUT
+    db.commit()
+    db.refresh(lead)
+    
+    # Send confirmation message (one last message to confirm opt-out)
+    optout_msg = (
+        "You've been unsubscribed. You won't receive any more automated messages from us.\n\n"
+        "If you change your mind, just send us a message and we can resume."
+    )
+    
+    await send_whatsapp_message(
+        to=lead.wa_from,
+        message=optout_msg,
+        dry_run=dry_run,
+    )
+    
+    lead.last_bot_message_at = func.now()
+    db.commit()
+    
+    # Log to Google Sheets
+    log_lead_to_sheets(db, lead)
+    
+    return {
+        "status": "opted_out",
+        "message": optout_msg,
+        "lead_status": lead.status,
+    }
+
+
 async def _handle_artist_handover(
     db: Session,
     lead: Lead,
@@ -312,8 +377,6 @@ async def _handle_artist_handover(
     lead.last_bot_message_at = func.now()
     db.commit()
     
-    # TODO: Notify artist via WhatsApp that handover is requested
-    # This will be implemented when admin notifications are added
     
     return {
         "status": "artist_handover",
@@ -335,7 +398,6 @@ async def _complete_qualification(
     # Build answers dict
     answers_dict = {ans.question_key: ans.answer_text for ans in answers_list}
     
-    # TODO: Derive region_bucket, size_category, budget_range from answers
     # For now, we'll compute these in a helper function (to be implemented)
     
     # Generate summary
@@ -365,7 +427,15 @@ async def _complete_qualification(
     db.commit()
     db.refresh(lead)
     
-    # TODO: Notify artist (WhatsApp summary + action links or Sheets update)
+    # This is when consultation completes and lead is ready for artist review
+    log_lead_to_sheets(db, lead)
+    
+    # Generate action tokens for Mode B (WhatsApp action links)
+    # These can be included in the WhatsApp summary sent to artist
+    action_tokens = generate_action_tokens_for_lead(db, lead.id, lead.status)
+    
+    # For Mode B: Send WhatsApp summary with action links
+    # For Mode A: Just update Sheets (artist uses Sheets as control center)
     # This will be implemented when admin actions are added
     
     return {
@@ -374,6 +444,7 @@ async def _complete_qualification(
         "lead_status": lead.status,
         "current_step": lead.current_step,
         "summary": answers_dict,
+        "action_tokens": action_tokens,  # Include tokens for Mode B
     }
 
 

@@ -81,10 +81,29 @@ class LeadAnswer(Base):
 
 
 class ProcessedMessage(Base):
-    """Idempotency table - stores processed WhatsApp message IDs to prevent duplicates."""
+    """Idempotency table - stores processed WhatsApp message IDs, Stripe event IDs, and other events to prevent duplicates."""
     __tablename__ = "processed_messages"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    message_id: Mapped[str] = mapped_column(String(255), unique=True, index=True)
+    message_id: Mapped[str] = mapped_column(String(255), unique=True, index=True)  # Can be message ID, event ID, etc.
+    event_type: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)  # e.g., "whatsapp.message", "stripe.checkout.session.completed"
     lead_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("leads.id"), nullable=True, index=True)
     processed_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class ActionToken(Base):
+    """Action tokens for Mode B - secure single-use links for admin actions."""
+    __tablename__ = "action_tokens"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    token: Mapped[str] = mapped_column(String(64), unique=True, index=True)  # Secure random token
+    lead_id: Mapped[int] = mapped_column(Integer, ForeignKey("leads.id"), index=True)
+    action_type: Mapped[str] = mapped_column(String(32))  # approve, reject, send_deposit, send_booking_link, mark_booked
+    required_status: Mapped[str] = mapped_column(String(32))  # Status lead must be in for this action
+    used: Mapped[bool] = mapped_column(Boolean, default=False)  # Single-use flag
+    used_at: Mapped[Optional[DateTime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    expires_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True))  # Expiry (default 7 days)
+    created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    
+    # Relationship to lead
+    lead: Mapped["Lead"] = relationship("Lead")

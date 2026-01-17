@@ -16,8 +16,10 @@ def test_list_leads_with_data(client, db):
     # Create test leads with explicit timestamps to ensure ordering
     now = datetime.now(timezone.utc)
     lead1 = Lead(wa_from="1111111111", status="NEW", created_at=now)
-    lead2 = Lead(wa_from="2222222222", status="CONTACTED", created_at=now.replace(second=now.second + 1))
-    lead3 = Lead(wa_from="3333333333", status="NEW", created_at=now.replace(second=now.second + 2))
+    # Use timedelta to avoid second overflow
+    from datetime import timedelta
+    lead2 = Lead(wa_from="2222222222", status="CONTACTED", created_at=now + timedelta(seconds=1))
+    lead3 = Lead(wa_from="3333333333", status="NEW", created_at=now + timedelta(seconds=2))
 
     db.add(lead1)
     db.add(lead2)

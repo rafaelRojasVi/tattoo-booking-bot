@@ -47,7 +47,12 @@ def test_get_or_create_lead_database_rollback_on_error(db):
     
     # Create a mock session that raises error on commit
     mock_db = MagicMock()
-    mock_db.execute.return_value.scalar_one_or_none.return_value = None
+    # Mock the execute chain: execute() -> scalars() -> all()
+    mock_scalars = MagicMock()
+    mock_scalars.all.return_value = []  # No existing leads
+    mock_result = MagicMock()
+    mock_result.scalars.return_value = mock_scalars
+    mock_db.execute.return_value = mock_result
     mock_db.commit.side_effect = SQLAlchemyError("Connection lost")
     
     # Test that error is raised

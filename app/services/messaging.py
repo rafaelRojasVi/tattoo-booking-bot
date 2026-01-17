@@ -33,13 +33,6 @@ async def send_whatsapp_message(
             "message": message,
         }
     
-    # TODO: Implement actual WhatsApp Cloud API call
-    # For now, we'll use dry-run mode
-    # When ready, use:
-    # - settings.whatsapp_access_token
-    # - settings.whatsapp_phone_number_id
-    # - Meta WhatsApp Cloud API endpoint
-    
     try:
         import httpx
         
@@ -105,3 +98,46 @@ def format_summary_message(answers: dict) -> str:
     summary_lines.append("We'll send you a payment link shortly.")
     
     return "\n".join(summary_lines)
+
+
+def format_deposit_link_message(checkout_url: str, amount_pence: int) -> str:
+    """
+    Format message for sending deposit payment link.
+    
+    Args:
+        checkout_url: Stripe checkout URL
+        amount_pence: Deposit amount in pence
+        
+    Returns:
+        Formatted message string
+    """
+    amount_gbp = amount_pence / 100
+    message = (
+        f"💳 *Deposit Payment Link*\n\n"
+        f"Great news! Your booking request has been approved.\n\n"
+        f"To secure your booking, please pay the deposit of *£{amount_gbp:.2f}* using the link below:\n\n"
+        f"{checkout_url}\n\n"
+        f"Once your deposit is confirmed, I'll send you a booking link to schedule your appointment.\n\n"
+        f"Thanks! 🙏"
+    )
+    return message
+
+
+def format_payment_confirmation_message(amount_pence: int) -> str:
+    """
+    Format message confirming deposit payment.
+    
+    Args:
+        amount_pence: Deposit amount in pence
+        
+    Returns:
+        Formatted message string
+    """
+    amount_gbp = amount_pence / 100
+    message = (
+        f"✅ *Deposit Confirmed!*\n\n"
+        f"Thank you! Your deposit of *£{amount_gbp:.2f}* has been received.\n\n"
+        f"I'll send you a booking link shortly so you can schedule your appointment.\n\n"
+        f"Looking forward to working with you! 🎨"
+    )
+    return message

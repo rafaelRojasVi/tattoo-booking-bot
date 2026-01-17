@@ -15,7 +15,7 @@ class Question:
     validation_hint: Optional[str] = None
 
 
-# Define the consultation questions (matching v1.4 proposal)
+# Consultation questions
 CONSULTATION_QUESTIONS = [
     Question(
         key="idea",
@@ -41,7 +41,7 @@ CONSULTATION_QUESTIONS = [
     Question(
         key="style",
         text="Any specific style? (e.g., fine line, realism, traditional, watercolor, etc.)\n\nIf you're not sure, just type 'not sure'.",
-        required=False,  # Made optional per proposal
+        required=False,
     ),
     Question(
         key="location_city",
