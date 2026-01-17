@@ -21,7 +21,7 @@ jobs:
       - name: Install dependencies
         run: |
           pip install --upgrade pip
-          pip install fastapi uvicorn[standard] pydantic-settings sqlalchemy psycopg2-binary stripe httpx alembic pytest
+          pip install -r requirements.txt
       
       - name: Run linter
         run: |
