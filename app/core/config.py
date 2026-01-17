@@ -10,6 +10,7 @@ class Settings(BaseSettings):
     whatsapp_verify_token: str
     whatsapp_access_token: str
     whatsapp_phone_number_id: str
+    whatsapp_dry_run: bool = True  # Set to False in production to enable real sending
 
     stripe_secret_key: str
     stripe_webhook_secret: str

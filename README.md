@@ -139,8 +139,21 @@ make migrate
 make migrate-create MSG="add new table"
 
 # Run tests
-make test
+# Windows (PowerShell):
+.\scripts\test.ps1                    # Local tests
+.\scripts\test-docker.ps1            # Docker tests (isolated)
+.\scripts\test.ps1 -Coverage          # Tests with coverage
+
+# Linux/Mac (Bash):
+make test                    # Local tests
+make test-docker            # Docker tests (isolated)
+make test-coverage          # Tests with coverage report
+
+# Or directly with pytest:
+pytest tests/ -v            # Works on all platforms
 ```
+
+See [TESTING.md](TESTING.md) for detailed testing documentation.
 
 ## API Endpoints
 

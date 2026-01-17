@@ -75,4 +75,5 @@ def test_list_leads_after_webhook(client):
     assert len(data) == 1
     assert data[0]["id"] == lead_id
     assert data[0]["wa_from"] == "9999999999"
-    assert data[0]["status"] == "NEW"
+    # Webhook now automatically transitions NEW -> QUALIFYING when message is received
+    assert data[0]["status"] == "QUALIFYING"

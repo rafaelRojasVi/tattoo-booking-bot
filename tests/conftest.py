@@ -13,10 +13,12 @@ os.environ.setdefault("WHATSAPP_PHONE_NUMBER_ID", "test_id")
 os.environ.setdefault("STRIPE_SECRET_KEY", "sk_test_test")
 os.environ.setdefault("STRIPE_WEBHOOK_SECRET", "whsec_test")
 os.environ.setdefault("FRESHA_BOOKING_URL", "https://test.com")
+os.environ.setdefault("WHATSAPP_DRY_RUN", "true")
 
 from app.main import app
 from app.db.base import Base
 from app.db.deps import get_db
+from app.db import models  # Ensure all models are imported
 
 
 # Test database URL (in-memory SQLite for fast tests)

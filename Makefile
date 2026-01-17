@@ -21,10 +21,29 @@ logs: ## Show logs
 test: ## Run tests locally
 	pytest tests/ -v
 
-test-docker: ## Run tests in Docker
+test-coverage: ## Run tests with coverage report
+	pytest tests/ -v --cov=app --cov-report=html --cov-report=term
+
+test-fast: ## Run tests without verbose output
+	pytest tests/ -q
+
+test-specific: ## Run specific test file (usage: make test-specific FILE=tests/test_webhooks.py)
+	@if [ -z "$(FILE)" ]; then \
+		echo "Usage: make test-specific FILE=tests/test_webhooks.py"; \
+		exit 1; \
+	fi
+	pytest $(FILE) -v
+
+test-docker: ## Run tests in Docker (isolated)
 	docker compose -f docker-compose.test.yml run --rm test
 
-test-watch: ## Run tests in watch mode
+test-docker-coverage: ## Run tests in Docker with coverage
+	docker compose -f docker-compose.test.yml run --rm test pytest tests/ -v --cov=app --cov-report=term
+
+test-docker-exec: ## Run tests in running container (usage: make up first)
+	docker compose exec api pytest tests/ -v
+
+test-watch: ## Run tests in watch mode (requires pytest-watch)
 	pytest-watch tests/ -v
 
 version-bump: ## Bump version (usage: make version-bump TYPE=patch)
