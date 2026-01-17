@@ -8,7 +8,6 @@ from sqlalchemy import select, func
 from app.db.models import Lead, LeadAnswer
 from app.services.questions import (
     get_question_by_index,
-    get_total_questions,
     is_last_question,
 )
 from app.services.messaging import send_whatsapp_message, format_summary_message

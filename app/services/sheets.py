@@ -5,7 +5,6 @@ This service acts as the universal log for both Mode A (Sheets control) and Mode
 Currently implemented as a stub that logs to console - can be swapped for real Google Sheets API.
 """
 import logging
-from typing import Optional
 from sqlalchemy.orm import Session
 from app.db.models import Lead
 

@@ -9,8 +9,7 @@ from fastapi.responses import HTMLResponse
 from sqlalchemy.orm import Session
 from app.db.deps import get_db
 from app.core.config import settings
-from app.services.action_tokens import validate_action_token, mark_token_used
-from app.services.safety import validate_and_mark_token_used_atomic
+from app.services.action_tokens import validate_action_token
 from app.api.admin import (
     approve_lead,
     reject_lead,
@@ -18,7 +17,6 @@ from app.api.admin import (
     send_booking_link,
     mark_booked,
 )
-from app.api.admin import RejectRequest, SendBookingLinkRequest
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -183,12 +181,10 @@ def execute_action(
         # Execute the action by calling admin endpoint logic directly
         # We bypass auth dependency since token validation is the auth mechanism
         # Import the actual functions to call them directly
-        from app.db.models import Lead
         from sqlalchemy import func
         from app.services.conversation import (
             STATUS_PENDING_APPROVAL,
             STATUS_AWAITING_DEPOSIT,
-            STATUS_DEPOSIT_PAID,
             STATUS_BOOKING_LINK_SENT,
             STATUS_BOOKED,
             STATUS_REJECTED,
@@ -318,7 +314,7 @@ def execute_action(
     except Exception as e:
         logger.error(f"Error executing action {action_token.action_type} for token {token}: {e}")
         return HTMLResponse(
-            content=f"""
+            content="""
             <!DOCTYPE html>
             <html>
             <head><title>Action Failed</title></head>

@@ -7,21 +7,16 @@ Handles reminders for:
 - Deposit paid but no booking (follow-up reminders)
 """
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from sqlalchemy.orm import Session
-from sqlalchemy import select, func
-from typing import Optional
+from sqlalchemy import func
 from app.db.models import Lead
 from app.services.safety import check_and_record_processed_event
 from app.services.whatsapp_window import send_with_window_check
 from app.services.conversation import (
     STATUS_QUALIFYING,
-    STATUS_PENDING_APPROVAL,
     STATUS_DEPOSIT_PAID,
     STATUS_BOOKING_LINK_SENT,
-    STATUS_ABANDONED,
-    STATUS_STALE,
-    STATUS_NEEDS_FOLLOW_UP,
     STATUS_OPTOUT,
 )
 
@@ -145,7 +140,7 @@ def check_and_send_booking_reminder(
         dict with status and reminder info
     """
     if lead.status not in [STATUS_DEPOSIT_PAID, STATUS_BOOKING_LINK_SENT]:
-        return {"status": "skipped", "reason": f"Lead not in correct status for booking reminder"}
+        return {"status": "skipped", "reason": "Lead not in correct status for booking reminder"}
     
     # Don't send reminders to opted-out leads
     if lead.status == STATUS_OPTOUT:

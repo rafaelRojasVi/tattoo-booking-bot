@@ -57,13 +57,13 @@ def list_leads(
     leads = db.execute(select(Lead).order_by(Lead.created_at.desc())).scalars().all()
     return [
         {
-            "id": l.id,
-            "wa_from": l.wa_from,
-            "status": l.status,
-            "current_step": l.current_step,
-            "created_at": l.created_at,
+            "id": lead.id,
+            "wa_from": lead.wa_from,
+            "status": lead.status,
+            "current_step": lead.current_step,
+            "created_at": lead.created_at,
         }
-        for l in leads
+        for lead in leads
     ]
 
 

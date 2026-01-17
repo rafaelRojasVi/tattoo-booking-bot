@@ -152,7 +152,7 @@ def validate_and_mark_token_used_atomic(
     stmt = (
         update(ActionToken)
         .where(ActionToken.token == token)
-        .where(ActionToken.used == False)  # Only if not already used
+        .where(ActionToken.used.is_(False))  # Only if not already used
         .values(used=True, used_at=datetime.now(timezone.utc))
     )
     

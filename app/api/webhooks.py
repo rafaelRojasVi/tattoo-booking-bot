@@ -40,7 +40,7 @@ def whatsapp_verify(
 async def whatsapp_inbound(request: Request, db: Session = Depends(get_db)):
     try:
         payload = await request.json()
-    except Exception as e:
+    except Exception:
         # Invalid JSON payload
         return JSONResponse(
             status_code=400,

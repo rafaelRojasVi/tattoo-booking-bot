@@ -9,7 +9,7 @@ Tracks:
 """
 import logging
 from datetime import datetime, timezone
-from typing import Dict, Optional
+from typing import Dict
 from collections import defaultdict
 from threading import Lock
 

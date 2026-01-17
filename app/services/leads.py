@@ -96,6 +96,6 @@ def get_or_create_lead(db: Session, wa_from: str) -> Lead:
         log_lead_to_sheets(db, lead)
         
         return lead
-    except SQLAlchemyError as e:
+    except SQLAlchemyError:
         db.rollback()
-        raise  # Re-raise the exception
+        raise
