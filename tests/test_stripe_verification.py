@@ -1,8 +1,9 @@
 """
 Tests for Stripe webhook checkout_session_id verification.
 """
-import pytest
+
 import json
+
 from app.db.models import Lead
 from app.services.conversation import STATUS_AWAITING_DEPOSIT
 
@@ -18,7 +19,7 @@ def test_stripe_webhook_checkout_session_id_match(client, db):
     db.add(lead)
     db.commit()
     db.refresh(lead)
-    
+
     # Webhook with matching checkout_session_id
     webhook_payload = {
         "id": "evt_test_123",
@@ -30,18 +31,19 @@ def test_stripe_webhook_checkout_session_id_match(client, db):
                 "metadata": {"lead_id": str(lead.id)},
                 "payment_intent": "pi_test_123",
             }
-        }
+        },
     }
-    
+
     response = client.post(
         "/webhooks/stripe",
         content=json.dumps(webhook_payload).encode("utf-8"),
         headers={"stripe-signature": "test_signature"},
     )
-    
+
     assert response.status_code == 200
     db.refresh(lead)
-    assert lead.status == "DEPOSIT_PAID"
+    # Phase 1: Stripe webhook transitions to BOOKING_PENDING after DEPOSIT_PAID
+    assert lead.status == "BOOKING_PENDING"
 
 
 def test_stripe_webhook_checkout_session_id_mismatch(client, db):
@@ -55,7 +57,7 @@ def test_stripe_webhook_checkout_session_id_mismatch(client, db):
     db.add(lead)
     db.commit()
     db.refresh(lead)
-    
+
     # Webhook with different checkout_session_id
     webhook_payload = {
         "id": "evt_test_456",
@@ -67,18 +69,18 @@ def test_stripe_webhook_checkout_session_id_mismatch(client, db):
                 "metadata": {"lead_id": str(lead.id)},
                 "payment_intent": "pi_test_123",
             }
-        }
+        },
     }
-    
+
     response = client.post(
         "/webhooks/stripe",
         content=json.dumps(webhook_payload).encode("utf-8"),
         headers={"stripe-signature": "test_signature"},
     )
-    
+
     assert response.status_code == 400
     assert "mismatch" in response.json()["error"].lower()
-    
+
     # Lead status should not have changed
     db.refresh(lead)
     assert lead.status == STATUS_AWAITING_DEPOSIT
@@ -96,7 +98,7 @@ def test_stripe_webhook_no_stored_session_id_allows_first_payment(client, db):
     db.add(lead)
     db.commit()
     db.refresh(lead)
-    
+
     # Webhook with checkout_session_id (first payment)
     webhook_payload = {
         "id": "evt_test_789",
@@ -108,16 +110,17 @@ def test_stripe_webhook_no_stored_session_id_allows_first_payment(client, db):
                 "metadata": {"lead_id": str(lead.id)},
                 "payment_intent": "pi_test_123",
             }
-        }
+        },
     }
-    
+
     response = client.post(
         "/webhooks/stripe",
         content=json.dumps(webhook_payload).encode("utf-8"),
         headers={"stripe-signature": "test_signature"},
     )
-    
+
     assert response.status_code == 200
     db.refresh(lead)
-    assert lead.status == "DEPOSIT_PAID"
+    # Phase 1: Stripe webhook transitions to BOOKING_PENDING after DEPOSIT_PAID
+    assert lead.status == "BOOKING_PENDING"
     assert lead.stripe_checkout_session_id == "cs_test_new_789"

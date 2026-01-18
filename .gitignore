@@ -1,8 +1,9 @@
-# Environment variables
+# Environment variables and secrets
 .env
 .env.local
 .env.*.local
 *.env
+!.env.example
 
 # Python
 __pycache__/
@@ -14,6 +15,9 @@ __pycache__/
 venv/
 ENV/
 env/
+*.egg-info/
+dist/
+build/
 
 # IDE
 .idea/
@@ -42,7 +46,43 @@ credentials/
 *.pem
 *.key
 *.cert
+*.json
+!package.json
+!package-lock.json
+!tsconfig.json
+!pyproject.toml
+!alembic.ini
+!requirements*.txt
+
+# Google service account credentials (if stored as files)
+*-credentials.json
+service-account*.json
 
 # OS
 Thumbs.db
 .DS_Store
+
+# Tool output / findings (generated files, don't commit)
+bandit-findings.json
+bandit-report.json
+mypy-findings.txt
+pip-audit-findings.json
+pip-audit-report.json
+ruff-findings.txt
+ruff-baseline.json
+*.findings.*
+*.report.json
+htmlcov/
+.coverage
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Coverage reports
+coverage/
+.coverage.*
+htmlcov/
+
+# Local test files
+test_*.db
+test_*.sqlite

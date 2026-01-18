@@ -1,21 +1,22 @@
 """
 Tests for action token system (Mode B - WhatsApp action links).
 """
-import pytest
-from datetime import datetime, timedelta, timezone
-from app.db.models import Lead, ActionToken
+
+from datetime import UTC, datetime, timedelta
+
+from app.db.models import ActionToken, Lead
 from app.services.action_tokens import (
     generate_action_token,
-    validate_action_token,
-    mark_token_used,
     generate_action_tokens_for_lead,
     get_action_url,
+    mark_token_used,
+    validate_action_token,
 )
 from app.services.conversation import (
-    STATUS_PENDING_APPROVAL,
     STATUS_AWAITING_DEPOSIT,
-    STATUS_DEPOSIT_PAID,
     STATUS_BOOKING_LINK_SENT,
+    STATUS_DEPOSIT_PAID,
+    STATUS_PENDING_APPROVAL,
 )
 
 
@@ -25,14 +26,15 @@ def test_generate_action_token(db):
     db.add(lead)
     db.commit()
     db.refresh(lead)
-    
+
     token = generate_action_token(db, lead.id, "approve", STATUS_PENDING_APPROVAL)
-    
+
     assert token is not None
     assert len(token) > 0
-    
+
     # Verify token was saved
     from sqlalchemy import select
+
     stmt = select(ActionToken).where(ActionToken.token == token)
     action_token = db.execute(stmt).scalar_one_or_none()
     assert action_token is not None
@@ -48,9 +50,9 @@ def test_validate_action_token_success(db):
     db.add(lead)
     db.commit()
     db.refresh(lead)
-    
+
     token = generate_action_token(db, lead.id, "approve", STATUS_PENDING_APPROVAL)
-    
+
     action_token, error = validate_action_token(db, token)
     assert action_token is not None
     assert error is None
@@ -70,12 +72,12 @@ def test_validate_action_token_already_used(db):
     db.add(lead)
     db.commit()
     db.refresh(lead)
-    
+
     token = generate_action_token(db, lead.id, "approve", STATUS_PENDING_APPROVAL)
-    
+
     # Mark as used
     mark_token_used(db, token)
-    
+
     # Try to validate again
     action_token, error = validate_action_token(db, token)
     assert action_token is None
@@ -88,17 +90,18 @@ def test_validate_action_token_expired(db):
     db.add(lead)
     db.commit()
     db.refresh(lead)
-    
+
     token = generate_action_token(db, lead.id, "approve", STATUS_PENDING_APPROVAL)
-    
+
     # Manually expire the token
     from sqlalchemy import select
+
     stmt = select(ActionToken).where(ActionToken.token == token)
     action_token = db.execute(stmt).scalar_one()
-    action_token.expires_at = datetime.now(timezone.utc) - timedelta(days=1)
+    action_token.expires_at = datetime.now(UTC) - timedelta(days=1)
     db.commit()
     db.refresh(action_token)
-    
+
     # Try to validate
     result, error = validate_action_token(db, token)
     assert result is None
@@ -111,9 +114,9 @@ def test_validate_action_token_wrong_status(db):
     db.add(lead)
     db.commit()
     db.refresh(lead)
-    
+
     token = generate_action_token(db, lead.id, "approve", STATUS_PENDING_APPROVAL)
-    
+
     # Try to validate (lead is in wrong status)
     action_token, error = validate_action_token(db, token)
     assert action_token is None
@@ -126,15 +129,16 @@ def test_mark_token_used(db):
     db.add(lead)
     db.commit()
     db.refresh(lead)
-    
+
     token = generate_action_token(db, lead.id, "approve", STATUS_PENDING_APPROVAL)
-    
+
     # Mark as used
     result = mark_token_used(db, token)
     assert result is True
-    
+
     # Verify
     from sqlalchemy import select
+
     stmt = select(ActionToken).where(ActionToken.token == token)
     action_token = db.execute(stmt).scalar_one()
     assert action_token.used is True
@@ -147,9 +151,9 @@ def test_generate_action_tokens_for_lead_pending_approval(db):
     db.add(lead)
     db.commit()
     db.refresh(lead)
-    
+
     tokens = generate_action_tokens_for_lead(db, lead.id, lead.status)
-    
+
     assert "approve" in tokens
     assert "reject" in tokens
     assert len(tokens) == 2
@@ -161,9 +165,9 @@ def test_generate_action_tokens_for_lead_awaiting_deposit(db):
     db.add(lead)
     db.commit()
     db.refresh(lead)
-    
+
     tokens = generate_action_tokens_for_lead(db, lead.id, lead.status)
-    
+
     assert "send_deposit" in tokens
     assert len(tokens) == 1
 
@@ -174,9 +178,9 @@ def test_generate_action_tokens_for_lead_deposit_paid(db):
     db.add(lead)
     db.commit()
     db.refresh(lead)
-    
+
     tokens = generate_action_tokens_for_lead(db, lead.id, lead.status)
-    
+
     assert "send_booking_link" in tokens
     assert len(tokens) == 1
 
@@ -187,9 +191,9 @@ def test_generate_action_tokens_for_lead_booking_link_sent(db):
     db.add(lead)
     db.commit()
     db.refresh(lead)
-    
+
     tokens = generate_action_tokens_for_lead(db, lead.id, lead.status)
-    
+
     assert "mark_booked" in tokens
     assert len(tokens) == 1
 
@@ -198,7 +202,7 @@ def test_get_action_url():
     """Test generating action URL."""
     token = "test-token-123"
     url = get_action_url(token)
-    
+
     assert token in url
     assert url.startswith("http")
 
@@ -209,19 +213,23 @@ def test_action_token_single_use_enforcement(db, client):
     db.add(lead)
     db.commit()
     db.refresh(lead)
-    
+
     token = generate_action_token(db, lead.id, "approve", STATUS_PENDING_APPROVAL)
-    
+
     # First use - should work
     response = client.get(f"/a/{token}")
     assert response.status_code == 200
-    
+
     # Execute action
     response = client.post(f"/a/{token}")
     assert response.status_code == 200
-    
+
     # Second use - should fail (token is already used, so status check fails)
     response = client.get(f"/a/{token}")
     assert response.status_code == 400
     # After first use, lead status changed, so error is about status mismatch or token already used
-    assert "already been used" in response.text or "been used already" in response.text or "status" in response.text.lower()
+    assert (
+        "already been used" in response.text
+        or "been used already" in response.text
+        or "status" in response.text.lower()
+    )

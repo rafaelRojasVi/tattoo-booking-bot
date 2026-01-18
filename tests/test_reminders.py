@@ -1,19 +1,21 @@
 """
 Tests for reminder service with idempotency.
 """
-import pytest
-from datetime import datetime, timedelta, timezone
-from app.db.models import Lead, ProcessedMessage
-from app.services.reminders import (
-    check_and_send_qualifying_reminder,
-    check_and_send_booking_reminder,
-)
-from app.services.conversation import (
-    STATUS_QUALIFYING,
-    STATUS_DEPOSIT_PAID,
-    STATUS_BOOKING_LINK_SENT,
-)
+
+from datetime import UTC, datetime, timedelta
+
 from sqlalchemy import select
+
+from app.db.models import Lead, ProcessedMessage
+from app.services.conversation import (
+    STATUS_BOOKING_LINK_SENT,
+    STATUS_DEPOSIT_PAID,
+    STATUS_QUALIFYING,
+)
+from app.services.reminders import (
+    check_and_send_booking_reminder,
+    check_and_send_qualifying_reminder,
+)
 
 
 def test_qualifying_reminder_not_due(db):
@@ -21,16 +23,16 @@ def test_qualifying_reminder_not_due(db):
     lead = Lead(
         wa_from="1234567890",
         status=STATUS_QUALIFYING,
-        last_client_message_at=datetime.now(timezone.utc) - timedelta(hours=12),
+        last_client_message_at=datetime.now(UTC) - timedelta(hours=10),  # Less than 12h threshold
     )
     db.add(lead)
     db.commit()
     db.refresh(lead)
-    
-    result = check_and_send_qualifying_reminder(db, lead, hours_since_last_message=24, dry_run=True)
-    
+
+    result = check_and_send_qualifying_reminder(db, lead, reminder_number=1, dry_run=True)
+
     assert result["status"] == "not_due"
-    assert result["hours_passed"] < 24
+    assert result["hours_passed"] < 12
 
 
 def test_qualifying_reminder_sent(db):
@@ -38,25 +40,25 @@ def test_qualifying_reminder_sent(db):
     lead = Lead(
         wa_from="1234567890",
         status=STATUS_QUALIFYING,
-        last_client_message_at=datetime.now(timezone.utc) - timedelta(hours=25),
+        last_client_message_at=datetime.now(UTC) - timedelta(hours=13),  # Over 12h threshold
     )
     db.add(lead)
     db.commit()
     db.refresh(lead)
-    
-    result = check_and_send_qualifying_reminder(db, lead, hours_since_last_message=24, dry_run=True)
-    
+
+    result = check_and_send_qualifying_reminder(db, lead, reminder_number=1, dry_run=True)
+
     assert result["status"] == "sent"
     assert "event_id" in result
     assert lead.reminder_qualifying_sent_at is not None
-    
+
     # Verify idempotency - event recorded
     event_id = result["event_id"]
     processed = db.execute(
         select(ProcessedMessage).where(ProcessedMessage.message_id == event_id)
     ).scalar_one_or_none()
     assert processed is not None
-    assert processed.event_type == "reminder.qualifying.24h"
+    assert processed.event_type == "reminder.qualifying.1"
 
 
 def test_qualifying_reminder_idempotent(db):
@@ -64,18 +66,18 @@ def test_qualifying_reminder_idempotent(db):
     lead = Lead(
         wa_from="1234567890",
         status=STATUS_QUALIFYING,
-        last_client_message_at=datetime.now(timezone.utc) - timedelta(hours=25),
+        last_client_message_at=datetime.now(UTC) - timedelta(hours=13),
     )
     db.add(lead)
     db.commit()
     db.refresh(lead)
-    
+
     # Send first reminder
-    result1 = check_and_send_qualifying_reminder(db, lead, hours_since_last_message=24, dry_run=True)
+    result1 = check_and_send_qualifying_reminder(db, lead, reminder_number=1, dry_run=True)
     assert result1["status"] == "sent"
-    
+
     # Try to send again
-    result2 = check_and_send_qualifying_reminder(db, lead, hours_since_last_message=24, dry_run=True)
+    result2 = check_and_send_qualifying_reminder(db, lead, reminder_number=1, dry_run=True)
     assert result2["status"] in ["duplicate", "already_sent"]
 
 
@@ -85,19 +87,19 @@ def test_booking_reminder_24h_sent(db):
         wa_from="1234567890",
         status=STATUS_BOOKING_LINK_SENT,
         booking_link="https://test.com/book",
-        booking_link_sent_at=datetime.now(timezone.utc) - timedelta(hours=25),
+        booking_link_sent_at=datetime.now(UTC) - timedelta(hours=25),
     )
     db.add(lead)
     db.commit()
     db.refresh(lead)
-    
+
     result = check_and_send_booking_reminder(
         db, lead, hours_since_booking_link=24, reminder_type="24h", dry_run=True
     )
-    
+
     assert result["status"] == "sent"
     assert lead.reminder_booking_sent_24h_at is not None
-    
+
     # Verify idempotency
     event_id = result["event_id"]
     processed = db.execute(
@@ -113,17 +115,17 @@ def test_booking_reminder_72h_sent(db):
         wa_from="1234567890",
         status=STATUS_BOOKING_LINK_SENT,
         booking_link="https://test.com/book",
-        booking_link_sent_at=datetime.now(timezone.utc) - timedelta(hours=73),
-        reminder_booking_sent_24h_at=datetime.now(timezone.utc) - timedelta(hours=50),
+        booking_link_sent_at=datetime.now(UTC) - timedelta(hours=73),
+        reminder_booking_sent_24h_at=datetime.now(UTC) - timedelta(hours=50),
     )
     db.add(lead)
     db.commit()
     db.refresh(lead)
-    
+
     result = check_and_send_booking_reminder(
         db, lead, hours_since_booking_link=72, reminder_type="72h", dry_run=True
     )
-    
+
     assert result["status"] == "sent"
     assert lead.reminder_booking_sent_72h_at is not None
 
@@ -133,13 +135,13 @@ def test_reminder_wrong_status(db):
     lead = Lead(
         wa_from="1234567890",
         status=STATUS_DEPOSIT_PAID,  # Not QUALIFYING
-        last_client_message_at=datetime.now(timezone.utc) - timedelta(hours=25),
+        last_client_message_at=datetime.now(UTC) - timedelta(hours=25),
     )
     db.add(lead)
     db.commit()
     db.refresh(lead)
-    
-    result = check_and_send_qualifying_reminder(db, lead, hours_since_last_message=24, dry_run=True)
-    
+
+    result = check_and_send_qualifying_reminder(db, lead, reminder_number=1, dry_run=True)
+
     assert result["status"] == "skipped"
     assert "not in" in result["reason"]

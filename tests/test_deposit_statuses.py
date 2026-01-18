@@ -2,13 +2,13 @@
 Tests for deposit expiry, refunds, and cancellation statuses.
 These are future features - tests verify status definitions exist.
 """
-import pytest
+
 from app.db.models import Lead
 from app.services.conversation import (
+    STATUS_AWAITING_DEPOSIT,
+    STATUS_CANCELLED,
     STATUS_DEPOSIT_EXPIRED,
     STATUS_REFUNDED,
-    STATUS_CANCELLED,
-    STATUS_AWAITING_DEPOSIT,
 )
 
 
@@ -33,11 +33,11 @@ def test_lead_can_have_deposit_expired_status(db):
     db.add(lead)
     db.commit()
     db.refresh(lead)
-    
+
     lead.status = STATUS_DEPOSIT_EXPIRED
     db.commit()
     db.refresh(lead)
-    
+
     assert lead.status == STATUS_DEPOSIT_EXPIRED
 
 
@@ -47,11 +47,11 @@ def test_lead_can_have_refunded_status(db):
     db.add(lead)
     db.commit()
     db.refresh(lead)
-    
+
     lead.status = STATUS_REFUNDED
     db.commit()
     db.refresh(lead)
-    
+
     assert lead.status == STATUS_REFUNDED
 
 
@@ -61,9 +61,9 @@ def test_lead_can_have_cancelled_status(db):
     db.add(lead)
     db.commit()
     db.refresh(lead)
-    
+
     lead.status = STATUS_CANCELLED
     db.commit()
     db.refresh(lead)
-    
+
     assert lead.status == STATUS_CANCELLED

@@ -1,0 +1,32 @@
+# Top-level dependencies for pip-tools
+#
+# To generate locked requirements.txt:
+#   pip-compile requirements.in
+#
+# To upgrade all dependencies:
+#   pip-compile --upgrade requirements.in
+#
+# To upgrade a specific package:
+#   pip-compile --upgrade-package fastapi requirements.in
+#
+# The generated requirements.txt contains pinned versions for reproducibility.
+# In production, install from requirements.txt, not requirements.in
+
+fastapi
+uvicorn[standard]
+pydantic-settings
+sqlalchemy
+psycopg2-binary
+stripe
+httpx
+alembic
+pytest
+pytest-asyncio
+freezegun
+google-api-python-client
+google-auth
+google-auth-httplib2
+google-auth-oauthlib
+pyyaml
+pytz
+nest-asyncio

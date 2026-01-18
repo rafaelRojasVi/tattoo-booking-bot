@@ -1,0 +1,80 @@
+# Voice Pack Configuration
+# Controls tone, phrasing, and boundaries for outgoing messages
+# This is a starter template - customize based on Jonah's preferences
+
+# Greeting style
+greeting:
+  style: "friendly_direct"  # Options: friendly_direct, formal, casual
+  examples:
+    - "Hi"
+    - "Hey"
+    - "Hello"
+  default: "Hi"
+
+# Sign-off style
+sign_off:
+  style: "none"  # Options: none, signature, casual
+  signature: "-- Jonah"  # Only used if style is "signature"
+  examples:
+    - ""  # No sign-off
+    - "-- Jonah"
+    - "Cheers"
+
+# Emoji policy
+emoji:
+  enabled: true
+  max_per_message: 3
+  allowed: ["🎨", "✅", "💳", "📅", "👋", "🙏", "⚠️", "🔔", "💬", "📱", "🌍", "💰", "📊", "✈️", "📍", "💭"]
+  banned: []  # Emojis to never use
+
+# Preferred terms (replacements)
+preferred_terms:
+  "booking deposit": "deposit"
+  "appointment": "session"
+  "guarantee": "confirm"
+  "promise": "aim to"
+
+# Phrases to avoid (will be replaced or removed)
+banned_phrases:
+  - "I guarantee"
+  - "I promise"
+  - "exact time"
+  - "definitely"
+  - "for sure"
+  - "negotiate"
+  - "bargain"
+  - "discount"
+
+# Replacement phrases for banned phrases
+phrase_replacements:
+  "I guarantee": "I'll aim to"
+  "I promise": "I'll try to"
+  "exact time": "time"
+  "definitely": "should"
+  "for sure": "likely"
+  "negotiate": "discuss"
+  "bargain": "discuss"
+  "discount": "options"
+
+# Call preference language
+call_preference:
+  preferred: "quick call"
+  alternatives:
+    - "quick chat"
+    - "brief call"
+  ask_availability: true
+
+# Spelling
+spelling:
+  locale: "en_GB"  # UK English
+  replacements:
+    "color": "colour"
+    "organize": "organise"
+    "recognize": "recognise"
+
+# Tone rules
+tone:
+  avoid_salesy: true
+  keep_neutral: true
+  no_price_negotiation: true
+  redirect_complex: true

@@ -3,20 +3,23 @@ Action token endpoints - Mode B (WhatsApp action links).
 
 Provides GET /a/{token} (confirm page) and POST /a/{token} (execute action).
 """
+
 import logging
+
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import HTMLResponse
 from sqlalchemy.orm import Session
-from app.db.deps import get_db
-from app.core.config import settings
-from app.services.action_tokens import validate_action_token
+
 from app.api.admin import (
     approve_lead,
-    reject_lead,
-    send_deposit,
-    send_booking_link,
     mark_booked,
+    reject_lead,
+    send_booking_link,
+    send_deposit,
 )
+from app.core.config import settings
+from app.db.deps import get_db
+from app.services.action_tokens import validate_action_token
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -48,7 +51,7 @@ def action_confirm_page(
 ):
     """
     Show confirm/cancel page for an action token.
-    
+
     This page shows:
     - What action will be performed
     - Lead information
@@ -79,11 +82,11 @@ def action_confirm_page(
             """,
             status_code=400,
         )
-    
+
     # Get lead info
     lead = action_token.lead
     action_desc = ACTION_DESCRIPTIONS.get(action_token.action_type, action_token.action_type)
-    
+
     return HTMLResponse(
         content=f"""
         <!DOCTYPE html>
@@ -137,7 +140,7 @@ def execute_action(
 ):
     """
     Execute an action after confirmation (single-use after confirmation).
-    
+
     This endpoint:
     1. Validates the token (status-locked, not expired, not used)
     2. Executes the action via the admin endpoint
@@ -168,7 +171,7 @@ def execute_action(
             """,
             status_code=400,
         )
-    
+
     # Get handler for this action type
     handler = ACTION_HANDLERS.get(action_token.action_type)
     if not handler:
@@ -176,26 +179,29 @@ def execute_action(
             content="<h1>Unknown action type</h1>",
             status_code=400,
         )
-    
+
     try:
         # Execute the action by calling admin endpoint logic directly
         # We bypass auth dependency since token validation is the auth mechanism
         # Import the actual functions to call them directly
         from sqlalchemy import func
+
         from app.services.conversation import (
-            STATUS_PENDING_APPROVAL,
             STATUS_AWAITING_DEPOSIT,
-            STATUS_BOOKING_LINK_SENT,
             STATUS_BOOKED,
+            STATUS_BOOKING_LINK_SENT,
+            STATUS_PENDING_APPROVAL,
             STATUS_REJECTED,
         )
         from app.services.sheets import log_lead_to_sheets
-        
+
         lead = action_token.lead
-        
+
         if action_token.action_type == "approve":
             if lead.status != STATUS_PENDING_APPROVAL:
-                raise HTTPException(status_code=400, detail=f"Cannot approve lead in status '{lead.status}'")
+                raise HTTPException(
+                    status_code=400, detail=f"Cannot approve lead in status '{lead.status}'"
+                )
             lead.status = STATUS_AWAITING_DEPOSIT
             lead.approved_at = func.now()
             lead.last_admin_action = "approve"
@@ -203,8 +209,13 @@ def execute_action(
             db.commit()
             db.refresh(lead)
             log_lead_to_sheets(db, lead)
-            result = {"success": True, "message": "Lead approved.", "lead_id": lead.id, "status": lead.status}
-            
+            result = {
+                "success": True,
+                "message": "Lead approved.",
+                "lead_id": lead.id,
+                "status": lead.status,
+            }
+
         elif action_token.action_type == "reject":
             if lead.status == STATUS_REJECTED:
                 raise HTTPException(status_code=400, detail="Lead is already rejected")
@@ -217,12 +228,21 @@ def execute_action(
             db.commit()
             db.refresh(lead)
             log_lead_to_sheets(db, lead)
-            result = {"success": True, "message": "Lead rejected.", "lead_id": lead.id, "status": lead.status}
-            
+            result = {
+                "success": True,
+                "message": "Lead rejected.",
+                "lead_id": lead.id,
+                "status": lead.status,
+            }
+
         elif action_token.action_type == "send_deposit":
             if lead.status != STATUS_AWAITING_DEPOSIT:
-                raise HTTPException(status_code=400, detail=f"Cannot send deposit link for lead in status '{lead.status}'")
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Cannot send deposit link for lead in status '{lead.status}'",
+                )
             from app.core.config import settings
+
             amount_pence = settings.stripe_deposit_amount_pence
             lead.deposit_amount_pence = amount_pence
             lead.last_admin_action = "send_deposit"
@@ -230,8 +250,14 @@ def execute_action(
             db.commit()
             db.refresh(lead)
             log_lead_to_sheets(db, lead)
-            result = {"success": True, "message": "Deposit link will be sent.", "lead_id": lead.id, "status": lead.status, "deposit_amount_pence": amount_pence}
-            
+            result = {
+                "success": True,
+                "message": "Deposit link will be sent.",
+                "lead_id": lead.id,
+                "status": lead.status,
+                "deposit_amount_pence": amount_pence,
+            }
+
         elif action_token.action_type == "send_booking_link":
             # This requires booking_url and booking_tool - return error
             return HTMLResponse(
@@ -247,10 +273,12 @@ def execute_action(
                 """,
                 status_code=400,
             )
-            
+
         elif action_token.action_type == "mark_booked":
             if lead.status != STATUS_BOOKING_LINK_SENT:
-                raise HTTPException(status_code=400, detail=f"Cannot mark lead as booked in status '{lead.status}'")
+                raise HTTPException(
+                    status_code=400, detail=f"Cannot mark lead as booked in status '{lead.status}'"
+                )
             lead.status = STATUS_BOOKED
             lead.booked_at = func.now()
             lead.last_admin_action = "mark_booked"
@@ -258,17 +286,22 @@ def execute_action(
             db.commit()
             db.refresh(lead)
             log_lead_to_sheets(db, lead)
-            result = {"success": True, "message": "Lead marked as booked.", "lead_id": lead.id, "status": lead.status}
-            
+            result = {
+                "success": True,
+                "message": "Lead marked as booked.",
+                "lead_id": lead.id,
+                "status": lead.status,
+            }
+
         else:
             return HTMLResponse(
                 content="<h1>Unknown action type</h1>",
                 status_code=400,
             )
-        
+
         # Token already marked as used by validate_and_mark_token_used_atomic()
         # No need to call mark_token_used() again
-        
+
         # Return success page
         return HTMLResponse(
             content=f"""
@@ -284,9 +317,9 @@ def execute_action(
             <body>
                 <h1>✅ Action Completed</h1>
                 <div class="success">
-                    <p><strong>Success:</strong> {result.get('message', 'Action completed successfully')}</p>
+                    <p><strong>Success:</strong> {result.get("message", "Action completed successfully")}</p>
                     <p>Lead ID: {action_token.lead_id}</p>
-                    <p>New Status: {result.get('status', 'N/A')}</p>
+                    <p>New Status: {result.get("status", "N/A")}</p>
                 </div>
                 <p style="margin-top: 20px;">
                     <a href="javascript:window.close()">Close this window</a>
@@ -295,7 +328,7 @@ def execute_action(
             </html>
             """
         )
-        
+
     except HTTPException as e:
         # Handle HTTP errors from admin endpoints
         return HTMLResponse(

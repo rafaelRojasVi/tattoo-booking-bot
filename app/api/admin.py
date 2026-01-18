@@ -1,40 +1,33 @@
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException, Security
-from pydantic import BaseModel
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
-from sqlalchemy import select, func
-from typing import Optional
 
 from app.db.deps import get_db
 from app.db.models import Lead
-from app.services.conversation import (
-    get_lead_summary,
-    STATUS_PENDING_APPROVAL,
-    STATUS_AWAITING_DEPOSIT,
-    STATUS_DEPOSIT_PAID,
-    STATUS_BOOKING_LINK_SENT,
-    STATUS_BOOKED,
-    STATUS_REJECTED,
-)
+
+logger = logging.getLogger(__name__)
 from app.api.auth import get_admin_auth
-from app.services.sheets import log_lead_to_sheets
-from app.services.messaging import send_whatsapp_message, format_deposit_link_message
+from app.schemas.admin import (
+    RejectRequest,
+    SendBookingLinkRequest,
+    SendDepositRequest,
+)
+from app.services.conversation import (
+    STATUS_AWAITING_DEPOSIT,
+    STATUS_BOOKED,
+    STATUS_BOOKING_LINK_SENT,
+    STATUS_DEPOSIT_PAID,
+    STATUS_PENDING_APPROVAL,
+    STATUS_REJECTED,
+    get_lead_summary,
+)
+from app.services.messaging import format_deposit_link_message, send_whatsapp_message
 from app.services.safety import update_lead_status_if_matches
+from app.services.sheets import log_lead_to_sheets
 
 router = APIRouter()
-
-
-# Request models
-class RejectRequest(BaseModel):
-    reason: Optional[str] = None
-
-
-class SendDepositRequest(BaseModel):
-    amount_pence: Optional[int] = None  # Optional override, defaults to tier calculation
-
-
-class SendBookingLinkRequest(BaseModel):
-    booking_url: str
-    booking_tool: str = "FRESHA"  # FRESHA, CALENDLY, GCAL, OTHER
 
 
 @router.get("/metrics")
@@ -43,10 +36,31 @@ def get_metrics(
 ):
     """Get system metrics (duplicate events, failed atomic updates, etc.)."""
     from app.services.metrics import get_metrics, get_metrics_summary
+
     return {
         "metrics": get_metrics(),
         "summary": get_metrics_summary(),
     }
+
+
+@router.get("/funnel")
+def get_funnel(
+    days: int = 7,
+    db: Session = Depends(get_db),
+    _auth: bool = Security(get_admin_auth),
+):
+    """
+    Get funnel metrics and conversion rates.
+
+    Args:
+        days: Number of days to look back (default 7)
+
+    Returns:
+        Dict with counts and conversion rates
+    """
+    from app.services.funnel_metrics_service import get_funnel_metrics
+
+    return get_funnel_metrics(db, days=days)
 
 
 @router.get("/leads")
@@ -75,10 +89,10 @@ def get_lead_detail(
 ):
     """Get detailed lead information including answers and summary."""
     summary = get_lead_summary(db, lead_id)
-    
+
     if "error" in summary:
         raise HTTPException(status_code=404, detail=summary["error"])
-    
+
     return summary
 
 
@@ -95,7 +109,7 @@ def approve_lead(
     lead = db.get(Lead, lead_id)
     if not lead:
         raise HTTPException(status_code=404, detail="Lead not found")
-    
+
     # Atomic status-locked update (prevents race conditions)
     success, lead = update_lead_status_if_matches(
         db=db,
@@ -106,21 +120,51 @@ def approve_lead(
         last_admin_action="approve",
         last_admin_action_at=func.now(),
     )
-    
+
     if not success:
         if not lead:
             raise HTTPException(status_code=404, detail="Lead not found")
         raise HTTPException(
             status_code=400,
-            detail=f"Cannot approve lead in status '{lead.status}'. Lead must be in '{STATUS_PENDING_APPROVAL}'."
+            detail=f"Cannot approve lead in status '{lead.status}'. Lead must be in '{STATUS_PENDING_APPROVAL}'.",
         )
-    
+
     log_lead_to_sheets(db, lead)
-    
-    
+
+    # Phase 1: Send calendar slot suggestions after approval (before deposit)
+    from app.core.config import settings
+    from app.services.calendar_service import send_slot_suggestions_to_client
+
+    try:
+        send_slot_suggestions_to_client(
+            db=db,
+            lead=lead,
+            dry_run=settings.whatsapp_dry_run,
+        )
+    except Exception as e:
+        # Log error but don't fail the approval
+        logger.error(f"Failed to send slot suggestions to lead {lead_id}: {e}")
+
+    # Phase 1: Notify artist that lead was approved
+    import asyncio
+
+    from app.services.artist_notifications import notify_artist
+
+    try:
+        asyncio.run(
+            notify_artist(
+                db=db,
+                lead=lead,
+                event_type="pending_approval",  # Actually "approved" but using existing notification
+                dry_run=settings.whatsapp_dry_run,
+            )
+        )
+    except Exception as e:
+        logger.error(f"Failed to notify artist of approval for lead {lead_id}: {e}")
+
     return {
         "success": True,
-        "message": "Lead approved. Deposit link will be sent (not yet implemented).",
+        "message": "Lead approved. Slot suggestions sent to client.",
         "lead_id": lead.id,
         "status": lead.status,
     }
@@ -140,13 +184,13 @@ def reject_lead(
     lead = db.get(Lead, lead_id)
     if not lead:
         raise HTTPException(status_code=404, detail="Lead not found")
-    
+
     if lead.status == STATUS_REJECTED:
         raise HTTPException(status_code=400, detail="Lead is already rejected")
-    
+
     if lead.status == STATUS_BOOKED:
         raise HTTPException(status_code=400, detail="Cannot reject a booked lead")
-    
+
     # Transition to REJECTED
     lead.status = STATUS_REJECTED
     lead.rejected_at = func.now()
@@ -156,11 +200,11 @@ def reject_lead(
         lead.admin_notes = (lead.admin_notes or "") + f"\nRejection reason: {request.reason}"
     db.commit()
     db.refresh(lead)
-    
+
     log_lead_to_sheets(db, lead)
-    
+
     # TODO: Send WhatsApp message (optional, based on policy)
-    
+
     return {
         "success": True,
         "message": "Lead rejected.",
@@ -172,7 +216,7 @@ def reject_lead(
 @router.post("/leads/{lead_id}/send-deposit")
 def send_deposit(
     lead_id: int,
-    request: Optional[SendDepositRequest] = None,
+    request: SendDepositRequest | None = None,
     db: Session = Depends(get_db),
     _auth: bool = Security(get_admin_auth),
 ):
@@ -184,30 +228,43 @@ def send_deposit(
     lead = db.get(Lead, lead_id)
     if not lead:
         raise HTTPException(status_code=404, detail="Lead not found")
-    
+
     if lead.status != STATUS_AWAITING_DEPOSIT:
         raise HTTPException(
             status_code=400,
-            detail=f"Cannot send deposit link for lead in status '{lead.status}'. Lead must be in '{STATUS_AWAITING_DEPOSIT}'."
+            detail=f"Cannot send deposit link for lead in status '{lead.status}'. Lead must be in '{STATUS_AWAITING_DEPOSIT}'.",
         )
-    
-    # Calculate deposit amount (if not provided)
+
+    # Phase 1: Calculate deposit amount from estimated_category (if not provided)
     amount_pence = request.amount_pence if request and request.amount_pence else None
     if not amount_pence:
-        # For now, use default
-        from app.core.config import settings
-        amount_pence = settings.stripe_deposit_amount_pence
-    
+        # Use estimated_deposit_amount if available
+        if lead.estimated_deposit_amount:
+            amount_pence = lead.estimated_deposit_amount
+        else:
+            # Fallback to estimated_category
+            from app.services.estimation_service import get_deposit_amount
+
+            if lead.estimated_category:
+                amount_pence = get_deposit_amount(lead.estimated_category)
+            else:
+                # Final fallback to default
+                from app.core.config import settings
+
+                amount_pence = settings.stripe_deposit_amount_pence
+
     lead.deposit_amount_pence = amount_pence
+    lead.estimated_deposit_amount = amount_pence  # Ensure it's set
+    lead.deposit_sent_at = func.now()  # Phase 1: track when sent
     lead.last_admin_action = "send_deposit"
     lead.last_admin_action_at = func.now()
     db.commit()
     db.refresh(lead)
-    
+
     # Create Stripe checkout session
-    from app.services.stripe_service import create_checkout_session
     from app.core.config import settings
-    
+    from app.services.stripe_service import create_checkout_session
+
     checkout_result = create_checkout_session(
         lead_id=lead.id,
         amount_pence=amount_pence,
@@ -218,57 +275,70 @@ def send_deposit(
             "status": lead.status,
         },
     )
-    
+
     # Store checkout session ID
     lead.stripe_checkout_session_id = checkout_result["checkout_session_id"]
     db.commit()
     db.refresh(lead)
-    
+
     log_lead_to_sheets(db, lead)
-    
+
     # Send WhatsApp message with deposit link (with 24h window check)
-    from app.services.whatsapp_window import send_with_window_check
-    deposit_message = format_deposit_link_message(
-        checkout_result["checkout_url"],
-        amount_pence
+    from app.services.whatsapp_templates import (
+        get_template_for_next_steps,
+        get_template_params_next_steps_reply_to_continue,
     )
-    
+    from app.services.whatsapp_window import send_with_window_check
+
+    deposit_message = format_deposit_link_message(checkout_result["checkout_url"], amount_pence)
+
     # Send message (async function in sync context)
     import asyncio
+
     try:
-        asyncio.run(send_with_window_check(
-            db=db,
-            lead=lead,
-            message=deposit_message,
-            template_name="deposit_link",  # Template if window closed
-            dry_run=settings.whatsapp_dry_run,
-        ))
+        asyncio.run(
+            send_with_window_check(
+                db=db,
+                lead=lead,
+                message=deposit_message,
+                template_name=get_template_for_next_steps(),  # Re-open window template
+                template_params=get_template_params_next_steps_reply_to_continue(),
+                dry_run=settings.whatsapp_dry_run,
+            )
+        )
     except RuntimeError:
         # Event loop already running, use different approach
         import nest_asyncio
+
         try:
             nest_asyncio.apply()
-            asyncio.run(send_whatsapp_message(
-                to=lead.wa_from,
-                message=deposit_message,
-                dry_run=settings.whatsapp_dry_run,
-            ))
-        except ImportError:
-            # Fallback: create new event loop in thread
-            import concurrent.futures
-            with concurrent.futures.ThreadPoolExecutor() as executor:
-                future = executor.submit(asyncio.run, send_whatsapp_message(
+            asyncio.run(
+                send_whatsapp_message(
                     to=lead.wa_from,
                     message=deposit_message,
                     dry_run=settings.whatsapp_dry_run,
-                ))
+                )
+            )
+        except ImportError:
+            # Fallback: create new event loop in thread
+            import concurrent.futures
+
+            with concurrent.futures.ThreadPoolExecutor() as executor:
+                future = executor.submit(
+                    asyncio.run,
+                    send_whatsapp_message(
+                        to=lead.wa_from,
+                        message=deposit_message,
+                        dry_run=settings.whatsapp_dry_run,
+                    ),
+                )
                 future.result()
-    
+
     # Update last bot message timestamp
     lead.last_bot_message_at = func.now()
     db.commit()
     db.refresh(lead)
-    
+
     return {
         "success": True,
         "message": "Deposit link created and sent via WhatsApp.",
@@ -294,7 +364,7 @@ def send_booking_link(
     lead = db.get(Lead, lead_id)
     if not lead:
         raise HTTPException(status_code=404, detail="Lead not found")
-    
+
     # Atomic status-locked update (prevents race conditions)
     success, lead = update_lead_status_if_matches(
         db=db,
@@ -307,19 +377,19 @@ def send_booking_link(
         last_admin_action="send_booking_link",
         last_admin_action_at=func.now(),
     )
-    
+
     if not success:
         if not lead:
             raise HTTPException(status_code=404, detail="Lead not found")
         raise HTTPException(
             status_code=400,
-            detail=f"Cannot send booking link for lead in status '{lead.status}'. Lead must be in '{STATUS_DEPOSIT_PAID}'."
+            detail=f"Cannot send booking link for lead in status '{lead.status}'. Lead must be in '{STATUS_DEPOSIT_PAID}'.",
         )
-    
+
     log_lead_to_sheets(db, lead)
-    
+
     # TODO: Send WhatsApp message with booking link
-    
+
     return {
         "success": True,
         "message": "Booking link will be sent (not yet implemented).",
@@ -336,36 +406,48 @@ def mark_booked(
     _auth: bool = Security(get_admin_auth),
 ):
     """
-    Mark lead as booked - transitions from BOOKING_LINK_SENT to BOOKED.
-    Status-locked: only works from BOOKING_LINK_SENT.
+    Phase 1: Mark lead as booked - transitions from BOOKING_PENDING to BOOKED.
+    Status-locked: only works from BOOKING_PENDING.
     """
+    from app.services.conversation import STATUS_BOOKING_PENDING
+
     lead = db.get(Lead, lead_id)
     if not lead:
         raise HTTPException(status_code=404, detail="Lead not found")
-    
+
     # Atomic status-locked update (prevents race conditions)
     # BOOKED can only be set manually - no external events can set this
     success, lead = update_lead_status_if_matches(
         db=db,
         lead_id=lead_id,
-        expected_status=STATUS_BOOKING_LINK_SENT,
+        expected_status=STATUS_BOOKING_PENDING,
         new_status=STATUS_BOOKED,
         booked_at=func.now(),
         last_admin_action="mark_booked",
         last_admin_action_at=func.now(),
     )
-    
+
     if not success:
         if not lead:
             raise HTTPException(status_code=404, detail="Lead not found")
-        raise HTTPException(
-            status_code=400,
-            detail=f"Cannot mark lead as booked in status '{lead.status}'. Lead must be in '{STATUS_BOOKING_LINK_SENT}'."
-        )
-    
+        # Also allow from legacy BOOKING_LINK_SENT
+        if lead.status == STATUS_BOOKING_LINK_SENT:
+            lead.status = STATUS_BOOKED
+            lead.booked_at = func.now()
+            lead.last_admin_action = "mark_booked"
+            lead.last_admin_action_at = func.now()
+            db.commit()
+            db.refresh(lead)
+        else:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Cannot mark lead as booked in status '{lead.status}'. Lead must be in '{STATUS_BOOKING_PENDING}'.",
+            )
+
     log_lead_to_sheets(db, lead)
-    
-    
+
+    # TODO: Send WhatsApp confirmation message
+
     return {
         "success": True,
         "message": "Lead marked as booked.",

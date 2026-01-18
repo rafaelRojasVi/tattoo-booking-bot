@@ -1,5 +1,4 @@
-import pytest
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 
 def test_whatsapp_inbound_image_message(client):
@@ -275,13 +274,7 @@ def test_whatsapp_inbound_empty_entry(client):
 
 def test_whatsapp_inbound_empty_changes(client):
     """Test handling of payload with empty changes array."""
-    payload = {
-        "entry": [
-            {
-                "changes": []
-            }
-        ]
-    }
+    payload = {"entry": [{"changes": []}]}
 
     response = client.post("/webhooks/whatsapp", json=payload)
     assert response.status_code == 200
@@ -303,7 +296,6 @@ def test_whatsapp_inbound_invalid_json(client):
 
 def test_whatsapp_inbound_database_error(client, db):
     """Test handling of database errors."""
-    from app.services.leads import get_or_create_lead
     from sqlalchemy.exc import SQLAlchemyError
 
     # Mock database error

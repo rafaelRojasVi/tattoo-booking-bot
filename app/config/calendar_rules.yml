@@ -1,0 +1,62 @@
+# Calendar Rules Configuration
+# Defines working hours, session blocks, buffers, and timezone for slot suggestions
+
+# Default timezone (for slot suggestions)
+timezone: "Europe/London"  # UK timezone by default
+
+# Working hours by weekday
+# Format: day_name: {start: "HH:MM", end: "HH:MM"}
+# Times are in the configured timezone
+working_hours:
+  monday:
+    start: "10:00"
+    end: "18:00"
+  tuesday:
+    start: "10:00"
+    end: "18:00"
+  wednesday:
+    start: "10:00"
+    end: "18:00"
+  thursday:
+    start: "10:00"
+    end: "18:00"
+  friday:
+    start: "10:00"
+    end: "18:00"
+  saturday:
+    start: "10:00"
+    end: "16:00"
+  sunday:
+    start: null  # Closed on Sunday
+    end: null
+
+# Session duration defaults (in minutes)
+session_durations:
+  default: 180  # 3 hours default
+  by_category:
+    SMALL: 120   # 2 hours
+    MEDIUM: 180  # 3 hours
+    LARGE: 240   # 4 hours
+    XL: 360      # 6 hours (full day)
+
+# Buffer time (in minutes)
+# Time to leave between sessions
+buffer_minutes: 30
+
+# Lookahead window (in days)
+# How far ahead to suggest slots
+lookahead_days: 21
+
+# Minimum advance booking (in hours)
+# Don't suggest slots too soon
+minimum_advance_hours: 24
+
+# Block all-day events
+# If true, days with all-day events are completely blocked
+block_all_day_events: true
+
+# Timezone handling
+# How to handle client timezone vs calendar timezone
+timezone_handling:
+  convert_to_calendar_tz: true  # Convert client times to calendar timezone
+  show_in_client_tz: false      # Show times in client timezone (future feature)

@@ -1,4 +1,5 @@
 import os
+
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
@@ -15,11 +16,9 @@ os.environ.setdefault("STRIPE_WEBHOOK_SECRET", "whsec_test")
 os.environ.setdefault("FRESHA_BOOKING_URL", "https://test.com")
 os.environ.setdefault("WHATSAPP_DRY_RUN", "true")
 
-from app.main import app
 from app.db.base import Base
 from app.db.deps import get_db
-from app.db import models  # Ensure all models are imported
-
+from app.main import app
 
 # Test database URL (in-memory SQLite for fast tests)
 SQLALCHEMY_DATABASE_URL = "sqlite:///:memory:"
@@ -47,6 +46,7 @@ def db():
 @pytest.fixture(scope="function")
 def client(db):
     """Create a test client with database dependency override."""
+
     def override_get_db():
         try:
             yield db

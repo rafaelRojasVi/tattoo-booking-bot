@@ -3,6 +3,7 @@ WhatsApp messaging service with dry-run mode for development.
 """
 
 import logging
+
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
@@ -15,12 +16,12 @@ async def send_whatsapp_message(
 ) -> dict:
     """
     Send a WhatsApp message.
-    
+
     Args:
         to: WhatsApp phone number (with country code, no +)
         message: Message text to send
         dry_run: If True, only log the message (don't actually send)
-        
+
     Returns:
         dict with status and message_id (or None in dry-run)
     """
@@ -32,10 +33,10 @@ async def send_whatsapp_message(
             "to": to,
             "message": message,
         }
-    
+
     try:
         import httpx
-        
+
         url = f"https://graph.facebook.com/v18.0/{settings.whatsapp_phone_number_id}/messages"
         headers = {
             "Authorization": f"Bearer {settings.whatsapp_access_token}",
@@ -47,12 +48,12 @@ async def send_whatsapp_message(
             "type": "text",
             "text": {"body": message},
         }
-        
+
         async with httpx.AsyncClient() as client:
             response = await client.post(url, headers=headers, json=payload)
             response.raise_for_status()
             result = response.json()
-            
+
             return {
                 "status": "sent",
                 "message_id": result.get("messages", [{}])[0].get("id"),
@@ -65,49 +66,30 @@ async def send_whatsapp_message(
 
 def format_summary_message(answers: dict) -> str:
     """
-    Format a structured summary of the consultation.
-    
+    Format a structured summary of the consultation (legacy compatibility).
+
+    For Phase 1, use app.services.summary.format_summary_message() with
+    extract_phase1_summary_context() instead.
+
     Args:
         answers: Dict mapping question_key to answer_text
-        
+
     Returns:
         Formatted summary string
     """
-    summary_lines = [
-        "🎨 *Tattoo Consultation Summary*\n",
-        "Here's what we've captured:\n",
-    ]
-    
-    question_labels = {
-        "idea": "💭 Tattoo Idea",
-        "placement": "📍 Placement",
-        "size": "📏 Size",
-        "style": "🎨 Style",
-        "budget_range": "💰 Budget Range",
-        "reference_images": "🖼️ Reference Images",
-        "preferred_days": "📅 Preferred Days/Times",
-    }
-    
-    for key, label in question_labels.items():
-        if key in answers:
-            answer = answers[key]
-            if answer and answer.lower() not in ["no", "none", "n/a"]:
-                summary_lines.append(f"*{label}:* {answer}")
-    
-    summary_lines.append("\n✅ Perfect! Next step is to secure your booking with a deposit.")
-    summary_lines.append("We'll send you a payment link shortly.")
-    
-    return "\n".join(summary_lines)
+    from app.services.summary import format_summary_message_legacy
+
+    return format_summary_message_legacy(answers)
 
 
 def format_deposit_link_message(checkout_url: str, amount_pence: int) -> str:
     """
     Format message for sending deposit payment link.
-    
+
     Args:
         checkout_url: Stripe checkout URL
         amount_pence: Deposit amount in pence
-        
+
     Returns:
         Formatted message string
     """
@@ -126,10 +108,10 @@ def format_deposit_link_message(checkout_url: str, amount_pence: int) -> str:
 def format_payment_confirmation_message(amount_pence: int) -> str:
     """
     Format message confirming deposit payment.
-    
+
     Args:
         amount_pence: Deposit amount in pence
-        
+
     Returns:
         Formatted message string
     """

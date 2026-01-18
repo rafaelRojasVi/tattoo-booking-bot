@@ -1,7 +1,7 @@
 """
 Tests for admin authentication.
 """
-import pytest
+
 from unittest.mock import patch
 
 
@@ -20,13 +20,13 @@ def test_admin_endpoint_with_correct_api_key(client):
         # Request without API key should fail
         response = client.get("/admin/leads")
         assert response.status_code == 401
-        assert "missing" in response.json()["detail"].lower() or "api key" in response.json()["detail"].lower()
-        
-        # Request with correct API key should work
-        response = client.get(
-            "/admin/leads",
-            headers={"X-Admin-API-Key": "test-secret-key-123"}
+        assert (
+            "missing" in response.json()["detail"].lower()
+            or "api key" in response.json()["detail"].lower()
         )
+
+        # Request with correct API key should work
+        response = client.get("/admin/leads", headers={"X-Admin-API-Key": "test-secret-key-123"})
         assert response.status_code == 200
 
 
@@ -35,10 +35,7 @@ def test_admin_endpoint_with_wrong_api_key(client):
     # Mock settings to require API key
     with patch("app.api.auth.settings.admin_api_key", "test-secret-key-123"):
         # Request with wrong API key should fail
-        response = client.get(
-            "/admin/leads",
-            headers={"X-Admin-API-Key": "wrong-key"}
-        )
+        response = client.get("/admin/leads", headers={"X-Admin-API-Key": "wrong-key"})
         assert response.status_code == 403
         assert "Invalid" in response.json()["detail"]
 
@@ -59,23 +56,24 @@ def test_all_admin_endpoints_protected(client, db):
     with patch("app.api.auth.settings.admin_api_key", "test-key"):
         # Create a test lead
         from app.db.models import Lead
+
         lead = Lead(wa_from="1234567890", status="NEW")
         db.add(lead)
         db.commit()
         db.refresh(lead)
-        
+
         # Test list_leads without auth
         response = client.get("/admin/leads")
         assert response.status_code == 401
-        
+
         # Test get_lead_detail without auth
         response = client.get(f"/admin/leads/{lead.id}")
         assert response.status_code == 401
-        
+
         # Test with auth
         headers = {"X-Admin-API-Key": "test-key"}
         response = client.get("/admin/leads", headers=headers)
         assert response.status_code == 200
-        
+
         response = client.get(f"/admin/leads/{lead.id}", headers=headers)
         assert response.status_code == 200

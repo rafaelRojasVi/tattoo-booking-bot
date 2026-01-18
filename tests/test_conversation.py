@@ -1,19 +1,13 @@
 import pytest
+
 from app.db.models import Lead, LeadAnswer
 from app.services.conversation import (
-    handle_inbound_message,
-    get_lead_summary,
-    STATUS_NEW,
-    STATUS_QUALIFYING,
-    STATUS_PENDING_APPROVAL,
     STATUS_AWAITING_DEPOSIT,
-    STATUS_DEPOSIT_PAID,
-    STATUS_BOOKING_LINK_SENT,
-    STATUS_BOOKED,
-    STATUS_NEEDS_ARTIST_REPLY,
-    STATUS_REJECTED,
-    STATUS_ABANDONED,
-    STATUS_STALE,
+    STATUS_NEW,
+    STATUS_PENDING_APPROVAL,
+    STATUS_QUALIFYING,
+    get_lead_summary,
+    handle_inbound_message,
 )
 from app.services.questions import get_total_questions
 
@@ -26,7 +20,7 @@ async def test_new_lead_starts_qualification(client, db):
     db.add(lead)
     db.commit()
     db.refresh(lead)
-    
+
     # Handle first message
     result = await handle_inbound_message(
         db=db,
@@ -34,7 +28,7 @@ async def test_new_lead_starts_qualification(client, db):
         message_text="Hello, I want a tattoo",
         dry_run=True,
     )
-    
+
     # Should transition to QUALIFYING
     db.refresh(lead)
     assert lead.status == STATUS_QUALIFYING
@@ -52,7 +46,7 @@ async def test_qualifying_lead_saves_answer_and_asks_next(client, db):
     db.add(lead)
     db.commit()
     db.refresh(lead)
-    
+
     # Answer first question
     result = await handle_inbound_message(
         db=db,
@@ -60,7 +54,7 @@ async def test_qualifying_lead_saves_answer_and_asks_next(client, db):
         message_text="I want a dragon tattoo",
         dry_run=True,
     )
-    
+
     # Should save answer and move to next question
     db.refresh(lead)
     assert lead.status == STATUS_QUALIFYING
@@ -68,7 +62,7 @@ async def test_qualifying_lead_saves_answer_and_asks_next(client, db):
     assert result["status"] == "question_sent"
     assert result["saved_answer"]["question"] == "idea"
     assert result["saved_answer"]["answer"] == "I want a dragon tattoo"
-    
+
     # Check answer was saved
     answers = db.query(LeadAnswer).filter(LeadAnswer.lead_id == lead.id).all()
     assert len(answers) == 1
@@ -79,6 +73,8 @@ async def test_qualifying_lead_saves_answer_and_asks_next(client, db):
 @pytest.mark.asyncio
 async def test_complete_qualification_flow(client, db):
     """Test completing the full qualification flow."""
+    from unittest.mock import patch
+
     # Create lead in QUALIFYING state at last question
     lead = Lead(
         wa_from="1234567890",
@@ -87,9 +83,21 @@ async def test_complete_qualification_flow(client, db):
     )
     db.add(lead)
     db.commit()
-    
-    # Add previous answers
-    previous_questions = ["idea", "placement", "size", "style", "budget_range", "reference_images"]
+
+    # Add previous answers (Phase 1 question keys)
+    previous_questions = [
+        "idea",
+        "placement",
+        "dimensions",
+        "style",
+        "complexity",
+        "coverup",
+        "instagram_handle",
+        "location_city",
+        "location_country",
+        "travel_city",
+        "budget",
+    ]
     for i, q_key in enumerate(previous_questions):
         answer = LeadAnswer(
             lead_id=lead.id,
@@ -97,23 +105,51 @@ async def test_complete_qualification_flow(client, db):
             answer_text=f"Answer for {q_key}",
         )
         db.add(answer)
+    # Add location_country as "United Kingdom" to ensure city is on tour
+    location_answer = (
+        db.query(LeadAnswer)
+        .filter(LeadAnswer.lead_id == lead.id, LeadAnswer.question_key == "location_country")
+        .first()
+    )
+    if location_answer:
+        location_answer.answer_text = "United Kingdom"
+    else:
+        location_answer = LeadAnswer(
+            lead_id=lead.id, question_key="location_country", answer_text="United Kingdom"
+        )
+        db.add(location_answer)
+    # Add location_city as "London" to ensure it's on tour
+    city_answer = (
+        db.query(LeadAnswer)
+        .filter(LeadAnswer.lead_id == lead.id, LeadAnswer.question_key == "location_city")
+        .first()
+    )
+    if city_answer:
+        city_answer.answer_text = "London"
+    else:
+        city_answer = LeadAnswer(
+            lead_id=lead.id, question_key="location_city", answer_text="London"
+        )
+        db.add(city_answer)
     db.commit()
     db.refresh(lead)
-    
-    # Answer last question
-    result = await handle_inbound_message(
-        db=db,
-        lead=lead,
-        message_text="Monday and Wednesday afternoons",
-        dry_run=True,
-    )
-    
-    # Should complete and move to PENDING_APPROVAL (not AWAITING_DEPOSIT)
-    db.refresh(lead)
-    assert lead.status == STATUS_PENDING_APPROVAL
-    assert result["status"] == "completed"
-    assert "summary" in result
-    # Note: Updated question count due to new questions (location, size_category, etc.)
+
+    # Mock tour service to ensure city is on tour
+    with patch("app.services.tour_service.is_city_on_tour", return_value=True):
+        # Answer last question (timing)
+        result = await handle_inbound_message(
+            db=db,
+            lead=lead,
+            message_text="Next month",
+            dry_run=True,
+        )
+
+        # Should complete and move to PENDING_APPROVAL (not AWAITING_DEPOSIT)
+        db.refresh(lead)
+        assert lead.status == STATUS_PENDING_APPROVAL
+        assert result["status"] == "completed"
+        assert "summary" in result
+        # Note: Updated question count due to new questions (location, size_category, etc.)
 
 
 @pytest.mark.asyncio
@@ -127,14 +163,14 @@ async def test_awaiting_deposit_acknowledges_message(client, db):
     db.add(lead)
     db.commit()
     db.refresh(lead)
-    
+
     result = await handle_inbound_message(
         db=db,
         lead=lead,
         message_text="When can I pay?",
         dry_run=True,
     )
-    
+
     assert result["status"] == "awaiting_deposit"
     assert "deposit" in result["message"].lower()
 
@@ -145,7 +181,7 @@ def test_get_lead_summary_with_answers(client, db):
     lead = Lead(wa_from="1234567890", status=STATUS_QUALIFYING, current_step=2)
     db.add(lead)
     db.commit()
-    
+
     # Add some answers
     answers_data = [
         ("idea", "Dragon tattoo"),
@@ -159,10 +195,10 @@ def test_get_lead_summary_with_answers(client, db):
         )
         db.add(answer)
     db.commit()
-    
+
     # Get summary
     summary = get_lead_summary(db, lead.id)
-    
+
     assert summary["lead_id"] == lead.id
     assert summary["status"] == STATUS_QUALIFYING
     assert summary["current_step"] == 2
@@ -199,15 +235,15 @@ async def test_webhook_integration_new_lead(client, db):
             }
         ]
     }
-    
+
     response = client.post("/webhooks/whatsapp", json=payload)
     assert response.status_code == 200
     data = response.json()
-    
+
     assert data["received"] is True
     assert "conversation" in data
     assert data["conversation"]["status"] == "question_sent"
-    
+
     # Check lead was created and updated
     lead = db.query(Lead).filter(Lead.wa_from == "1234567890").first()
     assert lead is not None
@@ -221,7 +257,7 @@ async def test_webhook_integration_qualifying_lead(client, db):
     lead = Lead(wa_from="1234567890", status=STATUS_QUALIFYING, current_step=0)
     db.add(lead)
     db.commit()
-    
+
     payload = {
         "entry": [
             {
@@ -240,15 +276,15 @@ async def test_webhook_integration_qualifying_lead(client, db):
             }
         ]
     }
-    
+
     response = client.post("/webhooks/whatsapp", json=payload)
     assert response.status_code == 200
     data = response.json()
-    
+
     assert data["received"] is True
     assert "conversation" in data
     assert data["conversation"]["status"] == "question_sent"
-    
+
     # Check answer was saved
     db.refresh(lead)
     answers = db.query(LeadAnswer).filter(LeadAnswer.lead_id == lead.id).all()

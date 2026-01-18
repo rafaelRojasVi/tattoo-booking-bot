@@ -1,13 +1,16 @@
 """
 Tests for STOP/UNSUBSCRIBE opt-out mechanism.
 """
+
+from datetime import UTC
+
 import pytest
+
 from app.db.models import Lead
 from app.services.conversation import (
-    handle_inbound_message,
-    STATUS_QUALIFYING,
     STATUS_OPTOUT,
-    STATUS_NEW,
+    STATUS_QUALIFYING,
+    handle_inbound_message,
 )
 
 
@@ -18,14 +21,14 @@ async def test_stop_keyword_opts_out(db):
     db.add(lead)
     db.commit()
     db.refresh(lead)
-    
+
     result = await handle_inbound_message(
         db=db,
         lead=lead,
         message_text="STOP",
         dry_run=True,
     )
-    
+
     db.refresh(lead)
     assert lead.status == STATUS_OPTOUT
     assert result["status"] == "opted_out"
@@ -39,14 +42,14 @@ async def test_unsubscribe_keyword_opts_out(db):
     db.add(lead)
     db.commit()
     db.refresh(lead)
-    
+
     result = await handle_inbound_message(
         db=db,
         lead=lead,
         message_text="UNSUBSCRIBE",
         dry_run=True,
     )
-    
+
     db.refresh(lead)
     assert lead.status == STATUS_OPTOUT
 
@@ -55,20 +58,20 @@ async def test_unsubscribe_keyword_opts_out(db):
 async def test_opt_out_variations(db):
     """Test various opt-out keyword variations."""
     variations = ["STOP", "UNSUBSCRIBE", "OPT OUT", "OPTOUT"]
-    
+
     for keyword in variations:
         lead = Lead(wa_from=f"1234567890_{keyword}", status=STATUS_QUALIFYING, current_step=1)
         db.add(lead)
         db.commit()
         db.refresh(lead)
-        
+
         result = await handle_inbound_message(
             db=db,
             lead=lead,
             message_text=keyword,
             dry_run=True,
         )
-        
+
         db.refresh(lead)
         assert lead.status == STATUS_OPTOUT, f"Failed for keyword: {keyword}"
 
@@ -77,19 +80,19 @@ async def test_opt_out_variations(db):
 async def test_opted_out_lead_blocks_messages(db):
     """Test that opted-out leads don't receive automated messages."""
     from app.services.whatsapp_window import send_with_window_check
-    
+
     lead = Lead(wa_from="1234567890", status=STATUS_OPTOUT)
     db.add(lead)
     db.commit()
     db.refresh(lead)
-    
+
     result = await send_with_window_check(
         db=db,
         lead=lead,
         message="This should be blocked",
         dry_run=True,
     )
-    
+
     assert result["status"] == "opted_out"
     assert "blocked" in result.get("warning", "").lower()
 
@@ -101,14 +104,14 @@ async def test_opted_out_can_opt_back_in(db):
     db.add(lead)
     db.commit()
     db.refresh(lead)
-    
+
     result = await handle_inbound_message(
         db=db,
         lead=lead,
         message_text="START",
         dry_run=True,
     )
-    
+
     db.refresh(lead)
     # After START, status transitions to NEW then immediately to QUALIFYING (correct behavior)
     assert lead.status == STATUS_QUALIFYING
@@ -122,14 +125,14 @@ async def test_opted_out_other_messages_acknowledge(db):
     db.add(lead)
     db.commit()
     db.refresh(lead)
-    
+
     result = await handle_inbound_message(
         db=db,
         lead=lead,
         message_text="Hello?",
         dry_run=True,
     )
-    
+
     assert result["status"] == "opted_out"
     assert "unsubscribed" in result["message"].lower()
     assert "START" in result["message"]
@@ -138,24 +141,25 @@ async def test_opted_out_other_messages_acknowledge(db):
 @pytest.mark.asyncio
 async def test_reminder_skips_opted_out(db):
     """Test that reminders skip opted-out leads."""
+    from datetime import datetime, timedelta
+
     from app.services.reminders import check_and_send_qualifying_reminder
-    from datetime import datetime, timedelta, timezone
-    
+
     lead = Lead(
         wa_from="1234567890",
         status=STATUS_OPTOUT,  # Opted out
-        last_client_message_at=datetime.now(timezone.utc) - timedelta(hours=25),
+        last_client_message_at=datetime.now(UTC) - timedelta(hours=25),
     )
     db.add(lead)
     db.commit()
     db.refresh(lead)
-    
+
     result = check_and_send_qualifying_reminder(
         db=db,
         lead=lead,
-        hours_since_last_message=24,
+        reminder_number=1,
         dry_run=True,
     )
-    
+
     assert result["status"] == "skipped"
     assert "opted out" in result["reason"].lower()

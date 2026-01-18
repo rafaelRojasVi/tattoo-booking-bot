@@ -1,11 +1,8 @@
-import pytest
-
-
 def test_whatsapp_verify_success(client):
     """Test WhatsApp webhook verification succeeds with correct token."""
     # Import settings after env vars are set in conftest
     from app.core.config import settings
-    
+
     response = client.get(
         "/webhooks/whatsapp",
         params={
@@ -20,8 +17,7 @@ def test_whatsapp_verify_success(client):
 
 def test_whatsapp_verify_fails_wrong_token(client):
     """Test WhatsApp webhook verification fails with wrong token."""
-    from app.core.config import settings
-    
+
     response = client.get(
         "/webhooks/whatsapp",
         params={
@@ -36,7 +32,7 @@ def test_whatsapp_verify_fails_wrong_token(client):
 def test_whatsapp_verify_fails_wrong_mode(client):
     """Test WhatsApp webhook verification fails with wrong mode."""
     from app.core.config import settings
-    
+
     response = client.get(
         "/webhooks/whatsapp",
         params={
@@ -117,17 +113,7 @@ def test_whatsapp_inbound_existing_lead(client, db):
 def test_whatsapp_inbound_non_message_event(client):
     """Test that non-message events (delivery receipts) are handled gracefully."""
     payload = {
-        "entry": [
-            {
-                "changes": [
-                    {
-                        "value": {
-                            "statuses": [{"id": "123", "status": "delivered"}]
-                        }
-                    }
-                ]
-            }
-        ]
+        "entry": [{"changes": [{"value": {"statuses": [{"id": "123", "status": "delivered"}]}}]}]
     }
 
     response = client.post("/webhooks/whatsapp", json=payload)

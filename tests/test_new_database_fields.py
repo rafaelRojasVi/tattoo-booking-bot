@@ -1,8 +1,9 @@
 """
 Tests for new database fields added in v1.4 proposal alignment.
 """
+
 import pytest
-from datetime import datetime, timezone
+
 from app.db.models import Lead, LeadAnswer, ProcessedMessage
 
 
@@ -12,7 +13,7 @@ def test_lead_new_fields_are_nullable(db):
     db.add(lead)
     db.commit()
     db.refresh(lead)
-    
+
     # All new fields should be None by default
     assert lead.location_city is None
     assert lead.location_country is None
@@ -50,7 +51,7 @@ def test_lead_can_set_new_fields(db):
     db.add(lead)
     db.commit()
     db.refresh(lead)
-    
+
     assert lead.location_city == "London"
     assert lead.location_country == "United Kingdom"
     assert lead.region_bucket == "UK"
@@ -65,7 +66,7 @@ def test_lead_answer_media_fields(db):
     db.add(lead)
     db.commit()
     db.refresh(lead)
-    
+
     answer = LeadAnswer(
         lead_id=lead.id,
         question_key="reference_images",
@@ -77,7 +78,7 @@ def test_lead_answer_media_fields(db):
     db.add(answer)
     db.commit()
     db.refresh(answer)
-    
+
     assert answer.message_id == "wamid.img123"
     assert answer.media_id == "media123"
     assert answer.media_url == "https://example.com/media.jpg"
@@ -89,7 +90,7 @@ def test_processed_message_model(db):
     db.add(lead)
     db.commit()
     db.refresh(lead)
-    
+
     processed = ProcessedMessage(
         message_id="wamid.test123",
         lead_id=lead.id,
@@ -97,7 +98,7 @@ def test_processed_message_model(db):
     db.add(processed)
     db.commit()
     db.refresh(processed)
-    
+
     assert processed.id is not None
     assert processed.message_id == "wamid.test123"
     assert processed.lead_id == lead.id
@@ -112,16 +113,16 @@ def test_processed_message_unique_constraint(db):
     )
     db.add(processed1)
     db.commit()
-    
+
     # Try to add duplicate
     processed2 = ProcessedMessage(
         message_id="wamid.unique123",  # Same ID
         lead_id=None,
     )
     db.add(processed2)
-    
+
     # Should raise integrity error
     with pytest.raises(Exception):  # SQLAlchemy IntegrityError
         db.commit()
-    
+
     db.rollback()

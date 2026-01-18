@@ -1,4 +1,4 @@
-FROM python:3.11-slim
+FROM python:3.11.9-slim
 
 # Build arguments for versioning
 ARG VERSION=dev

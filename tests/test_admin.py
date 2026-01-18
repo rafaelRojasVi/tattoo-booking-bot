@@ -1,4 +1,5 @@
-import pytest
+from datetime import UTC
+
 from app.db.models import Lead
 
 
@@ -11,13 +12,14 @@ def test_list_leads_empty(client):
 
 def test_list_leads_with_data(client, db):
     """Test listing leads returns all leads ordered by creation date."""
-    from datetime import datetime, timezone
-    
+    from datetime import datetime
+
     # Create test leads with explicit timestamps to ensure ordering
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     lead1 = Lead(wa_from="1111111111", status="NEW", created_at=now)
     # Use timedelta to avoid second overflow
     from datetime import timedelta
+
     lead2 = Lead(wa_from="2222222222", status="CONTACTED", created_at=now + timedelta(seconds=1))
     lead3 = Lead(wa_from="3333333333", status="NEW", created_at=now + timedelta(seconds=2))
 
