@@ -11,6 +11,7 @@ from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from fastapi import BackgroundTasks
 
 from app.api.webhooks import stripe_webhook, whatsapp_inbound
 from app.db.models import LeadAnswer, ProcessedMessage
@@ -77,11 +78,14 @@ async def test_duplicate_whatsapp_message_idempotent(db):
         }
 
         # Mock request
+        import json
+
         mock_request = MagicMock()
-        mock_request.json = AsyncMock(return_value=payload)
+        mock_request.body = AsyncMock(return_value=json.dumps(payload).encode("utf-8"))
+        mock_request.headers = {"X-Hub-Signature-256": "test_signature"}
 
         # Send first message
-        result1 = await whatsapp_inbound(mock_request, db=db)
+        result1 = await whatsapp_inbound(mock_request, BackgroundTasks(), db=db)
         db.refresh(lead)
 
         status_after_first = lead.status
@@ -89,7 +93,7 @@ async def test_duplicate_whatsapp_message_idempotent(db):
         whatsapp_call_count_first = mock_whatsapp.call_count
 
         # Send duplicate message (same message_id)
-        result2 = await whatsapp_inbound(mock_request, db=db)
+        result2 = await whatsapp_inbound(mock_request, BackgroundTasks(), db=db)
         db.refresh(lead)
 
         status_after_second = lead.status
@@ -166,7 +170,7 @@ async def test_duplicate_stripe_webhook_idempotent(db):
             "app.services.stripe_service.verify_webhook_signature", return_value=webhook_event
         ):
             # Send first webhook
-            result1 = await stripe_webhook(mock_request, db=db)
+            result1 = await stripe_webhook(mock_request, BackgroundTasks(), db=db)
             db.refresh(lead)
 
             status_after_first = lead.status
@@ -174,7 +178,7 @@ async def test_duplicate_stripe_webhook_idempotent(db):
             whatsapp_call_count_first = mock_whatsapp.call_count
 
             # Send duplicate webhook (same event_id)
-            result2 = await stripe_webhook(mock_request, db=db)
+            result2 = await stripe_webhook(mock_request, BackgroundTasks(), db=db)
             db.refresh(lead)
 
             status_after_second = lead.status
@@ -344,12 +348,15 @@ async def test_duplicate_whatsapp_exactly_one_state_transition(db):
             ]
         }
 
+        import json
+
         mock_request = MagicMock()
-        mock_request.json = AsyncMock(return_value=payload)
+        mock_request.body = AsyncMock(return_value=json.dumps(payload).encode("utf-8"))
+        mock_request.headers = {"X-Hub-Signature-256": "test_signature"}
 
         # Process message 3 times (simulating retries/duplicates)
         for i in range(3):
-            await whatsapp_inbound(mock_request, db=db)
+            await whatsapp_inbound(mock_request, BackgroundTasks(), db=db)
             db.refresh(lead)
 
         # After all duplicates, status should have advanced only once (from NEW to QUALIFYING)
@@ -417,7 +424,7 @@ async def test_duplicate_stripe_exactly_one_transition(db):
         ):
             # Process webhook 3 times (simulating retries/duplicates)
             for i in range(3):
-                await stripe_webhook(mock_request, db=db)
+                await stripe_webhook(mock_request, BackgroundTasks(), db=db)
                 db.refresh(lead)
 
         # After all duplicates, status should have transitioned exactly once

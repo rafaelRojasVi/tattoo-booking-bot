@@ -190,6 +190,7 @@ def execute_action(
             STATUS_AWAITING_DEPOSIT,
             STATUS_BOOKED,
             STATUS_BOOKING_LINK_SENT,
+            STATUS_BOOKING_PENDING,
             STATUS_PENDING_APPROVAL,
             STATUS_REJECTED,
         )
@@ -243,8 +244,20 @@ def execute_action(
                 )
             from app.core.config import settings
 
-            amount_pence = settings.stripe_deposit_amount_pence
+            # Lock deposit amount: prefer deposit_amount_pence if already set, else estimated_deposit_amount
+            if lead.deposit_amount_pence:
+                amount_pence = lead.deposit_amount_pence
+            elif lead.estimated_deposit_amount:
+                amount_pence = lead.estimated_deposit_amount
+            else:
+                # Fallback to default
+                amount_pence = settings.stripe_deposit_amount_pence
+
+            # Lock the deposit amount and set audit fields
             lead.deposit_amount_pence = amount_pence
+            lead.estimated_deposit_amount = amount_pence  # Ensure it's set
+            lead.deposit_amount_locked_at = func.now()  # Lock timestamp
+            lead.deposit_rule_version = settings.deposit_rule_version  # Store rule version
             lead.last_admin_action = "send_deposit"
             lead.last_admin_action_at = func.now()
             db.commit()
@@ -275,7 +288,7 @@ def execute_action(
             )
 
         elif action_token.action_type == "mark_booked":
-            if lead.status != STATUS_BOOKING_LINK_SENT:
+            if lead.status not in (STATUS_BOOKING_LINK_SENT, STATUS_BOOKING_PENDING):
                 raise HTTPException(
                     status_code=400, detail=f"Cannot mark lead as booked in status '{lead.status}'"
                 )

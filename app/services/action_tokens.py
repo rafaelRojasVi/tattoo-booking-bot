@@ -187,10 +187,10 @@ def generate_action_tokens_for_lead(
             generate_action_token(db, lead_id, "send_booking_link", "DEPOSIT_PAID")
         )
 
-    elif lead_status == "BOOKING_LINK_SENT":
-        # Can mark as booked
+    elif lead_status in ("BOOKING_LINK_SENT", "BOOKING_PENDING"):
+        # Can mark as booked (BOOKING_PENDING = Phase 1 status after deposit paid)
         tokens["mark_booked"] = get_action_url(
-            generate_action_token(db, lead_id, "mark_booked", "BOOKING_LINK_SENT")
+            generate_action_token(db, lead_id, "mark_booked", lead_status)
         )
 
     return tokens

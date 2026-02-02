@@ -134,3 +134,201 @@ def test_whatsapp_inbound_malformed_payload(client):
     assert data["received"] is True
     # Empty entry array returns "empty-entry" type
     assert data["type"] in ["non-message-event", "empty-entry", "malformed-payload"]
+
+
+def test_whatsapp_signature_verification_valid(client, monkeypatch):
+    """Test that valid WhatsApp webhook signature is accepted."""
+    import hashlib
+    import hmac
+    import json
+
+    from app.core.config import settings
+
+    # Set app secret for testing
+    test_app_secret = "test_app_secret_12345"
+    monkeypatch.setattr(settings, "whatsapp_app_secret", test_app_secret)
+
+    payload = {
+        "entry": [
+            {
+                "changes": [
+                    {
+                        "value": {
+                            "messages": [
+                                {
+                                    "from": "1234567890",
+                                    "id": "wamid.test123",
+                                    "text": {"body": "Hello"},
+                                }
+                            ]
+                        }
+                    }
+                ]
+            }
+        ]
+    }
+
+    # Convert payload to bytes
+    payload_bytes = json.dumps(payload).encode("utf-8")
+
+    # Compute HMAC-SHA256 signature
+    signature = hmac.new(test_app_secret.encode("utf-8"), payload_bytes, hashlib.sha256).hexdigest()
+    signature_header = f"sha256={signature}"
+
+    # Send request with signature header
+    response = client.post(
+        "/webhooks/whatsapp",
+        content=payload_bytes,
+        headers={"X-Hub-Signature-256": signature_header, "Content-Type": "application/json"},
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["received"] is True
+    assert data["wa_from"] == "1234567890"
+
+
+def test_whatsapp_signature_verification_invalid(client, monkeypatch):
+    """Test that invalid WhatsApp webhook signature is rejected with 403."""
+    import json
+
+    # Force verification to run and fail (patch at point of use so webhook sees it)
+    def _verify_fail(_payload: bytes, _sig: str | None) -> bool:
+        return False
+
+    monkeypatch.setattr(
+        "app.api.webhooks.verify_whatsapp_signature",
+        _verify_fail,
+    )
+
+    payload = {
+        "entry": [
+            {
+                "changes": [
+                    {
+                        "value": {
+                            "messages": [
+                                {
+                                    "from": "1234567890",
+                                    "id": "wamid.test123",
+                                    "text": {"body": "Hello"},
+                                }
+                            ]
+                        }
+                    }
+                ]
+            }
+        ]
+    }
+
+    # Convert payload to bytes
+    payload_bytes = json.dumps(payload).encode("utf-8")
+
+    # Use invalid signature
+    invalid_signature = "sha256=0000000000000000000000000000000000000000000000000000000000000000"
+
+    # Send request with invalid signature header
+    response = client.post(
+        "/webhooks/whatsapp",
+        content=payload_bytes,
+        headers={"X-Hub-Signature-256": invalid_signature, "Content-Type": "application/json"},
+    )
+
+    assert response.status_code == 403
+    data = response.json()
+    assert data["received"] is False
+    assert "Invalid webhook signature" in data["error"]
+
+
+def test_whatsapp_signature_verification_missing_header(client, monkeypatch):
+    """Test that missing signature header is rejected with 403 when app secret is set."""
+    import json
+
+    # Force verification to run and fail (patch at point of use so webhook sees it)
+    def _verify_fail(_payload: bytes, _sig: str | None) -> bool:
+        return False
+
+    monkeypatch.setattr(
+        "app.api.webhooks.verify_whatsapp_signature",
+        _verify_fail,
+    )
+
+    payload = {
+        "entry": [
+            {
+                "changes": [
+                    {
+                        "value": {
+                            "messages": [
+                                {
+                                    "from": "1234567890",
+                                    "id": "wamid.test123",
+                                    "text": {"body": "Hello"},
+                                }
+                            ]
+                        }
+                    }
+                ]
+            }
+        ]
+    }
+
+    # Convert payload to bytes
+    payload_bytes = json.dumps(payload).encode("utf-8")
+
+    # Send request without signature header
+    response = client.post(
+        "/webhooks/whatsapp",
+        content=payload_bytes,
+        headers={"Content-Type": "application/json"},
+    )
+
+    assert response.status_code == 403
+    data = response.json()
+    assert data["received"] is False
+    assert "Invalid webhook signature" in data["error"]
+
+
+def test_whatsapp_signature_verification_no_app_secret_allows_request(client, monkeypatch):
+    """Test that when app secret is not configured, requests are allowed (dev mode)."""
+    import json
+
+    from app.core.config import settings
+
+    # Ensure app secret is not set
+    monkeypatch.setattr(settings, "whatsapp_app_secret", None)
+
+    payload = {
+        "entry": [
+            {
+                "changes": [
+                    {
+                        "value": {
+                            "messages": [
+                                {
+                                    "from": "1234567890",
+                                    "id": "wamid.test123",
+                                    "text": {"body": "Hello"},
+                                }
+                            ]
+                        }
+                    }
+                ]
+            }
+        ]
+    }
+
+    # Convert payload to bytes
+    payload_bytes = json.dumps(payload).encode("utf-8")
+
+    # Send request without signature header (should be allowed in dev mode)
+    response = client.post(
+        "/webhooks/whatsapp",
+        content=payload_bytes,
+        headers={"Content-Type": "application/json"},
+    )
+
+    # Should succeed when app secret is not configured
+    assert response.status_code == 200
+    data = response.json()
+    assert data["received"] is True

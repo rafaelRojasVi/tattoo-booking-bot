@@ -25,6 +25,32 @@ async def send_whatsapp_message(
     Returns:
         dict with status and message_id (or None in dry-run)
     """
+    # Policy guard: Check for missing credentials
+    if not dry_run:
+        if not settings.whatsapp_access_token or settings.whatsapp_access_token in [
+            "",
+            "test_token",
+        ]:
+            logger.error("WhatsApp access token missing - cannot send message")
+            raise ValueError("WhatsApp access token not configured. Cannot send message.")
+
+        if not settings.whatsapp_phone_number_id or settings.whatsapp_phone_number_id in [
+            "",
+            "test_id",
+        ]:
+            logger.error("WhatsApp phone number ID missing - cannot send message")
+            raise ValueError("WhatsApp phone number ID not configured. Cannot send message.")
+
+    # Force dry-run in tests or if credentials are placeholders/missing
+    import os
+
+    if (
+        os.environ.get("PYTEST_CURRENT_TEST")
+        or not settings.whatsapp_access_token
+        or settings.whatsapp_access_token in ["test_token", ""]
+    ):
+        dry_run = True
+
     if dry_run:
         logger.info(f"[DRY-RUN] Would send WhatsApp message to {to}: {message}")
         return {
@@ -35,7 +61,7 @@ async def send_whatsapp_message(
         }
 
     try:
-        import httpx
+        from app.services.http_client import create_httpx_client
 
         url = f"https://graph.facebook.com/v18.0/{settings.whatsapp_phone_number_id}/messages"
         headers = {
@@ -49,7 +75,7 @@ async def send_whatsapp_message(
             "text": {"body": message},
         }
 
-        async with httpx.AsyncClient() as client:
+        async with create_httpx_client() as client:
             response = await client.post(url, headers=headers, json=payload)
             response.raise_for_status()
             result = response.json()
@@ -61,6 +87,9 @@ async def send_whatsapp_message(
             }
     except Exception as e:
         logger.error(f"Failed to send WhatsApp message: {e}")
+        # Log system event (if db session available - async context may not have it)
+        # Note: This is called from async context, so we can't easily access db here
+        # The calling code should log the event if it has db access
         raise
 
 
@@ -82,44 +111,52 @@ def format_summary_message(answers: dict) -> str:
     return format_summary_message_legacy(answers)
 
 
-def format_deposit_link_message(checkout_url: str, amount_pence: int) -> str:
+def format_deposit_link_message(
+    checkout_url: str,
+    amount_pence: int,
+    lead_id: int | None = None,
+) -> str:
     """
     Format message for sending deposit payment link.
 
     Args:
         checkout_url: Stripe checkout URL
         amount_pence: Deposit amount in pence
+        lead_id: Lead ID for deterministic variant selection
 
     Returns:
         Formatted message string
     """
+    from app.services.message_composer import render_message
+
     amount_gbp = amount_pence / 100
-    message = (
-        f"💳 *Deposit Payment Link*\n\n"
-        f"Great news! Your booking request has been approved.\n\n"
-        f"To secure your booking, please pay the deposit of *£{amount_gbp:.2f}* using the link below:\n\n"
-        f"{checkout_url}\n\n"
-        f"Once your deposit is confirmed, I'll send you a booking link to schedule your appointment.\n\n"
-        f"Thanks! 🙏"
+    return render_message(
+        "deposit_link",
+        lead_id=lead_id,
+        checkout_url=checkout_url,
+        amount_gbp=amount_gbp,
     )
-    return message
 
 
-def format_payment_confirmation_message(amount_pence: int) -> str:
+def format_payment_confirmation_message(
+    amount_pence: int,
+    lead_id: int | None = None,
+) -> str:
     """
     Format message confirming deposit payment.
 
     Args:
         amount_pence: Deposit amount in pence
+        lead_id: Lead ID for deterministic variant selection
 
     Returns:
         Formatted message string
     """
+    from app.services.message_composer import render_message
+
     amount_gbp = amount_pence / 100
-    message = (
-        f"✅ *Deposit Confirmed!*\n\n"
-        f"Thank you! Your deposit of *£{amount_gbp:.2f}* has been received.\n\n"
-        f"I'll send you a booking link shortly so you can schedule your appointment.\n\n"
-        f"Looking forward to working with you! 🎨"
+    return render_message(
+        "payment_confirmation",
+        lead_id=lead_id,
+        amount_gbp=amount_gbp,
     )
-    return message

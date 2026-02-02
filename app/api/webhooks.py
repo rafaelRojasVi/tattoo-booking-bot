@@ -1,8 +1,7 @@
-import asyncio
 import logging
 from datetime import UTC
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, Response
 from fastapi.responses import JSONResponse
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -13,13 +12,15 @@ from app.db.models import Lead, ProcessedMessage
 from app.services.conversation import (
     STATUS_AWAITING_DEPOSIT,
     STATUS_DEPOSIT_PAID,
+    STATUS_NEEDS_ARTIST_REPLY,
     handle_inbound_message,
 )
 from app.services.leads import get_or_create_lead
-from app.services.messaging import format_payment_confirmation_message, send_whatsapp_message
-from app.services.safety import check_and_record_processed_event, update_lead_status_if_matches
+from app.services.messaging import format_payment_confirmation_message
+from app.services.safety import update_lead_status_if_matches
 from app.services.sheets import log_lead_to_sheets
 from app.services.stripe_service import verify_webhook_signature
+from app.services.whatsapp_verification import verify_whatsapp_signature
 
 logger = logging.getLogger(__name__)
 
@@ -38,10 +39,51 @@ def whatsapp_verify(
 
 
 @router.post("/whatsapp")
-async def whatsapp_inbound(request: Request, db: Session = Depends(get_db)):
+async def whatsapp_inbound(
+    request: Request,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+):
+    # Generate correlation ID for this inbound event
+    import uuid
+
+    correlation_id = str(uuid.uuid4())
+
+    # Log structured event with correlation ID
+    logger.info(
+        f"whatsapp.inbound_received correlation_id={correlation_id}",
+        extra={
+            "correlation_id": correlation_id,
+            "event_type": "whatsapp.inbound_received",
+        },
+    )
+
+    # Get raw body for signature verification (must read before parsing JSON)
+    raw_body = await request.body()
+
+    # Verify webhook signature
+    signature_header = request.headers.get("X-Hub-Signature-256")
+    if not verify_whatsapp_signature(raw_body, signature_header):
+        logger.warning("WhatsApp webhook signature verification failed - rejecting request")
+        # Log system event
+        from app.services.system_event_service import warn
+
+        warn(
+            db=db,
+            event_type="whatsapp.signature_verification_failure",
+            lead_id=None,
+            payload={"has_signature_header": signature_header is not None},
+        )
+        return JSONResponse(
+            status_code=403, content={"received": False, "error": "Invalid webhook signature"}
+        )
+
+    # Parse JSON payload after signature verification
     try:
-        payload = await request.json()
-    except ValueError as e:
+        import json
+
+        payload = json.loads(raw_body.decode("utf-8"))
+    except (ValueError, json.JSONDecodeError) as e:
         # Invalid JSON payload
         logger.warning(f"Invalid JSON payload in WhatsApp webhook: {e}")
         return JSONResponse(
@@ -83,11 +125,15 @@ async def whatsapp_inbound(request: Request, db: Session = Depends(get_db)):
             message_type = message.get("type", "text")  # Default to text if not specified
 
             # Extract text from different message types
+            media_id = None
             if message_type == "text":
                 text = (message.get("text") or {}).get("body")
             elif message_type in ["image", "video", "audio", "document"]:
                 # Media messages - extract caption if available
                 text = message.get("caption") or f"[{message_type} message]"
+                # Extract media ID for reference images
+                media_data = message.get(message_type, {})
+                media_id = media_data.get("id") if isinstance(media_data, dict) else None
             elif message_type == "location":
                 location = message.get("location", {})
                 text = f"[Location: {location.get('latitude')}, {location.get('longitude')}]"
@@ -141,6 +187,64 @@ async def whatsapp_inbound(request: Request, db: Session = Depends(get_db)):
             content={"received": False, "error": "Database error", "detail": str(e)},
         )
 
+    # Pilot mode check: if enabled, only allowlisted numbers can start consultation
+    if settings.pilot_mode_enabled:
+        # Parse allowlist (comma-separated, strip whitespace)
+        allowlist_numbers = [
+            num.strip() for num in settings.pilot_allowlist_numbers.split(",") if num.strip()
+        ]
+
+        if wa_from not in allowlist_numbers:
+            # Number not allowlisted - send polite message and log event
+            pilot_message = (
+                "Thank you for your interest! We're currently in pilot mode with limited availability. "
+                "We'll be in touch soon when we're ready to accept new bookings. "
+                "Thank you for your patience!"
+            )
+
+            # Send polite message (async function in async context)
+            try:
+                from app.services.messaging import send_whatsapp_message
+
+                await send_whatsapp_message(
+                    to=wa_from,
+                    message=pilot_message,
+                    dry_run=settings.whatsapp_dry_run,
+                )
+            except Exception as e:
+                logger.error(f"Failed to send pilot mode message to {wa_from}: {e}")
+
+            # Log system event
+            from app.services.system_event_service import info
+
+            info(
+                db=db,
+                event_type="pilot_mode.blocked",
+                lead_id=lead.id if lead else None,
+                payload={
+                    "wa_from": wa_from,
+                    "allowlist_numbers": allowlist_numbers,
+                },
+            )
+
+            # Mark message as processed (idempotency) but don't start consultation
+            if message_id:
+                processed = ProcessedMessage(
+                    message_id=message_id,
+                    event_type="whatsapp.message",
+                    lead_id=lead.id if lead else None,
+                )
+                db.add(processed)
+                db.commit()
+
+            return {
+                "received": True,
+                "type": "pilot_mode_blocked",
+                "lead_id": lead.id if lead else None,
+                "wa_from": wa_from,
+                "message": "Pilot mode: number not in allowlist",
+            }
+
     # Handle the conversation flow (only if we have text to process)
     if text:
         try:
@@ -172,14 +276,18 @@ async def whatsapp_inbound(request: Request, db: Session = Depends(get_db)):
                         }
 
             # Use dry_run setting from config (defaults to True)
+            has_media = bool(media_id and message_type in ["image", "document"])
             conversation_result = await handle_inbound_message(
                 db=db,
                 lead=lead,
                 message_text=text,
                 dry_run=settings.whatsapp_dry_run,
+                has_media=has_media,
             )
 
-            # Mark message as processed (idempotency)
+            # CRITICAL FIX: Mark message as processed ONLY after successful processing
+            # This prevents dropped events if we crash before finishing side effects
+            # If we crash here, WhatsApp will retry and we'll process it again (correct behavior)
             if message_id:
                 processed = ProcessedMessage(
                     message_id=message_id,
@@ -188,6 +296,30 @@ async def whatsapp_inbound(request: Request, db: Session = Depends(get_db)):
                 )
                 db.add(processed)
                 db.commit()
+
+            # Create Attachment record for media messages (reference images)
+            if media_id and message_type in ["image", "document"]:
+                from app.db.models import Attachment
+
+                # Create Attachment with PENDING status
+                attachment = Attachment(
+                    lead_id=lead.id,
+                    whatsapp_media_id=media_id,
+                    upload_status="PENDING",
+                    upload_attempts=0,
+                    provider="supabase",
+                    content_type=None,  # Will be determined during download
+                )
+                db.add(attachment)
+                db.commit()
+                db.refresh(attachment)
+
+                # Schedule background task to attempt upload once
+                # Sweeper will handle retries if this fails
+                # Use job wrapper since background tasks run in separate context
+                from app.services.media_upload import attempt_upload_attachment_job
+
+                background_tasks.add_task(attempt_upload_attachment_job, attachment.id)
 
             return {
                 "received": True,
@@ -206,6 +338,20 @@ async def whatsapp_inbound(request: Request, db: Session = Depends(get_db)):
                 f"wa_from={wa_from}, error_type={type(e).__name__}: {str(e)}",
                 exc_info=True,
             )
+            # Log system event for WhatsApp webhook failure
+            from app.services.system_event_service import error
+
+            error(
+                db=db,
+                event_type="whatsapp.webhook_failure",
+                lead_id=lead.id if lead else None,
+                payload={
+                    "message_id": message_id,
+                    "wa_from": wa_from,
+                    "error_type": type(e).__name__,
+                    "error": str(e)[:200],  # Truncate to avoid storing too much
+                },
+            )
             return {
                 "received": True,
                 "lead_id": lead.id,
@@ -215,7 +361,44 @@ async def whatsapp_inbound(request: Request, db: Session = Depends(get_db)):
                 "error": "Conversation handling failed",
             }
 
-    # If no text (e.g., just an image without caption), just acknowledge
+    # If no text (e.g., just an image without caption), create attachment and still run conversation
+    # so we can send "Got it, I've saved the image. For this step I need: ..." when not on reference_images
+    if media_id and message_type in ["image", "document"]:
+        from app.db.models import Attachment
+
+        # Create Attachment with PENDING status
+        attachment = Attachment(
+            lead_id=lead.id,
+            whatsapp_media_id=media_id,
+            upload_status="PENDING",
+            upload_attempts=0,
+            provider="supabase",
+            content_type=None,  # Will be determined during download
+        )
+        db.add(attachment)
+        db.commit()
+        db.refresh(attachment)
+
+        from app.services.media_upload import attempt_upload_attachment_job
+
+        background_tasks.add_task(attempt_upload_attachment_job, attachment.id)
+
+        conversation_result = await handle_inbound_message(
+            db=db,
+            lead=lead,
+            message_text="",
+            dry_run=settings.whatsapp_dry_run,
+            has_media=True,
+        )
+        return {
+            "received": True,
+            "lead_id": lead.id,
+            "wa_from": wa_from,
+            "text": text,
+            "message_type": message_type,
+            "conversation": conversation_result,
+        }
+
     return {
         "received": True,
         "lead_id": lead.id,
@@ -226,7 +409,11 @@ async def whatsapp_inbound(request: Request, db: Session = Depends(get_db)):
 
 
 @router.post("/stripe")
-async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
+async def stripe_webhook(
+    request: Request,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+):
     """
     Handle Stripe webhook events (payment confirmations).
 
@@ -246,9 +433,16 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
     except ValueError as e:
         # Invalid signature - known error type
         logger.warning(f"Invalid Stripe webhook signature: {str(e)}")
-        return JSONResponse(
-            status_code=400, content={"error": "Invalid webhook signature"}
+        # Log system event
+        from app.services.system_event_service import warn
+
+        warn(
+            db=db,
+            event_type="stripe.signature_verification_failure",
+            lead_id=None,
+            payload={"error": str(e)[:200]},  # Truncate to avoid storing too much
         )
+        return JSONResponse(status_code=400, content={"error": "Invalid webhook signature"})
     except Exception as e:
         # Unexpected error during verification
         logger.error(
@@ -256,9 +450,7 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
             f"error_type={type(e).__name__}: {str(e)}",
             exc_info=True,
         )
-        return JSONResponse(
-            status_code=500, content={"error": "Webhook verification failed"}
-        )
+        return JSONResponse(status_code=500, content={"error": "Webhook verification failed"})
 
     # Handle the event
     event_type = event["type"]
@@ -297,6 +489,19 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
                     f"Checkout session ID mismatch for lead {lead_id}. "
                     f"Expected: {lead.stripe_checkout_session_id}, Got: {checkout_session_id}"
                 )
+                # Log SystemEvent for session_id mismatch
+                from app.services.system_event_service import error
+
+                error(
+                    db=db,
+                    event_type="stripe.session_id_mismatch",
+                    lead_id=lead_id,
+                    payload={
+                        "expected_session_id": lead.stripe_checkout_session_id,
+                        "received_session_id": checkout_session_id,
+                        "event_id": event_id,
+                    },
+                )
                 return JSONResponse(
                     status_code=400,
                     content={
@@ -307,14 +512,10 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
                     },
                 )
 
-        # Idempotency: Check if this Stripe event was already processed
-        is_duplicate, processed = check_and_record_processed_event(
-            db=db,
-            event_id=event_id,
-            event_type="stripe.checkout.session.completed",
-            lead_id=lead_id,
-        )
+        # CRITICAL FIX: Check idempotency FIRST (read-only check)
+        from app.services.safety import check_processed_event, record_processed_event
 
+        is_duplicate, processed = check_processed_event(db, event_id)
         if is_duplicate:
             return {
                 "received": True,
@@ -355,13 +556,55 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
                     "checkout_session_id": checkout_session_id,
                     "message": "Lead already in DEPOSIT_PAID status",
                 }
-            # Unexpected status - log and return error
-            return JSONResponse(
-                status_code=400,
-                content={
-                    "error": f"Lead {lead_id} is in status '{lead.status}', expected '{STATUS_AWAITING_DEPOSIT}'"
-                },
-            )
+            # Allow NEEDS_ARTIST_REPLY -> DEPOSIT_PAID: client paid while artist had handover
+            if lead.status == STATUS_NEEDS_ARTIST_REPLY:
+                success, lead = update_lead_status_if_matches(
+                    db=db,
+                    lead_id=lead_id,
+                    expected_status=STATUS_NEEDS_ARTIST_REPLY,
+                    new_status=STATUS_DEPOSIT_PAID,
+                    **update_values,
+                )
+                if success:
+                    db.refresh(lead)
+            if not success:
+                # Log Stripe webhook failure due to status mismatch
+                from app.services.system_event_service import error
+
+                error(
+                    db=db,
+                    event_type="stripe.webhook_failure",
+                    lead_id=lead_id,
+                    payload={
+                        "event_type": event_type,
+                        "checkout_session_id": checkout_session_id,
+                        "expected_status": STATUS_AWAITING_DEPOSIT,
+                        "actual_status": lead.status,
+                        "reason": "status_mismatch",
+                    },
+                )
+                # Optional: Notify artist if notifications enabled
+                if settings.feature_notifications_enabled and settings.artist_whatsapp_number:
+                    try:
+                        from app.services.artist_notifications import send_system_alert
+
+                        await send_system_alert(
+                            message=(
+                                f"⚠️ Stripe payment received for lead {lead_id} "
+                                f"but lead is in unexpected status '{lead.status}' "
+                                f"(expected '{STATUS_AWAITING_DEPOSIT}'). "
+                                f"Payment not processed. Please review."
+                            ),
+                            dry_run=settings.whatsapp_dry_run,
+                        )
+                    except Exception as e:
+                        logger.error(f"Failed to notify artist about unexpected status: {e}")
+                return JSONResponse(
+                    status_code=400,
+                    content={
+                        "error": f"Lead {lead_id} is in status '{lead.status}', expected '{STATUS_AWAITING_DEPOSIT}'"
+                    },
+                )
 
         # Phase 1: After deposit paid, set to BOOKING_PENDING (not BOOKING_LINK_SENT)
         from app.services.conversation import STATUS_BOOKING_PENDING
@@ -371,14 +614,22 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
         db.commit()
         db.refresh(lead)
 
-        # Log to Google Sheets
-        log_lead_to_sheets(db, lead)
+        # CRITICAL FIX: Side effects happen AFTER commit
+        # 1. DB transaction committed (status updated)
+        # 2. Now do external calls (Sheets, WhatsApp)
+        # 3. Finally record as processed (so if we crash, we can retry)
+
+        # Log to Google Sheets in background (non-blocking)
+        # Pass lead_id to avoid reusing request-scoped DB session
+        background_tasks.add_task(_log_lead_to_sheets_background, lead_id=lead_id)
 
         # Phase 1: Send WhatsApp confirmation message to client (with 24h window check)
         if lead.deposit_amount_pence:
             from app.services.whatsapp_window import send_with_window_check
 
-            confirmation_message = format_payment_confirmation_message(lead.deposit_amount_pence)
+            confirmation_message = format_payment_confirmation_message(
+                lead.deposit_amount_pence, lead_id=lead.id
+            )
 
             # Phase 1: Add policy reminder
             confirmation_message += (
@@ -395,32 +646,24 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
 
             client_name = None  # TODO: Extract from lead.answers if available
             try:
-                asyncio.run(
-                    send_with_window_check(
-                        db=db,
-                        lead=lead,
-                        message=confirmation_message,
-                        template_name=get_template_for_deposit_confirmation(),
-                        template_params=get_template_params_deposit_received_next_steps(
-                            client_name=client_name
-                        ),
-                        dry_run=settings.whatsapp_dry_run,
-                    )
+                await send_with_window_check(
+                    db=db,
+                    lead=lead,
+                    message=confirmation_message,
+                    template_name=get_template_for_deposit_confirmation(),
+                    template_params=get_template_params_deposit_received_next_steps(
+                        client_name=client_name
+                    ),
+                    dry_run=settings.whatsapp_dry_run,
                 )
-            except RuntimeError:
-                # Event loop already running, use different approach
-                import concurrent.futures
-
-                with concurrent.futures.ThreadPoolExecutor() as executor:
-                    future = executor.submit(
-                        asyncio.run,
-                        send_whatsapp_message(
-                            to=lead.wa_from,
-                            message=confirmation_message,
-                            dry_run=settings.whatsapp_dry_run,
-                        ),
-                    )
-                    future.result()
+            except Exception as e:
+                # Log error with context but don't fail the webhook
+                logger.error(
+                    f"Failed to send confirmation message - "
+                    f"lead_id={lead_id}, checkout_session_id={checkout_session_id}, "
+                    f"error_type={type(e).__name__}: {str(e)}",
+                    exc_info=True,
+                )
 
             # Update last bot message timestamp
             lead.last_bot_message_at = func.now()
@@ -431,13 +674,11 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
             from app.services.artist_notifications import notify_artist
 
             try:
-                asyncio.run(
-                    notify_artist(
-                        db=db,
-                        lead=lead,
-                        event_type="deposit_paid",
-                        dry_run=settings.whatsapp_dry_run,
-                    )
+                await notify_artist(
+                    db=db,
+                    lead=lead,
+                    event_type="deposit_paid",
+                    dry_run=settings.whatsapp_dry_run,
                 )
             except Exception as e:
                 # Log error with context but don't fail the webhook
@@ -447,6 +688,20 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
                     f"error_type={type(e).__name__}: {str(e)}",
                     exc_info=True,
                 )
+
+        # CRITICAL FIX: Record as processed ONLY after all side effects succeed
+        # If we crash before this, Stripe will retry and we'll process again (correct)
+        try:
+            record_processed_event(
+                db=db,
+                event_id=event_id,
+                event_type="stripe.checkout.session.completed",
+                lead_id=lead_id,
+            )
+        except Exception as e:
+            # If recording fails, log but don't fail the webhook
+            # The worst case is we process it twice (which idempotency handles)
+            logger.error(f"Failed to record processed event {event_id}: {e}")
 
         return {
             "received": True,
@@ -462,3 +717,73 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
         "type": event_type,
         "message": "Event received but not handled",
     }
+
+
+def _log_lead_to_sheets_background(lead_id: int) -> None:
+    """
+    Background task to log lead to Google Sheets.
+
+    Opens a fresh DB session to avoid reusing request-scoped session.
+    Logs SystemEvent(ERROR) on failure so failures aren't silent.
+
+    Args:
+        lead_id: Lead ID to log
+    """
+    from app.db.models import Lead
+    from app.db.session import SessionLocal
+    from app.services.system_event_service import error as log_system_error
+
+    # Create a new DB session for the background task
+    db = SessionLocal()
+    try:
+        try:
+            lead = db.get(Lead, lead_id)
+            if lead:
+                try:
+                    log_lead_to_sheets(db, lead)
+                except Exception as e:
+                    # Log both to logger and SystemEvent for visibility
+                    logger.error(
+                        f"Failed to log lead {lead_id} to Sheets in background: {e}",
+                        exc_info=True,
+                    )
+                    # Log SystemEvent(ERROR) so failures are visible in admin/metrics
+                    try:
+                        log_system_error(
+                            db=db,
+                            event_type="sheets.background_log_failure",
+                            lead_id=lead_id,
+                            payload={
+                                "error_type": type(e).__name__,
+                                "error": str(e)[:200],  # Truncate to avoid storing too much
+                            },
+                        )
+                        db.commit()
+                    except Exception as event_error:
+                        # If SystemEvent logging fails, at least log to logger
+                        logger.error(f"Failed to log SystemEvent for Sheets failure: {event_error}")
+            else:
+                logger.warning(f"Lead {lead_id} not found for Sheets logging")
+        except Exception as e:
+            # Handle database errors gracefully (e.g., in test environments)
+            logger.warning(
+                f"Database error in background Sheets logging for lead {lead_id}: {e}",
+                exc_info=True,
+            )
+            # Log SystemEvent for database errors too
+            try:
+                log_system_error(
+                    db=db,
+                    event_type="sheets.background_db_error",
+                    lead_id=lead_id,
+                    payload={
+                        "error_type": type(e).__name__,
+                        "error": str(e)[:200],
+                    },
+                )
+                db.commit()
+            except Exception:
+                # If SystemEvent logging fails, ignore (already logged to logger)
+                pass
+    finally:
+        db.close()

@@ -14,9 +14,16 @@ from app.services.conversation import (
 )
 
 
+def _reset_message_composer_cache():
+    """Reset global composer so real app/copy is loaded (other tests may have cached temp copy)."""
+    import app.services.message_composer as mc
+    mc._composer = None
+
+
 @pytest.mark.asyncio
 async def test_stop_keyword_opts_out(db):
     """Test that STOP keyword opts out lead."""
+    _reset_message_composer_cache()
     lead = Lead(wa_from="1234567890", status=STATUS_QUALIFYING, current_step=1)
     db.add(lead)
     db.commit()
@@ -121,6 +128,7 @@ async def test_opted_out_can_opt_back_in(db):
 @pytest.mark.asyncio
 async def test_opted_out_other_messages_acknowledge(db):
     """Test that opted-out leads get acknowledgment for other messages."""
+    _reset_message_composer_cache()
     lead = Lead(wa_from="1234567890", status=STATUS_OPTOUT)
     db.add(lead)
     db.commit()

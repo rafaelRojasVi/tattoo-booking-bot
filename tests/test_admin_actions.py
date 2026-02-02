@@ -117,25 +117,35 @@ def test_reject_lead_booked_fails(client, db):
 
 def test_send_deposit_success(client, db):
     """Test sending deposit link transitions status and sets amount."""
+    from unittest.mock import MagicMock, patch
+
     # Create lead in AWAITING_DEPOSIT
     lead = Lead(wa_from="1234567890", status=STATUS_AWAITING_DEPOSIT)
     db.add(lead)
     db.commit()
     db.refresh(lead)
 
-    response = client.post(f"/admin/leads/{lead.id}/send-deposit", json={"amount_pence": 5000})
-    assert response.status_code == 200
-    data = response.json()
-    assert data["success"] is True
-    assert data["deposit_amount_pence"] == 5000
+    # Mock Stripe checkout session creation
+    mock_session = MagicMock()
+    mock_session.id = "cs_test_123"
+    mock_session.url = "https://checkout.stripe.com/test/cs_test_123"
 
-    # Verify database changes
-    db.refresh(lead)
-    assert lead.deposit_amount_pence == 5000
-    assert lead.last_admin_action == "send_deposit"
-    assert lead.last_admin_action_at is not None
-    # Status should remain AWAITING_DEPOSIT until payment confirmed
-    assert lead.status == STATUS_AWAITING_DEPOSIT
+    with patch("app.services.stripe_service.stripe.checkout.Session.create") as mock_stripe_create:
+        mock_stripe_create.return_value = mock_session
+
+        response = client.post(f"/admin/leads/{lead.id}/send-deposit", json={"amount_pence": 5000})
+        assert response.status_code == 200
+        data = response.json()
+        assert data["success"] is True
+        assert data["deposit_amount_pence"] == 5000
+
+        # Verify database changes
+        db.refresh(lead)
+        assert lead.deposit_amount_pence == 5000
+        assert lead.last_admin_action == "send_deposit"
+        assert lead.last_admin_action_at is not None
+        # Status should remain AWAITING_DEPOSIT until payment confirmed
+        assert lead.status == STATUS_AWAITING_DEPOSIT
 
 
 def test_send_deposit_wrong_status(client, db):

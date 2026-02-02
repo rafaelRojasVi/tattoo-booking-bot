@@ -395,6 +395,56 @@ def check_and_send_booking_reminder(
     }
 
 
+def check_and_mark_deposit_expired(
+    db: Session,
+    lead: Lead,
+    hours_threshold: int = 24,
+) -> dict:
+    """
+    Check if deposit link has expired (24h since deposit_sent_at) and mark as DEPOSIT_EXPIRED.
+
+    Args:
+        db: Database session
+        lead: Lead object
+        hours_threshold: Hours before marking expired (default 24)
+
+    Returns:
+        dict with status
+    """
+    from app.services.conversation import STATUS_AWAITING_DEPOSIT, STATUS_DEPOSIT_EXPIRED
+
+    if lead.status != STATUS_AWAITING_DEPOSIT:
+        return {"status": "skipped", "reason": f"Lead not in {STATUS_AWAITING_DEPOSIT} status"}
+
+    if lead.deposit_paid_at:
+        # Already paid, don't mark as expired
+        return {"status": "skipped", "reason": "Deposit already paid"}
+
+    if not lead.deposit_sent_at:
+        return {"status": "skipped", "reason": "No deposit_sent_at timestamp"}
+
+    now = datetime.now(UTC)
+    deposit_sent = lead.deposit_sent_at
+    if deposit_sent.tzinfo is None:
+        deposit_sent = deposit_sent.replace(tzinfo=UTC)
+
+    hours_passed = (now - deposit_sent).total_seconds() / 3600
+
+    if hours_passed < hours_threshold:
+        return {"status": "not_due", "hours_passed": hours_passed}
+
+    # Mark as expired
+    lead.status = STATUS_DEPOSIT_EXPIRED
+    db.commit()
+
+    logger.info(f"Marked lead {lead.id} as DEPOSIT_EXPIRED (sent {hours_passed:.1f}h ago)")
+
+    return {
+        "status": "expired",
+        "hours_passed": hours_passed,
+    }
+
+
 def check_and_mark_booking_pending_stale(
     db: Session,
     lead: Lead,

@@ -23,6 +23,27 @@ This script outlines the step-by-step demo flow for presenting the booking bot t
 
 ---
 
+## Phase 1 demo — what’s included
+
+The demo gives you a **full Phase 1 flow** you can show your client in the browser:
+
+- **Client chat** (`/demo/client`): Structured consultation (all 13 questions), chat-style UI, full conversation history after each message, optional **reference image URL** (paste a link to simulate sending an image).
+- **Artist inbox** (`/demo/artist`): Leads list with summary and **secure action links** (Approve, Reject, Send deposit, Mark booked). Clicking a link opens the real confirmation page and runs the real action.
+- **Simulate payment** (`POST /demo/stripe/pay` with `lead_id`): Moves lead to BOOKING_PENDING so you can show “Mark booked” in the artist inbox.
+- **Load conversation**: After a refresh, enter the Lead ID and click “Load” to restore the chat view.
+
+**Images:** In the client demo you can type `no` for reference images, or paste an IG/image URL in the message or in “Reference image URL”. Real file upload (like WhatsApp) is only in production; the demo accepts URLs so the flow works.
+
+---
+
+## Going live / testing
+
+- **Demo mode (browser):** Use `DEMO_MODE=true` and open `/demo/client` and `/demo/artist`. No WhatsApp or Stripe needed; everything is simulated. Good for showing the client and rehearsing.
+- **Staging / real WhatsApp:** When you’re ready to test with real WhatsApp, set `DEMO_MODE=false` and `WHATSAPP_DRY_RUN=false`, configure webhooks and templates, and use the real WhatsApp number. The same conversation and approval flow run; only the channel (webhook vs demo page) changes.
+- **Production:** After Phase 1 acceptance, deploy with `DEMO_MODE=false`, set production env vars (see runbook), and run migrations. Demo endpoints return 404 in production.
+
+---
+
 ## Demo 1: Happy Path (5 minutes)
 
 **Goal:** Show complete flow from initial message to booking confirmation.

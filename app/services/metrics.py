@@ -12,6 +12,7 @@ import logging
 from collections import defaultdict
 from datetime import UTC, datetime
 from threading import Lock
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -92,9 +93,6 @@ def record_template_message_used(template_name: str, success: bool) -> None:
         key = f"template.{template_name}.{'success' if success else 'failed'}"
         _metrics[key] += 1
         _metrics_timestamps[f"{key}.last"] = datetime.now(UTC)
-
-
-from typing import Any
 
 
 def get_metrics() -> dict[str, Any]:

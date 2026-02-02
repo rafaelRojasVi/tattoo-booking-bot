@@ -10,6 +10,7 @@ from app.services.estimation_service import (
     estimate_category,
     estimate_project,
     get_deposit_amount,
+    parse_budget_from_text,
     parse_dimensions,
 )
 from app.services.handover_service import should_handover
@@ -130,6 +131,21 @@ class TestEstimationService:
         assert parse_dimensions("") is None
         assert parse_dimensions("not a size") is None
 
+    def test_parse_budget_from_text_plain_number(self):
+        """Budget parser accepts plain number (pence = number * 100)."""
+        assert parse_budget_from_text("400") == 40000
+        assert parse_budget_from_text("500") == 50000
+
+    def test_parse_budget_from_text_currency_symbols(self):
+        """Budget parser accepts £ and $ and strips to number."""
+        assert parse_budget_from_text("£400") == 40000
+        assert parse_budget_from_text("400gbp") == 40000
+
+    def test_parse_budget_from_text_invalid(self):
+        """Budget parser returns None when no number."""
+        assert parse_budget_from_text("") is None
+        assert parse_budget_from_text("not a number") is None
+
     def test_estimate_category_small(self):
         """Test category estimation for small projects."""
         # Small area, low complexity
@@ -193,7 +209,7 @@ class TestEstimationService:
 
     def test_estimate_project_full(self):
         """Test full project estimation."""
-        category, deposit = estimate_project(
+        category, deposit, estimated_days = estimate_project(
             dimensions_text="10x15cm",
             complexity_level=2,
             is_coverup=False,
@@ -201,6 +217,12 @@ class TestEstimationService:
         )
         assert category in ["SMALL", "MEDIUM", "LARGE", "XL"]
         assert deposit in [15000, 20000]  # Valid deposit amounts
+        # estimated_days is None for non-XL, float for XL
+        if category == "XL":
+            assert estimated_days is not None
+            assert isinstance(estimated_days, float)
+        else:
+            assert estimated_days is None
 
 
 class TestHandoverService:

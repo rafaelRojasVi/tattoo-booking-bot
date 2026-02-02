@@ -97,8 +97,23 @@ async def test_send_with_window_check_expired_no_template(db):
 
 
 @pytest.mark.asyncio
-async def test_send_with_window_check_expired_with_template(db):
+async def test_send_with_window_check_expired_with_template(db, monkeypatch):
     """Test sending message when window expired but template available."""
+    # Patch get_all_required_templates to include test_template
+    from app.services.template_registry import get_all_required_templates
+
+    original_get = get_all_required_templates
+
+    def mock_get_all_required_templates():
+        templates = original_get()
+        if "test_template" not in templates:
+            templates = list(templates) + ["test_template"]
+        return templates
+
+    monkeypatch.setattr(
+        "app.services.template_registry.get_all_required_templates", mock_get_all_required_templates
+    )
+
     lead = Lead(
         wa_from="1234567890",
         status=STATUS_QUALIFYING,

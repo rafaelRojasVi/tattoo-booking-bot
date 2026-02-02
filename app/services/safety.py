@@ -67,6 +67,22 @@ def update_lead_status_if_matches(
             logger.warning(
                 f"Lead {lead_id} status mismatch: expected '{expected_status}', got '{lead.status}'"
             )
+
+            # Log system event for atomic update conflict
+            from app.services.system_event_service import warn
+
+            warn(
+                db=db,
+                event_type="atomic_update.conflict",
+                lead_id=lead_id,
+                payload={
+                    "operation": "update_lead_status",
+                    "expected_status": expected_status,
+                    "actual_status": lead.status,
+                    "new_status": new_status,
+                },
+            )
+
             return False, lead
 
     # Refresh and return updated lead
@@ -75,41 +91,59 @@ def update_lead_status_if_matches(
     return True, lead
 
 
-def check_and_record_processed_event(
+def check_processed_event(
     db: Session,
     event_id: str,
-    event_type: str,
-    lead_id: int | None = None,
 ) -> tuple[bool, ProcessedMessage | None]:
     """
-    Check if an event (webhook, action, etc.) has already been processed.
-    If not, record it to prevent duplicate processing.
+    Check if an event has already been processed (read-only check).
 
     Args:
         db: Database session
-        event_id: Unique event identifier (e.g., Stripe event ID, message ID)
-        event_type: Type of event (e.g., "stripe.checkout.session.completed", "whatsapp.message")
-        lead_id: Optional lead ID associated with the event
+        event_id: Unique event identifier
 
     Returns:
         Tuple of (is_duplicate: bool, processed_message: ProcessedMessage | None)
-        If is_duplicate is True, the event was already processed.
     """
-    # Check if already processed
     stmt = select(ProcessedMessage).where(ProcessedMessage.message_id == event_id)
     existing = db.execute(stmt).scalar_one_or_none()
 
     if existing:
-        logger.info(
-            f"Event {event_id} (type: {event_type}) already processed at {existing.processed_at}"
-        )
+        logger.info(f"Event {event_id} already processed at {existing.processed_at}")
         # Record duplicate event for monitoring
         from app.services.metrics import record_duplicate_event
 
-        record_duplicate_event(event_type=event_type, event_id=event_id)
+        record_duplicate_event(event_type=existing.event_type or "unknown", event_id=event_id)
         return True, existing
 
-    # Record as processed
+    return False, None
+
+
+def record_processed_event(
+    db: Session,
+    event_id: str,
+    event_type: str,
+    lead_id: int | None = None,
+) -> ProcessedMessage:
+    """
+    Record an event as processed (call this AFTER successful processing).
+
+    CRITICAL: Only call this after all side effects (DB updates, external calls) succeed.
+    If you call this before processing completes, and then crash, the event will be
+    marked as processed but never actually handled.
+
+    Args:
+        db: Database session
+        event_id: Unique event identifier
+        event_type: Type of event
+        lead_id: Optional lead ID
+
+    Returns:
+        Created ProcessedMessage object
+
+    Raises:
+        IntegrityError: If event was already processed (race condition)
+    """
     try:
         processed = ProcessedMessage(
             message_id=event_id,
@@ -119,17 +153,46 @@ def check_and_record_processed_event(
         db.add(processed)
         db.commit()
         db.refresh(processed)
-        return False, processed
+        return processed
     except IntegrityError:
         # Race condition: another request processed it between check and insert
         db.rollback()
+        stmt = select(ProcessedMessage).where(ProcessedMessage.message_id == event_id)
         existing = db.execute(stmt).scalar_one_or_none()
         if existing:
             logger.info(f"Event {event_id} processed by concurrent request")
-            return True, existing
+            return existing
         # Shouldn't happen, but handle gracefully
         logger.error(f"IntegrityError recording event {event_id}, but no existing record found")
-        return False, None
+        raise
+
+
+def check_and_record_processed_event(
+    db: Session,
+    event_id: str,
+    event_type: str,
+    lead_id: int | None = None,
+) -> tuple[bool, ProcessedMessage | None]:
+    """
+    DEPRECATED: Use check_processed_event() + record_processed_event() instead.
+
+    This function records BEFORE processing, which can cause dropped events.
+    Kept for backward compatibility but should be refactored.
+    """
+    is_duplicate, existing = check_processed_event(db, event_id)
+    if is_duplicate:
+        return True, existing
+
+    # WARNING: This records BEFORE processing - not ideal
+    # Better pattern: check_processed_event() -> process -> record_processed_event()
+    try:
+        return False, record_processed_event(db, event_id, event_type, lead_id)
+    except IntegrityError:
+        # Race condition handled in record_processed_event
+        existing = db.execute(
+            select(ProcessedMessage).where(ProcessedMessage.message_id == event_id)
+        ).scalar_one_or_none()
+        return True, existing
 
 
 def validate_and_mark_token_used_atomic(

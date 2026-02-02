@@ -9,10 +9,11 @@ import json
 import logging
 import os
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
-from app.db.models import Lead
+from app.db.models import Lead, LeadAnswer
 
 logger = logging.getLogger(__name__)
 
@@ -142,10 +143,14 @@ def log_lead_to_sheets(db: Session, lead: Lead) -> bool:
         return False
 
     try:
-        # Get lead answers for summary
-        answers = {}
-        for answer in lead.answers:
-            answers[answer.question_key] = answer.answer_text
+        # Get lead answers for summary (latest per key: order_by created_at, id so last wins)
+        stmt = (
+            select(LeadAnswer)
+            .where(LeadAnswer.lead_id == lead.id)
+            .order_by(LeadAnswer.created_at, LeadAnswer.id)
+        )
+        answers_list = db.execute(stmt).scalars().all()
+        answers = {a.question_key: a.answer_text for a in answers_list}
 
         # Parse budget amount
         budget_amount = _parse_budget_amount(answers)

@@ -14,11 +14,15 @@ class Settings(BaseSettings):
     whatsapp_verify_token: str
     whatsapp_access_token: str
     whatsapp_phone_number_id: str
+    whatsapp_app_secret: str | None = None  # App Secret for webhook signature verification
     whatsapp_dry_run: bool = True  # Set to False in production to enable real sending
 
     stripe_secret_key: str
     stripe_webhook_secret: str
     stripe_deposit_amount_pence: int = 5000
+
+    # Deposit rule version (increment when deposit calculation logic changes)
+    deposit_rule_version: str = "v1"
 
     fresha_booking_url: str
 
@@ -69,6 +73,23 @@ class Settings(BaseSettings):
 
     # Demo mode (development/demo only - must be False in production)
     demo_mode: bool = False  # When true: enables demo endpoints for local testing
+
+    # Pilot mode (restrict access to allowlisted numbers only)
+    pilot_mode_enabled: bool = False  # When true: only allowlisted numbers can start consultation
+    pilot_allowlist_numbers: str = (
+        ""  # Comma-separated list of WhatsApp numbers (with country code, no +)
+    )
+
+    # Supabase Storage (for reference images)
+    supabase_url: str | None = None  # Supabase project URL
+    supabase_service_role_key: str | None = None  # Service role key (server-only, never exposed)
+    supabase_storage_bucket: str = "reference-images"  # Storage bucket name
+    supabase_signed_url_ttl_seconds: int = 3600  # TTL for signed URLs (1 hour default)
+
+    # Rate limiting
+    rate_limit_enabled: bool = True  # Enable rate limiting for admin/action endpoints
+    rate_limit_requests: int = 10  # Number of requests allowed per window
+    rate_limit_window_seconds: int = 60  # Time window in seconds
 
 
 # Settings will load from environment variables or .env file

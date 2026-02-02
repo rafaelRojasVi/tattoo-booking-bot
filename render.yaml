@@ -1,0 +1,57 @@
+services:
+  # Web Service - FastAPI application
+  - type: web
+    name: tattoo-booking-bot
+    env: docker
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    region: oregon  # Change to your preferred region
+    plan: starter  # Use 'free' for free tier (sleeps after inactivity)
+    healthCheckPath: /health
+    envVars:
+      - key: APP_ENV
+        value: production
+      - key: DEMO_MODE
+        value: "false"
+      - key: WEB_CONCURRENCY
+        value: "2"
+      # DATABASE_URL will be set automatically if using Render's managed PostgreSQL
+      # Add other required env vars in Render Dashboard (secrets)
+      # Required: ADMIN_API_KEY, WHATSAPP_*, STRIPE_*, etc.
+
+  # Managed PostgreSQL Database
+  - type: pg
+    name: tattoo-booking-bot-db
+    databaseName: tattoo_booking_bot
+    user: tattoo_booking_bot_user
+    plan: starter  # Use 'free' for free tier (90 day limit)
+    # DATABASE_URL will be automatically provided to web service
+
+  # Optional: Background Worker (placeholder - implement worker service)
+  # - type: worker
+  #   name: tattoo-booking-bot-worker
+  #   env: docker
+  #   dockerfilePath: ./Dockerfile
+  #   dockerContext: .
+  #   region: oregon
+  #   plan: starter
+  #   envVars:
+  #     - key: APP_ENV
+  #       value: production
+  #     # Inherit DATABASE_URL from database service
+  #   # Start command: python -m app.services.worker
+
+  # Optional: Cron Job for expired deposit sweeper
+  # - type: cron
+  #   name: sweep-expired-deposits
+  #   schedule: "0 */6 * * *"  # Every 6 hours
+  #   env: docker
+  #   dockerfilePath: ./Dockerfile
+  #   dockerContext: .
+  #   region: oregon
+  #   plan: starter
+  #   envVars:
+  #     - key: APP_ENV
+  #       value: production
+  #   # Command: curl -X POST http://tattoo-booking-bot.onrender.com/admin/sweep-expired-deposits -H "X-Admin-API-Key: ${ADMIN_API_KEY}"
+  #   # Note: Requires ADMIN_API_KEY env var set in Render Dashboard

@@ -18,7 +18,10 @@ from app.services.calendar_service import (
     get_available_slots,
     send_slot_suggestions_to_client,
 )
-from app.services.conversation import STATUS_AWAITING_DEPOSIT, STATUS_NEEDS_ARTIST_REPLY
+from app.services.conversation import (
+    STATUS_AWAITING_DEPOSIT,
+    STATUS_COLLECTING_TIME_WINDOWS,
+)
 
 
 @pytest.mark.asyncio
@@ -117,8 +120,8 @@ async def test_no_slots_triggers_safe_fallback(db):
 
         db.refresh(lead)
 
-        # Should set status to NEEDS_ARTIST_REPLY
-        assert lead.status == STATUS_NEEDS_ARTIST_REPLY
+        # Should set status to COLLECTING_TIME_WINDOWS (new behavior when no slots)
+        assert lead.status == STATUS_COLLECTING_TIME_WINDOWS
 
         # Should not send WhatsApp message to client (no slots to send)
         # But should notify artist
@@ -234,5 +237,5 @@ async def test_slot_suggestions_not_sent_when_none_exist(db):
 
         # The key assertion: system handled empty slots gracefully
         db.refresh(lead)
-        # Status should be set appropriately (NEEDS_ARTIST_REPLY or similar)
-        assert lead.status in [STATUS_AWAITING_DEPOSIT, STATUS_NEEDS_ARTIST_REPLY]
+        # Status should be set to COLLECTING_TIME_WINDOWS when no slots available
+        assert lead.status == STATUS_COLLECTING_TIME_WINDOWS

@@ -13,6 +13,37 @@ from app.services.messaging import send_whatsapp_message
 logger = logging.getLogger(__name__)
 
 
+async def send_system_alert(message: str, dry_run: bool = True) -> dict:
+    """
+    Send a system alert to the artist (for critical system issues).
+
+    Args:
+        message: Alert message to send
+        dry_run: Whether to actually send
+
+    Returns:
+        dict with status
+    """
+    from app.core.config import settings
+    from app.services.messaging import send_whatsapp_message
+
+    if not settings.artist_whatsapp_number:
+        logger.warning("Artist WhatsApp number not configured - system alert not sent")
+        return {"status": "skipped", "reason": "artist_whatsapp_number not configured"}
+
+    try:
+        result = await send_whatsapp_message(
+            to=settings.artist_whatsapp_number,
+            message=f"🔔 *System Alert*\n\n{message}",
+            dry_run=dry_run,
+        )
+        logger.info(f"System alert sent to artist: {message[:50]}...")
+        return result
+    except Exception as e:
+        logger.error(f"Failed to send system alert to artist: {e}")
+        raise
+
+
 def format_artist_summary(
     lead: Lead, answers_dict: dict[str, str], action_tokens: dict[str, str]
 ) -> str:
@@ -178,6 +209,87 @@ async def notify_artist(
         return False
 
 
+async def notify_artist_slot_selected(
+    db: Session,
+    lead: Lead,
+    selected_slot: dict,
+    slot_number: int,
+    dry_run: bool = True,
+) -> bool:
+    """
+    Notify artist when client selects a slot.
+
+    Args:
+        db: Database session
+        lead: Lead object
+        selected_slot: Dict with 'start' and 'end' datetime objects
+        slot_number: Selected slot number (1-based)
+        dry_run: Whether to actually send WhatsApp messages
+
+    Returns:
+        True if notification sent, False otherwise
+    """
+    if not settings.artist_whatsapp_number:
+        logger.debug("Artist WhatsApp number not configured - skipping notification")
+        return False
+
+    try:
+        from datetime import datetime
+
+        # Format slot time
+        start = selected_slot["start"]
+        if isinstance(start, str):
+            start = datetime.fromisoformat(start)
+        end = selected_slot["end"]
+        if isinstance(end, str):
+            end = datetime.fromisoformat(end)
+
+        date_str = start.strftime("%A, %B %d")
+        time_str = start.strftime("%I:%M %p")
+        end_time_str = end.strftime("%I:%M %p")
+
+        # Build notification message
+        lines = [
+            f"✅ *Lead #{lead.id} selected slot*\n",
+            f"*Slot {slot_number}:* {date_str} - {time_str} to {end_time_str}",
+            "",
+        ]
+
+        # Add lead summary
+        from app.services.summary import extract_phase1_summary_context, format_summary_message
+
+        ctx = extract_phase1_summary_context(lead)
+        summary = format_summary_message(ctx)
+        lines.append(summary)
+
+        # Add action links
+        from app.services.action_tokens import generate_action_tokens_for_lead
+
+        action_tokens = generate_action_tokens_for_lead(db, lead.id, lead.status)
+        if action_tokens:
+            lines.append("\n*Actions:*")
+            if "approve" in action_tokens:
+                lines.append(f"✅ Approve: {action_tokens['approve']}")
+            if "reject" in action_tokens:
+                lines.append(f"❌ Reject: {action_tokens['reject']}")
+
+        message = "\n".join(lines)
+
+        # Send notification
+        await send_whatsapp_message(
+            to=settings.artist_whatsapp_number,
+            message=message,
+            dry_run=dry_run or settings.whatsapp_dry_run,
+        )
+
+        logger.info(f"Sent slot selection notification to artist for lead {lead.id}")
+        return True
+
+    except Exception as e:
+        logger.error(f"Failed to send slot selection notification for lead {lead.id}: {e}")
+        return False
+
+
 async def notify_artist_needs_reply(
     db: Session,
     lead: Lead,
@@ -211,9 +323,19 @@ async def notify_artist_needs_reply(
         return False
 
     try:
-        # Build notification message
+        # Client name from answers (e.g. name, client_name) for artist context
+        client_name = None
+        for a in lead.answers:
+            if a.question_key in ("name", "client_name"):
+                client_name = (a.answer_text or "").strip() or None
+                break
+
+        # Build notification message: lead id, contact, name, then reason
         lines = [
             f"⚠️ *Lead #{lead.id} needs you*\n",
+            f"*Contact:* {lead.wa_from}",
+            f"*Name:* {client_name or '—'}",
+            "",
         ]
 
         # Reason
@@ -226,6 +348,51 @@ async def notify_artist_needs_reply(
             lines.append(f"*Client prefers:* {channel_display}")
             if lead.call_availability_notes:
                 lines.append(f"*Availability:* {lead.call_availability_notes[:100]}")
+
+        # Preferred time windows (if collected)
+        from sqlalchemy import select
+
+        from app.db.models import LeadAnswer
+        from app.services.time_window_collection import PREFERRED_TIME_WINDOWS_KEY
+
+        stmt = (
+            select(LeadAnswer)
+            .where(
+                LeadAnswer.lead_id == lead.id,
+                LeadAnswer.question_key == PREFERRED_TIME_WINDOWS_KEY,
+            )
+            .order_by(LeadAnswer.created_at)
+        )
+        time_window_answers = db.execute(stmt).scalars().all()
+
+        if time_window_answers:
+            lines.append("")  # Blank line
+            lines.append("*Preferred Time Windows:*")
+            for i, answer in enumerate(time_window_answers, 1):
+                lines.append(f"{i}. {answer.answer_text}")
+
+        # Last N inbound messages (for context)
+        stmt = (
+            select(LeadAnswer)
+            .where(LeadAnswer.lead_id == lead.id)
+            .order_by(LeadAnswer.created_at.desc())
+            .limit(3)
+        )
+        recent_answers = db.execute(stmt).scalars().all()
+        if recent_answers:
+            lines.append("")  # Blank line
+            lines.append("*Last Messages:*")
+            for answer in reversed(recent_answers):  # Show oldest first
+                lines.append(f"• {answer.question_key}: {answer.answer_text[:80]}")
+
+        # Parse failure context (if available)
+        if lead.parse_failure_counts:
+            failures = {k: v for k, v in lead.parse_failure_counts.items() if v > 0}
+            if failures:
+                lines.append("")  # Blank line
+                lines.append("*Parse Failures:*")
+                for field, count in failures.items():
+                    lines.append(f"• {field}: {count} attempt(s)")
 
         lines.append("")  # Blank line
 

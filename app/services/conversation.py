@@ -3,6 +3,7 @@ Conversation flow service - handles state machine and question flow.
 """
 
 import logging
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -18,6 +19,8 @@ from app.services.sheets import log_lead_to_sheets
 
 logger = logging.getLogger(__name__)
 
+# Rate-limit holding message during handover (avoid spamming client while artist replies)
+HANDOVER_HOLD_REPLY_COOLDOWN_HOURS = 6
 
 # Core statuses (Phase 1 proposal lifecycle)
 STATUS_NEW = "NEW"
@@ -42,6 +45,9 @@ STATUS_OPTOUT = "OPTOUT"  # Client opted out (STOP/UNSUBSCRIBE)
 STATUS_TOUR_CONVERSION_OFFERED = "TOUR_CONVERSION_OFFERED"
 STATUS_WAITLISTED = "WAITLISTED"
 
+# Booking statuses
+STATUS_COLLECTING_TIME_WINDOWS = "COLLECTING_TIME_WINDOWS"  # Collecting preferred time windows when no slots available
+
 # Payment-related statuses (future features)
 STATUS_DEPOSIT_EXPIRED = "DEPOSIT_EXPIRED"  # Deposit link sent but not paid after X days
 STATUS_REFUNDED = "REFUNDED"  # Stripe refund event or manual refund
@@ -51,12 +57,17 @@ STATUS_CANCELLED = "CANCELLED"  # Client cancels after paying / before booking
 STATUS_NEEDS_MANUAL_FOLLOW_UP = "NEEDS_MANUAL_FOLLOW_UP"  # Maps to NEEDS_FOLLOW_UP
 STATUS_BOOKING_LINK_SENT = "BOOKING_LINK_SENT"  # Legacy - maps to BOOKING_PENDING
 
+# Import after constants to avoid circular import (state_machine imports these constants)
+from app.services.state_machine import advance_step_if_at, transition
+
 
 async def handle_inbound_message(
     db: Session,
     lead: Lead,
     message_text: str,
     dry_run: bool = True,
+    *,
+    has_media: bool = False,
 ) -> dict:
     """
     Handle an inbound message based on lead's current state.
@@ -101,7 +112,9 @@ async def handle_inbound_message(
 
         # Send safe response (only if within 24h window)
         if is_within:
-            safe_message = "Thanks — Jonah will reply shortly."
+            from app.services.message_composer import render_message
+
+            safe_message = render_message("panic_mode_response", lead_id=lead.id)
             await send_whatsapp_message(
                 to=lead.wa_from,
                 message=safe_message,
@@ -120,13 +133,15 @@ async def handle_inbound_message(
         return await _handle_new_lead(db, lead, dry_run)
 
     elif lead.status == STATUS_QUALIFYING:
-        return await _handle_qualifying_lead(db, lead, message_text, dry_run)
+        return await _handle_qualifying_lead(db, lead, message_text, dry_run, has_media=has_media)
 
     elif lead.status == STATUS_PENDING_APPROVAL:
         # Waiting for artist approval - acknowledge
+        from app.services.message_composer import render_message
+
         return {
             "status": "pending_approval",
-            "message": "Thanks! I'm reviewing your request and will get back to you soon.",
+            "message": render_message("pending_approval", lead_id=lead.id),
             "lead_status": lead.status,
         }
 
@@ -138,32 +153,211 @@ async def handle_inbound_message(
         # Check if client is selecting a slot (simple pattern matching)
         # In Phase 1, we'll handle basic slot selection responses
         # For now, acknowledge and remind about deposit
+        from app.services.message_composer import render_message
+
         return {
             "status": "awaiting_deposit",
-            "message": "Thanks! Please check your messages for the deposit link to secure your booking. If you need it resent, let me know!",
+            "message": render_message("awaiting_deposit", lead_id=lead.id),
             "lead_status": lead.status,
         }
 
     elif lead.status == STATUS_DEPOSIT_PAID:
         # Deposit paid, waiting for booking
+        from app.services.message_composer import render_message
+
         return {
             "status": "deposit_paid",
-            "message": "Thanks for your deposit! I'll send you a booking link shortly.",
+            "message": render_message("deposit_paid", lead_id=lead.id),
             "lead_status": lead.status,
         }
 
     elif lead.status == STATUS_BOOKING_PENDING:
-        # Deposit paid, waiting for manual booking
+        # Deposit paid, waiting for slot selection
+        # Check if client is selecting a slot
+        if lead.suggested_slots_json:
+            # Convert JSON slots back to datetime objects for parsing
+            from app.services.slot_parsing import parse_slot_selection
+
+            slots = []
+            for slot_json in lead.suggested_slots_json:
+                slots.append(
+                    {
+                        "start": datetime.fromisoformat(slot_json["start"]),
+                        "end": datetime.fromisoformat(slot_json["end"]),
+                    }
+                )
+
+            # Try to parse slot selection
+            selected_index = parse_slot_selection(message_text, slots, max_slots=8)
+
+            if selected_index is not None:
+                # Valid selection - use stored slots (don't fail as unavailable unless no stored slots)
+                selected_slot = slots[selected_index - 1]  # Convert 1-based to 0-based
+
+                # Only re-check availability if calendar is enabled AND we have stored slots
+                # Otherwise, trust the stored slots
+                slot_available = True  # Default: trust stored slots
+
+                from app.core.config import settings
+                from app.services.calendar_service import get_available_slots
+
+                if settings.feature_calendar_enabled and slots:
+                    # Re-check availability for the selected time window
+                    try:
+                        available_slots = get_available_slots(
+                            time_min=selected_slot["start"],
+                            time_max=selected_slot["end"],
+                            duration_minutes=settings.booking_duration_minutes,
+                        )
+
+                        # Check if selected slot is still in available slots
+                        slot_available = False
+                        for avail_slot in available_slots:
+                            if (
+                                avail_slot["start"] == selected_slot["start"]
+                                and avail_slot["end"] == selected_slot["end"]
+                            ):
+                                slot_available = True
+                                break
+                    except Exception as e:
+                        # If calendar check fails, fall back to trusting stored slots
+                        logger.warning(
+                            f"Calendar availability check failed, using stored slot: {e}"
+                        )
+                        slot_available = True
+
+                    if not slot_available:
+                        # Slot no longer available - trigger fallback
+                        from app.services.system_event_service import warn
+
+                        warn(
+                            db=db,
+                            event_type="slot.unavailable_after_selection",
+                            lead_id=lead.id,
+                            payload={
+                                "selected_slot_index": selected_index,
+                                "selected_slot_start": selected_slot["start"].isoformat(),
+                                "selected_slot_end": selected_slot["end"].isoformat(),
+                            },
+                        )
+
+                        # Trigger fallback: collect time windows or ask for another option
+                        from app.services.message_composer import render_message
+
+                        fallback_msg = render_message(
+                            "slot_unavailable_fallback",
+                            lead_id=lead.id,
+                        )
+                        await send_whatsapp_message(
+                            to=lead.wa_from,
+                            message=fallback_msg,
+                            dry_run=dry_run,
+                        )
+                        lead.last_bot_message_at = func.now()
+
+                        # Transition to collecting time windows (enforced via state machine)
+                        transition(db, lead, STATUS_COLLECTING_TIME_WINDOWS)
+
+                        return {
+                            "status": "slot_unavailable",
+                            "message": fallback_msg,
+                            "lead_status": lead.status,
+                        }
+
+                # Slot is available - proceed with confirmation
+                lead.selected_slot_start_at = selected_slot["start"]
+                lead.selected_slot_end_at = selected_slot["end"]
+                lead.last_client_message_at = func.now()
+                db.commit()
+
+                # Send confirmation to client
+                from app.services.message_composer import render_message
+
+                confirmation_msg = render_message(
+                    "confirmation_slot",
+                    lead_id=lead.id,
+                    slot_number=selected_index,
+                )
+                await send_whatsapp_message(
+                    to=lead.wa_from,
+                    message=confirmation_msg,
+                    dry_run=dry_run,
+                )
+                lead.last_bot_message_at = func.now()
+                db.commit()
+
+                # Notify artist that slot was selected
+                from app.services.artist_notifications import notify_artist_slot_selected
+
+                await notify_artist_slot_selected(
+                    db=db,
+                    lead=lead,
+                    selected_slot=selected_slot,
+                    slot_number=selected_index,
+                    dry_run=dry_run,
+                )
+
+                return {
+                    "status": "slot_selected",
+                    "message": confirmation_msg,
+                    "lead_status": lead.status,
+                    "slot_number": selected_index,
+                }
+            else:
+                # Couldn't parse - send repair message
+                from app.services.parse_repair import (
+                    increment_parse_failure,
+                    should_handover_after_failure,
+                    trigger_handover_after_parse_failure,
+                )
+
+                increment_parse_failure(db, lead, "slot")
+                db.refresh(lead)  # Refresh to get updated parse_failure_counts
+                if should_handover_after_failure(lead, "slot"):
+                    return await trigger_handover_after_parse_failure(db, lead, "slot", dry_run)
+
+                # Send soft repair message (retry_count for short+boundary variant on retry 2)
+                from app.services.message_composer import compose_message
+                from app.services.message_composer import render_message
+                from app.services.parse_repair import get_failure_count
+
+                repair_msg = compose_message(
+                    "REPAIR_SLOT",
+                    {"lead_id": lead.id, "retry_count": get_failure_count(lead, "slot")},
+                )
+                await send_whatsapp_message(
+                    to=lead.wa_from,
+                    message=repair_msg,
+                    dry_run=dry_run,
+                )
+                lead.last_bot_message_at = func.now()
+                db.commit()
+
+                return {
+                    "status": "repair_needed",
+                    "message": repair_msg,
+                    "lead_status": lead.status,
+                    "question_key": "slot",
+                }
+
+        # No slots suggested yet, or just acknowledge
+        from app.services.message_composer import render_message
+
         return {
             "status": "booking_pending",
-            "message": "Thanks for your deposit! Jonah will confirm your date in the calendar and message you.",
+            "message": render_message("booking_pending", lead_id=lead.id),
             "lead_status": lead.status,
         }
 
+    elif lead.status == STATUS_COLLECTING_TIME_WINDOWS:
+        # Collecting preferred time windows (fallback when no slots available)
+        from app.services.time_window_collection import collect_time_window
+
+        return await collect_time_window(db, lead, message_text, dry_run)
+
     elif lead.status == STATUS_BOOKING_LINK_SENT:
-        # Legacy status - map to BOOKING_PENDING
-        lead.status = STATUS_BOOKING_PENDING
-        db.commit()
+        # Legacy status - map to BOOKING_PENDING (enforced via state machine)
+        transition(db, lead, STATUS_BOOKING_PENDING)
         return {
             "status": "booking_pending",
             "message": "Thanks for your deposit! Jonah will confirm your date in the calendar and message you.",
@@ -177,13 +371,16 @@ async def handle_inbound_message(
             # Accept tour offer - continue with offered city
             lead.location_city = lead.offered_tour_city
             lead.tour_offer_accepted = True
-            lead.status = STATUS_PENDING_APPROVAL
-            lead.pending_approval_at = func.now()
             db.commit()
+            db.refresh(lead)
+            transition(db, lead, STATUS_PENDING_APPROVAL)
 
-            accept_msg = (
-                f"Great! I'll proceed with your booking for {lead.offered_tour_city}. "
-                f"Jonah will review and get back to you soon."
+            from app.services.message_composer import render_message
+
+            accept_msg = render_message(
+                "tour_accept",
+                lead_id=lead.id,
+                city=lead.offered_tour_city,
             )
             await send_whatsapp_message(
                 to=lead.wa_from,
@@ -201,13 +398,17 @@ async def handle_inbound_message(
         elif message_upper in ["NO", "N", "DECLINE"]:
             # Decline - waitlist for requested city
             lead.tour_offer_accepted = False
-            lead.status = STATUS_WAITLISTED
             lead.waitlisted = True
             db.commit()
+            db.refresh(lead)
+            transition(db, lead, STATUS_WAITLISTED)
 
-            decline_msg = (
-                f"I'll add you to the waitlist for {lead.requested_city}. "
-                f"I'll let you know when I'm planning to visit!"
+            from app.services.message_composer import render_message
+
+            decline_msg = render_message(
+                "tour_decline",
+                lead_id=lead.id,
+                city=lead.requested_city,
             )
             await send_whatsapp_message(
                 to=lead.wa_from,
@@ -226,7 +427,7 @@ async def handle_inbound_message(
             # Unclear response - ask for clarification
             return {
                 "status": "tour_offer_pending",
-                "message": "Please reply 'yes' to book for the tour city, or 'no' to be waitlisted.",
+                "message": render_message("tour_prompt", lead_id=lead.id),
                 "lead_status": lead.status,
             }
 
@@ -234,7 +435,7 @@ async def handle_inbound_message(
         # Client is waitlisted
         return {
             "status": "waitlisted",
-            "message": "You're on the waitlist. I'll contact you when I'm planning to visit your city!",
+            "message": render_message("tour_waitlisted", lead_id=lead.id),
             "lead_status": lead.status,
         }
 
@@ -247,39 +448,70 @@ async def handle_inbound_message(
         }
 
     elif lead.status == STATUS_NEEDS_ARTIST_REPLY:
+        # Opt-out wins even during handover (STOP/UNSUBSCRIBE must be honored)
+        message_upper = message_text.strip().upper()
+        if message_upper in ["STOP", "UNSUBSCRIBE", "OPT OUT", "OPTOUT"]:
+            return await _handle_opt_out(db, lead, dry_run)
+
         # Check for CONTINUE to resume flow
-        if message_text.strip().upper() == "CONTINUE":
-            # Resume qualification flow
-            lead.status = STATUS_QUALIFYING
-            db.commit()
-            db.refresh(lead)
+        if message_upper == "CONTINUE":
+            # Resume qualification flow (enforced via state machine)
+            transition(db, lead, STATUS_QUALIFYING)
             # Continue with current question
             next_question = get_question_by_index(lead.current_step)
             if next_question:
+                from app.services.message_composer import compose_message
+
+                continue_msg = compose_message(
+                    "ASK_QUESTION",
+                    {"lead_id": lead.id, "question_text": next_question.text},
+                )
                 await send_whatsapp_message(
                     to=lead.wa_from,
-                    message=f"Great! Let's continue.\n\n{next_question.text}",
+                    message=continue_msg,
                     dry_run=dry_run,
                 )
                 lead.last_bot_message_at = func.now()
                 db.commit()
                 return {
                     "status": "resumed",
-                    "message": next_question.text,
+                    "message": continue_msg,
                     "lead_status": lead.status,
                     "current_step": lead.current_step,
                 }
             else:
                 # No question found - reset to start
-                lead.status = STATUS_QUALIFYING
+                transition(db, lead, STATUS_QUALIFYING)
                 lead.current_step = 0
                 db.commit()
+                db.refresh(lead)
                 return await _handle_new_lead(db, lead, dry_run)
 
         # Handover to artist - bot paused (for any other message)
+        # Rate-limit holding reply: send at most once per cooldown window
+        holding_msg = "I've paused the automated flow. The artist will reply to you directly."
+        last_hold_at = lead.handover_last_hold_reply_at
+        now_utc = datetime.now(UTC)
+        if last_hold_at is not None and getattr(last_hold_at, "tzinfo", None) is None:
+            last_hold_at = last_hold_at.replace(tzinfo=UTC)
+        # >= 6h so exactly 6h ago sends again (intuitive boundary)
+        send_hold = last_hold_at is None or (now_utc - last_hold_at) >= timedelta(
+            hours=HANDOVER_HOLD_REPLY_COOLDOWN_HOURS
+        )
+        if send_hold:
+            await send_whatsapp_message(
+                to=lead.wa_from,
+                message=holding_msg,
+                dry_run=dry_run,
+            )
+            # App-time UTC so comparison (now_utc - last_hold_at) is independent of DB timezone. Strict: update only on send; anti-spam alternative: update even on failure.
+            lead.handover_last_hold_reply_at = now_utc
+            lead.last_bot_message_at = func.now()
+            db.commit()
+
         return {
             "status": "artist_reply",
-            "message": "I've paused the automated flow. The artist will reply to you directly.",
+            "message": holding_msg,
             "lead_status": lead.status,
         }
 
@@ -299,33 +531,37 @@ async def handle_inbound_message(
         }
 
     elif lead.status == STATUS_OPTOUT:
-        # Client opted out - allow them to opt back in by sending any message
+        # Client opted out - allow them to opt back in (restart policy: OPTOUT -> NEW)
         if message_text.strip().upper() in ["START", "RESUME", "CONTINUE", "YES"]:
-            # Opt back in - reset to NEW to restart
-            lead.status = STATUS_NEW
+            transition(db, lead, STATUS_NEW)
             lead.current_step = 0
             db.commit()
+            db.refresh(lead)
             return await _handle_new_lead(db, lead, dry_run)
         else:
             # Still opted out - acknowledge but don't send automated messages
+            from app.services.message_composer import render_message
+
             return {
                 "status": "opted_out",
-                "message": "You're currently unsubscribed. Send 'START' to resume.",
+                "message": render_message("opt_out_prompt", lead_id=lead.id),
                 "lead_status": lead.status,
             }
 
     elif lead.status in [STATUS_ABANDONED, STATUS_STALE]:
-        # Inactive leads - allow restart
-        lead.status = STATUS_NEW
+        # Inactive leads - allow restart (ABANDONED/STALE -> NEW)
+        transition(db, lead, STATUS_NEW)
         lead.current_step = 0
         db.commit()
+        db.refresh(lead)
         return await _handle_new_lead(db, lead, dry_run)
 
     else:
-        # Unknown status - reset to NEW
+        # Unknown status - reset to NEW (bypass state machine for recovery; status not in ALLOWED_TRANSITIONS)
         lead.status = STATUS_NEW
         lead.current_step = 0
         db.commit()
+        db.refresh(lead)
         return await _handle_new_lead(db, lead, dry_run)
 
 
@@ -335,10 +571,9 @@ async def _handle_new_lead(
     dry_run: bool,
 ) -> dict:
     """Handle a new lead - start the qualification flow (Phase 1)."""
-    # Set status to QUALIFYING and track start time
-    lead.status = STATUS_QUALIFYING
+    # Transition to QUALIFYING (state machine sets qualifying_started_at if not set)
+    transition(db, lead, STATUS_QUALIFYING)
     lead.current_step = 0
-    lead.qualifying_started_at = func.now()
     db.commit()
     db.refresh(lead)
 
@@ -350,8 +585,13 @@ async def _handle_new_lead(
             "message": "No questions configured",
         }
 
-    # Send welcome message + first question
-    welcome_msg = f"👋 Hi! Thanks for reaching out. Let's get some details about your tattoo idea.\n\n{question.text}"
+    # Send welcome message + first question (single message, voice applied)
+    from app.services.message_composer import compose_message
+
+    welcome_msg = compose_message(
+        "WELCOME",
+        {"lead_id": lead.id, "question_text": question.text},
+    )
 
     await send_whatsapp_message(
         to=lead.wa_from,
@@ -376,6 +616,8 @@ async def _handle_qualifying_lead(
     lead: Lead,
     message_text: str,
     dry_run: bool,
+    *,
+    has_media: bool = False,
 ) -> dict:
     """Handle a lead in QUALIFYING state - save answer and ask next question."""
     current_step = lead.current_step
@@ -383,28 +625,125 @@ async def _handle_qualifying_lead(
     # Get the question we're currently on (the one they're answering)
     current_question = get_question_by_index(current_step)
     if not current_question:
-        # Shouldn't happen, but handle gracefully
-        lead.status = STATUS_NEEDS_MANUAL_FOLLOW_UP
-        db.commit()
+        # Shouldn't happen, but handle gracefully (QUALIFYING -> NEEDS_MANUAL_FOLLOW_UP)
+        transition(db, lead, STATUS_NEEDS_MANUAL_FOLLOW_UP)
         return {
             "status": "error",
             "message": "Invalid question step",
         }
+
+    # Outside 24h window: send template fallback, do not save or advance
+    from app.services.whatsapp_window import is_within_24h_window
+
+    is_within, _ = is_within_24h_window(lead)
+    if not is_within:
+        from app.services.whatsapp_templates import (
+            get_template_for_next_steps,
+            get_template_params_next_steps_reply_to_continue,
+        )
+        from app.services.whatsapp_window import send_with_window_check
+
+        await send_with_window_check(
+            db=db,
+            lead=lead,
+            message=current_question.text,
+            template_name=get_template_for_next_steps(),
+            template_params=get_template_params_next_steps_reply_to_continue(),
+            dry_run=dry_run,
+        )
+        return {
+            "status": "window_closed_template_sent",
+            "lead_status": lead.status,
+            "current_step": current_step,
+            "question_key": current_question.key,
+        }
+
+    # Attachment at wrong step: if media-only (no caption), ack and reprompt; if caption present, parse it
+    if has_media and current_question.key != "reference_images":
+        if not (message_text and message_text.strip()):
+            from app.services.message_composer import compose_message
+
+            ack_msg = compose_message(
+                "ATTACHMENT_ACK_REPROMPT",
+                {"lead_id": lead.id, "question_text": current_question.text},
+            )
+            await send_whatsapp_message(
+                to=lead.wa_from,
+                message=ack_msg,
+                dry_run=dry_run,
+            )
+            lead.last_bot_message_at = func.now()
+            db.commit()
+            return {
+                "status": "attachment_ack_reprompt",
+                "message": ack_msg,
+                "lead_status": lead.status,
+                "current_step": current_step,
+                "question_key": current_question.key,
+            }
+        # Caption present: fall through and parse message_text (attachment already stored in webhook)
 
     # Check for STOP/UNSUBSCRIBE opt-out
     message_upper = message_text.strip().upper()
     if message_upper in ["STOP", "UNSUBSCRIBE", "OPT OUT", "OPTOUT"]:
         return await _handle_opt_out(db, lead, dry_run)
 
+    # HUMAN / REFUND / DELETE DATA: ack and handover (no LLM)
+    if message_upper in ("HUMAN", "PERSON", "TALK TO SOMEONE", "REAL PERSON", "AGENT"):
+        return await _handle_human_request(db, lead, dry_run)
+    if "REFUND" in message_upper:
+        return await _handle_refund_request(db, lead, dry_run)
+    if any(
+        phrase in message_upper
+        for phrase in ("DELETE MY DATA", "DELETE DATA", "REMOVE MY DATA", "GDPR")
+    ):
+        return await _handle_delete_data_request(db, lead, dry_run)
+
+    # Multi-answer bundle guard: one at a time, do not save or advance
+    # Exception: if the message is a valid single answer for the current question, skip the guard
+    from app.services.bundle_guard import looks_like_multi_answer_bundle
+
+    def _is_valid_single_answer_for_current_question() -> bool:
+        if current_question.key == "dimensions":
+            from app.services.estimation_service import parse_dimensions
+            return parse_dimensions(message_text) is not None
+        if current_question.key == "budget":
+            from app.services.estimation_service import parse_budget_from_text
+            return parse_budget_from_text(message_text) is not None
+        if current_question.key == "location_city":
+            from app.services.location_parsing import is_valid_location, parse_location_input
+            parsed = parse_location_input(message_text.strip())
+            return not parsed["is_flexible"] and is_valid_location(message_text.strip())
+        return False
+
+    if looks_like_multi_answer_bundle(message_text) and not _is_valid_single_answer_for_current_question():
+        from app.services.message_composer import compose_message
+
+        one_at_a_time_msg = compose_message(
+            "ONE_AT_A_TIME_REPROMPT",
+            {"lead_id": lead.id, "question_text": current_question.text},
+        )
+        await send_whatsapp_message(
+            to=lead.wa_from,
+            message=one_at_a_time_msg,
+            dry_run=dry_run,
+        )
+        lead.last_bot_message_at = func.now()
+        db.commit()
+        return {
+            "status": "one_at_a_time_reprompt",
+            "message": one_at_a_time_msg,
+            "lead_status": lead.status,
+            "current_step": current_step,
+            "question_key": current_question.key,
+        }
+
     # Phase 1: Dynamic handover check (replaces keyword trigger)
     from app.services.handover_service import get_handover_message, should_handover
 
     should_handover_flag, handover_reason = should_handover(message_text, lead)
     if should_handover_flag:
-        lead.status = STATUS_NEEDS_ARTIST_REPLY
-        lead.handover_reason = handover_reason
-        lead.needs_artist_reply_at = func.now()
-        db.commit()
+        transition(db, lead, STATUS_NEEDS_ARTIST_REPLY, reason=handover_reason)
 
         # Notify artist (idempotent - only notifies on transition)
         from app.services.artist_notifications import notify_artist_needs_reply
@@ -416,7 +755,7 @@ async def _handle_qualifying_lead(
             dry_run=dry_run,
         )
 
-        handover_msg = get_handover_message(handover_reason)
+        handover_msg = get_handover_message(handover_reason, lead_id=lead.id)
         await send_whatsapp_message(
             to=lead.wa_from,
             message=handover_msg,
@@ -430,6 +769,129 @@ async def _handle_qualifying_lead(
             "lead_status": lead.status,
             "reason": handover_reason,
         }
+
+    # Parse and validate answer based on question type
+    parse_success = True
+    repair_message = None
+
+    if current_question.key == "dimensions":
+        # Try to parse dimensions
+        from app.services.estimation_service import parse_dimensions
+
+        parsed_dims = parse_dimensions(message_text)
+        if parsed_dims is None:
+            # Parse failed - increment failure count
+            from app.services.parse_repair import (
+                increment_parse_failure,
+                should_handover_after_failure,
+                trigger_handover_after_parse_failure,
+            )
+
+            increment_parse_failure(db, lead, "dimensions")
+            if should_handover_after_failure(lead, "dimensions"):
+                return await trigger_handover_after_parse_failure(db, lead, "dimensions", dry_run)
+            from app.services.message_composer import compose_message
+            from app.services.parse_repair import get_failure_count
+
+            repair_message = compose_message(
+                "REPAIR_SIZE",
+                {"lead_id": lead.id, "retry_count": get_failure_count(lead, "dimensions")},
+            )
+            parse_success = False
+        else:
+            # Parse succeeded - reset failures
+            from app.services.parse_repair import reset_parse_failures
+
+            reset_parse_failures(db, lead, "dimensions")
+
+    elif current_question.key == "budget":
+        # Try to parse budget (digits, £400, 400gbp, $500, etc.)
+        from app.services.estimation_service import parse_budget_from_text
+        from app.services.parse_repair import (
+            get_failure_count,
+            increment_parse_failure,
+            should_handover_after_failure,
+            trigger_handover_after_parse_failure,
+        )
+
+        budget_pence = parse_budget_from_text(message_text)
+        if budget_pence is None:
+            increment_parse_failure(db, lead, "budget")
+            if should_handover_after_failure(lead, "budget"):
+                return await trigger_handover_after_parse_failure(db, lead, "budget", dry_run)
+            from app.services.message_composer import compose_message
+
+            repair_message = compose_message(
+                "REPAIR_BUDGET",
+                {"lead_id": lead.id, "retry_count": get_failure_count(lead, "budget")},
+            )
+            parse_success = False
+        else:
+            from app.services.parse_repair import reset_parse_failures
+
+            reset_parse_failures(db, lead, "budget")
+
+    elif current_question.key == "location_city":
+        # Parse location using hardened location parsing service
+        from app.services.location_parsing import is_valid_location, parse_location_input
+        from app.services.parse_repair import (
+            increment_parse_failure,
+            reset_parse_failures,
+            should_handover_after_failure,
+            trigger_handover_after_parse_failure,
+        )
+
+        location_text = message_text.strip()
+        parsed = parse_location_input(location_text)
+
+        # Check if location is valid
+        if parsed["is_flexible"] or not is_valid_location(location_text):
+            # Parse failed (flexible, empty, or invalid)
+            increment_parse_failure(db, lead, "location_city")
+            if should_handover_after_failure(lead, "location_city"):
+                return await trigger_handover_after_parse_failure(
+                    db, lead, "location_city", dry_run
+                )
+            from app.services.message_composer import compose_message
+            from app.services.parse_repair import get_failure_count
+
+            repair_message = compose_message(
+                "REPAIR_LOCATION",
+                {"lead_id": lead.id, "retry_count": get_failure_count(lead, "location_city")},
+            )
+            parse_success = False
+        else:
+            # Parse succeeded
+            reset_parse_failures(db, lead, "location_city")
+
+            # Store city and country
+            if parsed["city"]:
+                # Store city in lead field
+                lead.location_city = parsed["city"]
+
+            if parsed["country"]:
+                # Store country in lead field
+                lead.location_country = parsed["country"]
+
+                # Also store as LeadAnswer
+                country_answer = LeadAnswer(
+                    lead_id=lead.id,
+                    question_key="location_country",
+                    answer_text=parsed["country"],
+                )
+                db.add(country_answer)
+
+            # If only country provided, may need follow-up (but accept for now)
+            if parsed["is_only_country"]:
+                # Accept country but note that city is missing
+                # Could send soft follow-up, but for now just accept
+                pass
+
+            # If city provided but country not inferred, may need follow-up
+            if parsed["city"] and not parsed["country"] and parsed["needs_follow_up"]:
+                # City provided but country unknown - accept for now
+                # Could send soft follow-up in future
+                pass
 
     # Save the answer
     answer = LeadAnswer(
@@ -449,41 +911,111 @@ async def _handle_qualifying_lead(
     # Update last client message timestamp
     lead.last_client_message_at = func.now()
 
+    # If parse failed, send repair message and don't advance
+    if not parse_success and repair_message:
+        await send_whatsapp_message(
+            to=lead.wa_from,
+            message=repair_message,
+            dry_run=dry_run,
+        )
+        lead.last_bot_message_at = func.now()
+        db.commit()
+        return {
+            "status": "repair_needed",
+            "message": repair_message,
+            "lead_status": lead.status,
+            "question_key": current_question.key,
+        }
+
+    # Commit answer before checking for confirmation (so _maybe_send_confirmation_summary can find it)
+    db.commit()
+
+    # Send micro-confirmation after successful parsing of key fields
+    # Only send once when we have all three: dimensions, budget, location_city
+    confirmation_sent = False
+    if parse_success:
+        confirmation_sent = await _maybe_send_confirmation_summary(
+            db, lead, current_question.key, dry_run
+        )
+
     # Check if this was the last question
     if is_last_question(current_step):
-        # All questions answered - generate summary and move to AWAITING_DEPOSIT
+        # All questions answered - generate summary and move to PENDING_APPROVAL
         return await _complete_qualification(db, lead, dry_run)
 
-    # Move to next question
-    lead.current_step = current_step + 1
-    db.commit()
-    db.refresh(lead)
+    # If confirmation was sent but not the last question, still advance to next question
+    # (confirmation is just informational, doesn't block flow)
+    # Order: send first, then advance (so send failure does not advance step)
+    if confirmation_sent:
+        lead_id_for_step = lead.id
+        next_question = get_question_by_index(current_step + 1)
+        if next_question:
+            from app.services.message_composer import compose_message
 
-    # Get next question
-    next_question = get_question_by_index(lead.current_step)
+            next_msg = compose_message(
+                "ASK_QUESTION",
+                {"lead_id": lead.id, "question_text": next_question.text},
+            )
+            await send_whatsapp_message(
+                to=lead.wa_from,
+                message=next_msg,
+                dry_run=dry_run,
+            )
+            success, lead = advance_step_if_at(db, lead_id_for_step, current_step)
+            if not success:
+                refreshed = db.get(Lead, lead_id_for_step)
+                return {
+                    "status": "step_already_advanced",
+                    "lead_status": refreshed.status if refreshed else None,
+                    "message": "Another message was processed first",
+                }
+            lead.last_bot_message_at = func.now()
+            db.commit()
+            return {
+                "status": "confirmation_sent",
+                "lead_status": lead.status,
+                "current_step": lead.current_step,
+                "question_key": next_question.key,
+            }
+
+    # Move to next question: send first, then advance (so send failure does not advance step)
+    lead_id = lead.id
+    next_question = get_question_by_index(current_step + 1)
     if not next_question:
-        # Shouldn't happen
-        lead.status = STATUS_NEEDS_MANUAL_FOLLOW_UP
-        db.commit()
+        # Shouldn't happen (QUALIFYING -> NEEDS_MANUAL_FOLLOW_UP)
+        transition(db, lead, STATUS_NEEDS_MANUAL_FOLLOW_UP)
         return {
             "status": "error",
             "message": "No next question found",
         }
 
-    # Send next question
+    from app.services.message_composer import compose_message
+
+    next_msg = compose_message(
+        "ASK_QUESTION",
+        {"lead_id": lead.id, "question_text": next_question.text},
+    )
     await send_whatsapp_message(
         to=lead.wa_from,
-        message=next_question.text,
+        message=next_msg,
         dry_run=dry_run,
     )
 
-    # Update last bot message timestamp
+    success, lead = advance_step_if_at(db, lead_id, current_step)
+    if not success:
+        refreshed = db.get(Lead, lead_id)
+        return {
+            "status": "step_already_advanced",
+            "lead_status": refreshed.status if refreshed else None,
+            "message": "Another message was processed first",
+        }
+
     lead.last_bot_message_at = func.now()
     db.commit()
 
     return {
         "status": "question_sent",
-        "message": next_question.text,
+        "message": next_msg,
         "lead_status": lead.status,
         "current_step": lead.current_step,
         "question_key": next_question.key,
@@ -494,22 +1026,66 @@ async def _handle_qualifying_lead(
     }
 
 
+async def _handle_human_request(db: Session, lead: Lead, dry_run: bool) -> dict:
+    """Handle 'human' / 'talk to someone' — handover to artist."""
+    transition(db, lead, STATUS_NEEDS_ARTIST_REPLY, reason="Client requested human/artist")
+    from app.services.artist_notifications import notify_artist_needs_reply
+    from app.services.message_composer import compose_message
+
+    await notify_artist_needs_reply(
+        db=db, lead=lead, reason=lead.handover_reason, dry_run=dry_run,
+    )
+    handover_msg = compose_message("HUMAN_HANDOVER", {"lead_id": lead.id})
+    await send_whatsapp_message(to=lead.wa_from, message=handover_msg, dry_run=dry_run)
+    lead.last_bot_message_at = func.now()
+    db.commit()
+    return {"status": "handover", "message": handover_msg, "lead_status": lead.status}
+
+
+async def _handle_refund_request(db: Session, lead: Lead, dry_run: bool) -> dict:
+    """Handle 'refund' — ack and handover to artist."""
+    transition(db, lead, STATUS_NEEDS_ARTIST_REPLY, reason="Client asked about refund")
+    from app.services.artist_notifications import notify_artist_needs_reply
+    from app.services.message_composer import compose_message
+
+    await notify_artist_needs_reply(
+        db=db, lead=lead, reason=lead.handover_reason, dry_run=dry_run,
+    )
+    ack_msg = compose_message("REFUND_ACK", {"lead_id": lead.id})
+    await send_whatsapp_message(to=lead.wa_from, message=ack_msg, dry_run=dry_run)
+    lead.last_bot_message_at = func.now()
+    db.commit()
+    return {"status": "handover", "message": ack_msg, "lead_status": lead.status}
+
+
+async def _handle_delete_data_request(db: Session, lead: Lead, dry_run: bool) -> dict:
+    """Handle 'delete my data' / GDPR — ack and handover to artist."""
+    transition(db, lead, STATUS_NEEDS_ARTIST_REPLY, reason="Client requested data deletion / GDPR")
+    from app.services.artist_notifications import notify_artist_needs_reply
+    from app.services.message_composer import compose_message
+
+    await notify_artist_needs_reply(
+        db=db, lead=lead, reason=lead.handover_reason, dry_run=dry_run,
+    )
+    ack_msg = compose_message("DELETE_DATA_ACK", {"lead_id": lead.id})
+    await send_whatsapp_message(to=lead.wa_from, message=ack_msg, dry_run=dry_run)
+    lead.last_bot_message_at = func.now()
+    db.commit()
+    return {"status": "handover", "message": ack_msg, "lead_status": lead.status}
+
+
 async def _handle_opt_out(
     db: Session,
     lead: Lead,
     dry_run: bool,
 ) -> dict:
     """Handle STOP/UNSUBSCRIBE opt-out request - stop all outbound messages."""
-    # Set status to OPTOUT
-    lead.status = STATUS_OPTOUT
-    db.commit()
-    db.refresh(lead)
+    transition(db, lead, STATUS_OPTOUT)
 
-    # Send confirmation message (one last message to confirm opt-out)
-    optout_msg = (
-        "You've been unsubscribed. You won't receive any more automated messages from us.\n\n"
-        "If you change your mind, just send us a message and we can resume."
-    )
+    # Send confirmation from YAML (consistent with copy)
+    from app.services.message_composer import compose_message
+
+    optout_msg = compose_message("OPT_OUT", {"lead_id": lead.id})
 
     await send_whatsapp_message(
         to=lead.wa_from,
@@ -530,18 +1106,107 @@ async def _handle_opt_out(
     }
 
 
+async def _maybe_send_confirmation_summary(
+    db: Session,
+    lead: Lead,
+    just_answered_key: str,
+    dry_run: bool,
+) -> bool:
+    """
+    Send micro-confirmation summary if we just completed dimensions, budget, and location_city.
+    Only sends once (tracks via a flag in lead).
+
+    Args:
+        db: Database session
+        lead: Lead object
+        just_answered_key: Question key that was just answered
+        dry_run: Whether to actually send
+
+    Returns:
+        True if confirmation was sent, False otherwise
+    """
+    # Only send confirmation when we have dimensions, budget, and location_city
+    if just_answered_key not in ["dimensions", "budget", "location_city"]:
+        return False
+
+    # Get all answers (order_by so latest-wins per key is deterministic)
+    stmt = (
+        select(LeadAnswer)
+        .where(LeadAnswer.lead_id == lead.id)
+        .order_by(LeadAnswer.created_at, LeadAnswer.id)
+    )
+    answers_list = db.execute(stmt).scalars().all()
+    answers_dict = {ans.question_key: ans.answer_text for ans in answers_list}
+
+    # Check if we have all three
+    has_dimensions = "dimensions" in answers_dict and answers_dict["dimensions"].strip()
+    has_budget = "budget" in answers_dict and answers_dict["budget"].strip()
+    has_location = "location_city" in answers_dict and answers_dict["location_city"].strip()
+
+    if not (has_dimensions and has_budget and has_location):
+        return False
+
+    # Check if we've already sent confirmation (track via a flag in admin_notes or a separate field)
+    # For now, use a simple check: if we have all three and this is the last one we just answered
+    # We'll track this by checking if we've already sent it (could use a flag, but for simplicity
+    # we'll just check if this is the third one being answered)
+    # Actually, let's use a simpler approach: only send if this is the last of the three to be answered
+    # and we haven't sent it before (we can check by looking at the order)
+
+    # Parse values for confirmation
+    from app.services.estimation_service import parse_dimensions
+
+    dimensions_text = answers_dict.get("dimensions", "")
+    budget_text = answers_dict.get("budget", "")
+    location_text = answers_dict.get("location_city", "")
+
+    # Format dimensions
+    parsed_dims = parse_dimensions(dimensions_text)
+    if parsed_dims:
+        size_display = f"{parsed_dims[0]:.0f}×{parsed_dims[1]:.0f}cm"
+    else:
+        size_display = dimensions_text[:20]  # Fallback to first 20 chars
+
+    # Format budget
+    import re
+
+    numbers = re.findall(r"\d+", budget_text.replace(",", ""))
+    if numbers:
+        budget_gbp = int(numbers[0])
+        budget_display = f"£{budget_gbp}"
+    else:
+        budget_display = budget_text[:20]  # Fallback
+
+    # Send confirmation
+    from app.services.message_composer import render_message
+    from app.services.messaging import send_whatsapp_message
+
+    confirmation_msg = render_message(
+        "confirmation_summary",
+        lead_id=lead.id,
+        size=size_display,
+        location=location_text,
+        budget=budget_display,
+    )
+
+    await send_whatsapp_message(
+        to=lead.wa_from,
+        message=confirmation_msg,
+        dry_run=dry_run,
+    )
+    lead.last_bot_message_at = func.now()
+    db.commit()
+
+    return True
+
+
 async def _handle_artist_handover(
     db: Session,
     lead: Lead,
     dry_run: bool,
 ) -> dict:
     """Handle ARTIST handover request - pause bot and notify artist."""
-    # Set status to NEEDS_ARTIST_REPLY
-    lead.status = STATUS_NEEDS_ARTIST_REPLY
-    lead.handover_reason = "Client requested artist handover"
-    lead.needs_artist_reply_at = func.now()
-    db.commit()
-    db.refresh(lead)
+    transition(db, lead, STATUS_NEEDS_ARTIST_REPLY, reason="Client requested artist handover")
 
     # Notify artist (idempotent - only notifies on transition)
     from app.services.artist_notifications import notify_artist_needs_reply
@@ -554,11 +1219,9 @@ async def _handle_artist_handover(
     )
 
     # Ask for handover preference
-    handover_msg = (
-        "I've paused the automated flow so the artist can reply directly.\n\n"
-        "Do you prefer a quick chat or a call?\n"
-        "And what's the main thing you'd like to clarify? (1 sentence)"
-    )
+    from app.services.message_composer import render_message
+
+    handover_msg = render_message("handover_question", lead_id=lead.id)
 
     await send_whatsapp_message(
         to=lead.wa_from,
@@ -586,11 +1249,13 @@ async def _complete_qualification(
     from app.services.region_service import country_to_region, region_min_budget
     from app.services.tour_service import closest_upcoming_city, format_tour_offer, is_city_on_tour
 
-    # Get all answers
-    stmt = select(LeadAnswer).where(LeadAnswer.lead_id == lead.id)
+    # Get all answers (order_by so latest-wins per key is deterministic)
+    stmt = (
+        select(LeadAnswer)
+        .where(LeadAnswer.lead_id == lead.id)
+        .order_by(LeadAnswer.created_at, LeadAnswer.id)
+    )
     answers_list = db.execute(stmt).scalars().all()
-
-    # Build answers dict
     answers_dict = {ans.question_key: ans.answer_text for ans in answers_list}
 
     # Extract key answers
@@ -619,12 +1284,11 @@ async def _complete_qualification(
 
     # Handle coverup immediately - set NEEDS_ARTIST_REPLY
     if is_coverup:
-        lead.status = STATUS_NEEDS_ARTIST_REPLY
         handover_reason = "Cover-up/rework requires creative assessment"
-        lead.handover_reason = handover_reason
-        lead.needs_artist_reply_at = func.now()
         lead.qualifying_completed_at = func.now()
         db.commit()
+        db.refresh(lead)
+        transition(db, lead, STATUS_NEEDS_ARTIST_REPLY, reason=handover_reason)
 
         # Notify artist (idempotent - only notifies on transition)
         from app.services.artist_notifications import notify_artist_needs_reply
@@ -636,11 +1300,9 @@ async def _complete_qualification(
             dry_run=dry_run,
         )
 
-        handover_msg = (
-            "I've paused the automated flow so Jonah can assess your cover-up request.\n\n"
-            "Would you prefer a quick call or chat?\n\n"
-            "Please share 2-3 time windows that work for you (and your timezone)."
-        )
+        from app.services.message_composer import render_message
+
+        handover_msg = render_message("handover_coverup", lead_id=lead.id)
 
         await send_whatsapp_message(
             to=lead.wa_from,
@@ -657,7 +1319,7 @@ async def _complete_qualification(
         }
 
     # Run estimation
-    category, deposit_amount = estimate_project(
+    category, deposit_amount, estimated_days = estimate_project(
         dimensions_text=dimensions_text,
         complexity_level=complexity_level,
         is_coverup=is_coverup,
@@ -666,6 +1328,7 @@ async def _complete_qualification(
 
     lead.estimated_category = category
     lead.estimated_deposit_amount = deposit_amount
+    lead.estimated_days = estimated_days  # Store estimated days (for XL projects)
     lead.complexity_level = complexity_level
 
     # Store location and derive region
@@ -675,6 +1338,19 @@ async def _complete_qualification(
     lead.region_bucket = region
     min_budget = region_min_budget(region)
     lead.min_budget_amount = min_budget
+
+    # Compute and store pricing estimates (internal use only)
+    from app.services.pricing_service import calculate_price_range
+
+    if category and region:
+        price_range = calculate_price_range(
+            region=region,
+            category=category,
+            include_trace=True,
+        )
+        lead.estimated_price_min_pence = price_range.min_pence
+        lead.estimated_price_max_pence = price_range.max_pence
+        lead.pricing_trace_json = price_range.trace
 
     # Store Instagram handle
     if instagram_handle:
@@ -695,11 +1371,11 @@ async def _complete_qualification(
     # Check budget vs minimum
     if budget_amount and budget_amount < min_budget:
         lead.below_min_budget = True
-        # Set NEEDS_FOLLOW_UP (do NOT auto-decline)
-        lead.status = STATUS_NEEDS_FOLLOW_UP
-        lead.needs_follow_up_at = func.now()
         lead.qualifying_completed_at = func.now()
         db.commit()
+        db.refresh(lead)
+        # Set NEEDS_FOLLOW_UP (do NOT auto-decline)
+        transition(db, lead, STATUS_NEEDS_FOLLOW_UP)
 
         min_gbp = min_budget / 100
         budget_gbp = budget_amount / 100
@@ -714,9 +1390,12 @@ async def _complete_qualification(
             reason=reason,
             dry_run=dry_run,
         )
-        budget_msg = (
-            f"Thanks! Based on your location, the minimum booking value is *£{min_gbp:.0f}*. "
-            f"Your budget may need adjusting. Jonah can review options—do you want to continue?"
+        from app.services.message_composer import render_message
+
+        budget_msg = render_message(
+            "budget_below_minimum",
+            lead_id=lead.id,
+            min_gbp=min_gbp,
         )
 
         await send_whatsapp_message(
@@ -745,11 +1424,12 @@ async def _complete_qualification(
         # City not on tour - offer conversion
         tour_stop = closest_upcoming_city(requested_city, location_country)
         if tour_stop:
-            lead.status = STATUS_TOUR_CONVERSION_OFFERED
             lead.offered_tour_city = tour_stop.city
             lead.offered_tour_dates_text = f"{tour_stop.start_date.strftime('%B %d')} - {tour_stop.end_date.strftime('%B %d, %Y')}"
             lead.qualifying_completed_at = func.now()
             db.commit()
+            db.refresh(lead)
+            transition(db, lead, STATUS_TOUR_CONVERSION_OFFERED)
 
             tour_msg = format_tour_offer(tour_stop)
             await send_whatsapp_message(
@@ -767,10 +1447,11 @@ async def _complete_qualification(
             }
         else:
             # No upcoming tour - waitlist
-            lead.status = STATUS_WAITLISTED
             lead.waitlisted = True
             lead.qualifying_completed_at = func.now()
             db.commit()
+            db.refresh(lead)
+            transition(db, lead, STATUS_WAITLISTED)
 
             waitlist_msg = (
                 f"I don't have {requested_city} scheduled yet. "
@@ -792,8 +1473,9 @@ async def _complete_qualification(
 
     # All checks passed - complete qualification
     lead.qualifying_completed_at = func.now()
-    lead.pending_approval_at = func.now()
-    lead.status = STATUS_PENDING_APPROVAL
+    db.commit()
+    db.refresh(lead)
+    transition(db, lead, STATUS_PENDING_APPROVAL)
 
     # Generate summary (Phase 1 format)
     from app.services.summary import (
@@ -877,8 +1559,12 @@ def get_lead_summary(db: Session, lead_id: int) -> dict:
     if not lead:
         return {"error": "Lead not found"}
 
-    # Get all answers
-    stmt = select(LeadAnswer).where(LeadAnswer.lead_id == lead_id).order_by(LeadAnswer.created_at)
+    # Get all answers (created_at, id so "latest wins" is deterministic when timestamps tie)
+    stmt = (
+        select(LeadAnswer)
+        .where(LeadAnswer.lead_id == lead_id)
+        .order_by(LeadAnswer.created_at, LeadAnswer.id)
+    )
     answers_list = db.execute(stmt).scalars().all()
 
     answers_dict = {ans.question_key: ans.answer_text for ans in answers_list}

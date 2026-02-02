@@ -279,25 +279,40 @@ def _get_mock_available_slots(
     return slots
 
 
-def format_slot_suggestions(slots: list[dict[str, datetime]]) -> str:
+def format_slot_suggestions(
+    slots: list[dict[str, datetime]],
+    lead_id: int | None = None,
+) -> str:
     """
-    Format available slots as a WhatsApp message.
+    Format available slots as numbered options (1-8) with local timezone label.
 
     Args:
         slots: List of slot dicts with 'start' and 'end' datetime objects
 
     Returns:
-        Formatted message string
+        Formatted message string with numbered options
     """
+    from app.services.message_composer import render_message
+
     if not slots:
-        return "I'm checking my calendar for available slots. I'll send you some options shortly!"
+        return render_message("slot_suggestions_empty", lead_id=lead_id)
 
-    message_lines = [
-        "📅 *Available Booking Slots*\n",
-        "Here are some available times:\n",
-    ]
+    from app.services.calendar_rules import get_timezone
 
-    for i, slot in enumerate(slots[:10], 1):  # Max 10 slots
+    tz = get_timezone()
+    tz_name = start.tzname() if (start := slots[0]["start"]).tzinfo else tz.zone
+
+    header = render_message(
+        "slot_suggestions_header",
+        lead_id=lead_id,
+        tz_name=tz_name,
+    )
+    footer = render_message("slot_suggestions_footer", lead_id=lead_id)
+
+    message_lines = [header]
+
+    # Format up to 8 slots as numbered options
+    for i, slot in enumerate(slots[:8], 1):
         start = slot["start"]
         end = slot["end"]
 
@@ -306,11 +321,9 @@ def format_slot_suggestions(slots: list[dict[str, datetime]]) -> str:
         time_str = start.strftime("%I:%M %p")
         end_time_str = end.strftime("%I:%M %p")
 
-        message_lines.append(f"{i}. *{date_str}* - {time_str} to {end_time_str}")
+        message_lines.append(f"*{i}.* {date_str} - {time_str} to {end_time_str}")
 
-    message_lines.append(
-        "\nPlease let me know which slot works best for you, or if you'd like to see more options."
-    )
+    message_lines.append(footer)
 
     return "\n".join(message_lines)
 
@@ -350,65 +363,48 @@ def send_slot_suggestions_to_client(
             category=lead.estimated_category,
         )
 
-        # Handle empty slots - safe fallback
+        # Handle empty slots - fallback: ask for preferred time windows
         if not slots:
-            logger.warning(
-                f"No available slots found for lead {lead.id} - triggering artist handover"
+            logger.info(
+                f"No available slots found for lead {lead.id} - asking for preferred time windows"
+            )
+            # Log system event for calendar no-slots fallback
+            from app.services.system_event_service import info
+
+            info(
+                db=db,
+                event_type="calendar.no_slots_fallback",
+                lead_id=lead.id,
+                payload={
+                    "duration_minutes": settings.booking_duration_minutes,
+                    "category": lead.estimated_category,
+                },
             )
             from sqlalchemy import func
 
-            from app.services.conversation import STATUS_NEEDS_ARTIST_REPLY
-
-            lead.status = STATUS_NEEDS_ARTIST_REPLY
-            lead.handover_reason = "No available slots found - artist to suggest times"
-            lead.needs_artist_reply_at = func.now()
-            db.commit()
-
-            # Notify artist
-            import asyncio
-
-            from app.services.artist_notifications import notify_artist_needs_reply
-
-            try:
-                asyncio.run(
-                    notify_artist_needs_reply(
-                        db=db,
-                        lead=lead,
-                        reason="No available slots found - artist to suggest times",
-                        dry_run=dry_run,
-                    )
-                )
-            except RuntimeError:
-                import concurrent.futures
-
-                with concurrent.futures.ThreadPoolExecutor() as executor:
-                    future = executor.submit(
-                        asyncio.run,
-                        notify_artist_needs_reply(
-                            db=db,
-                            lead=lead,
-                            reason="No available slots found - artist to suggest times",
-                            dry_run=dry_run,
-                        ),
-                    )
-                    future.result()
-
-            # Send safe message to client
-            safe_message = (
-                "Thanks! Jonah will suggest some times that work and message you shortly."
-            )
+            from app.services.conversation import STATUS_COLLECTING_TIME_WINDOWS
+            from app.services.state_machine import transition
+            from app.services.time_window_collection import format_time_windows_request
             from app.services.whatsapp_templates import (
                 get_template_for_next_steps,
                 get_template_params_next_steps_reply_to_continue,
             )
             from app.services.whatsapp_window import send_with_window_check
 
+            # Set status to collecting time windows (enforced via state machine)
+            transition(db, lead, STATUS_COLLECTING_TIME_WINDOWS)
+
+            # Ask for preferred time windows
+            request_message = format_time_windows_request(lead_id=lead.id)
+
+            import asyncio
+
             try:
                 asyncio.run(
                     send_with_window_check(
                         db=db,
                         lead=lead,
-                        message=safe_message,
+                        message=request_message,
                         template_name=get_template_for_next_steps(),
                         template_params=get_template_params_next_steps_reply_to_continue(),
                         dry_run=dry_run or settings.whatsapp_dry_run,
@@ -423,7 +419,7 @@ def send_slot_suggestions_to_client(
                         send_with_window_check(
                             db=db,
                             lead=lead,
-                            message=safe_message,
+                            message=request_message,
                             template_name=get_template_for_next_steps(),
                             template_params=get_template_params_next_steps_reply_to_continue(),
                             dry_run=dry_run or settings.whatsapp_dry_run,
@@ -439,8 +435,21 @@ def send_slot_suggestions_to_client(
 
             return False  # Return False to indicate no slots sent
 
+        # Store suggested slots as JSON (so we can match user's selection later)
+        # Convert datetime objects to ISO strings for JSON serialization
+        slots_json = []
+        for slot in slots:
+            slots_json.append(
+                {
+                    "start": slot["start"].isoformat(),
+                    "end": slot["end"].isoformat(),
+                }
+            )
+        lead.suggested_slots_json = slots_json
+        db.commit()
+
         # Format message
-        message = format_slot_suggestions(slots)
+        message = format_slot_suggestions(slots, lead_id=lead.id)
 
         # Send via WhatsApp (with 24h window check)
         import asyncio

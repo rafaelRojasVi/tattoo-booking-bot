@@ -4,11 +4,9 @@ from fastapi import APIRouter, Depends, HTTPException, Security
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app.api.auth import get_admin_auth
 from app.db.deps import get_db
 from app.db.models import Lead
-
-logger = logging.getLogger(__name__)
-from app.api.auth import get_admin_auth
 from app.schemas.admin import (
     RejectRequest,
     SendBookingLinkRequest,
@@ -26,6 +24,8 @@ from app.services.conversation import (
 from app.services.messaging import format_deposit_link_message, send_whatsapp_message
 from app.services.safety import update_lead_status_if_matches
 from app.services.sheets import log_lead_to_sheets
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -235,34 +235,66 @@ def send_deposit(
             detail=f"Cannot send deposit link for lead in status '{lead.status}'. Lead must be in '{STATUS_AWAITING_DEPOSIT}'.",
         )
 
-    # Phase 1: Calculate deposit amount from estimated_category (if not provided)
-    amount_pence = request.amount_pence if request and request.amount_pence else None
-    if not amount_pence:
-        # Use estimated_deposit_amount if available
-        if lead.estimated_deposit_amount:
-            amount_pence = lead.estimated_deposit_amount
+    # Check if existing checkout session is expired
+    from datetime import UTC, datetime
+
+    if lead.stripe_checkout_session_id and lead.deposit_checkout_expires_at:
+        now = datetime.now(UTC)
+        # Handle timezone-aware/naive comparison
+        expires_at = lead.deposit_checkout_expires_at
+        if expires_at.tzinfo is None:
+            expires_at = expires_at.replace(tzinfo=UTC)
+
+        if now >= expires_at:
+            # Session expired - clear it and create a new one
+            logger.info(
+                f"Existing checkout session {lead.stripe_checkout_session_id} for lead {lead_id} "
+                f"expired at {expires_at}. Creating new session."
+            )
+            lead.stripe_checkout_session_id = None
+            lead.deposit_checkout_expires_at = None
+            db.commit()
+            db.refresh(lead)
+
+    # Lock deposit amount: prefer deposit_amount_pence if already set, else estimated_deposit_amount
+    # This ensures the amount is locked once approved/deposit link is generated
+    from app.core.config import settings
+
+    if lead.deposit_amount_pence:
+        # Already locked - use existing value
+        amount_pence = lead.deposit_amount_pence
+    elif lead.estimated_deposit_amount:
+        # Use estimated deposit amount
+        amount_pence = lead.estimated_deposit_amount
+    elif request and request.amount_pence:
+        # Use amount from request
+        amount_pence = request.amount_pence
+    else:
+        # Fallback to estimated_category calculation
+        from app.services.estimation_service import get_deposit_amount
+
+        if lead.estimated_category:
+            # For XL, use estimated_days if available
+            estimated_days = lead.estimated_days if lead.estimated_category == "XL" else None
+            amount_pence = get_deposit_amount(
+                lead.estimated_category, estimated_days=estimated_days
+            )
         else:
-            # Fallback to estimated_category
-            from app.services.estimation_service import get_deposit_amount
+            # Final fallback to default
+            amount_pence = settings.stripe_deposit_amount_pence
 
-            if lead.estimated_category:
-                amount_pence = get_deposit_amount(lead.estimated_category)
-            else:
-                # Final fallback to default
-                from app.core.config import settings
-
-                amount_pence = settings.stripe_deposit_amount_pence
-
+    # Lock the deposit amount and set audit fields
     lead.deposit_amount_pence = amount_pence
     lead.estimated_deposit_amount = amount_pence  # Ensure it's set
-    lead.deposit_sent_at = func.now()  # Phase 1: track when sent
+    lead.deposit_amount_locked_at = func.now()  # Lock timestamp
+    lead.deposit_rule_version = settings.deposit_rule_version  # Store rule version
+    lead.deposit_sent_at = func.now()  # Track when sent
     lead.last_admin_action = "send_deposit"
     lead.last_admin_action_at = func.now()
     db.commit()
     db.refresh(lead)
 
     # Create Stripe checkout session
-    from app.core.config import settings
     from app.services.stripe_service import create_checkout_session
 
     checkout_result = create_checkout_session(
@@ -273,11 +305,14 @@ def send_deposit(
         metadata={
             "wa_from": lead.wa_from,
             "status": lead.status,
+            "deposit_rule_version": settings.deposit_rule_version,
+            "amount_pence": str(amount_pence),
         },
     )
 
-    # Store checkout session ID
+    # Store checkout session ID and expiry timestamp
     lead.stripe_checkout_session_id = checkout_result["checkout_session_id"]
+    lead.deposit_checkout_expires_at = checkout_result.get("expires_at")
     db.commit()
     db.refresh(lead)
 
@@ -290,7 +325,9 @@ def send_deposit(
     )
     from app.services.whatsapp_window import send_with_window_check
 
-    deposit_message = format_deposit_link_message(checkout_result["checkout_url"], amount_pence)
+    deposit_message = format_deposit_link_message(
+        checkout_result["checkout_url"], amount_pence, lead_id=lead.id
+    )
 
     # Send message (async function in sync context)
     import asyncio
@@ -453,4 +490,338 @@ def mark_booked(
         "message": "Lead marked as booked.",
         "lead_id": lead.id,
         "status": lead.status,
+    }
+
+
+@router.get("/events")
+def get_events(
+    limit: int = 100,
+    lead_id: int | None = None,
+    db: Session = Depends(get_db),
+    _auth: bool = Security(get_admin_auth),
+):
+    """
+    Get system events with optional filtering.
+
+    Args:
+        limit: Maximum number of events to return (default 100, max 1000)
+        lead_id: Optional lead ID to filter by
+
+    Returns:
+        List of system events ordered by created_at descending
+    """
+    from sqlalchemy import desc
+
+    from app.db.models import SystemEvent
+
+    # Cap limit at 1000 for performance
+    limit = min(limit, 1000)
+
+    query = db.query(SystemEvent).order_by(desc(SystemEvent.created_at))
+
+    if lead_id is not None:
+        query = query.filter(SystemEvent.lead_id == lead_id)
+
+    events = query.limit(limit).all()
+
+    return [
+        {
+            "id": event.id,
+            "created_at": event.created_at.isoformat() if event.created_at else None,
+            "level": event.level,
+            "event_type": event.event_type,
+            "lead_id": event.lead_id,
+            "payload": event.payload,
+        }
+        for event in events
+    ]
+
+
+@router.get("/debug/lead/{lead_id}")
+def debug_lead(
+    lead_id: int,
+    db: Session = Depends(get_db),
+    _auth: bool = Security(get_admin_auth),
+):
+    """
+    Debug endpoint for lead - returns comprehensive debugging information.
+
+    Includes:
+    - Full lead data
+    - All answers
+    - Handover packet
+    - Recent system events
+    - Parse failures
+    - Status transition history (from timestamps)
+
+    Args:
+        lead_id: Lead ID to debug
+
+    Returns:
+        Comprehensive debug information
+    """
+    lead = db.get(Lead, lead_id)
+    if not lead:
+        raise HTTPException(status_code=404, detail="Lead not found")
+
+    # Get handover packet
+    from app.services.handover_packet import build_handover_packet
+
+    packet = build_handover_packet(db, lead)
+
+    # Get all answers
+    from app.db.models import LeadAnswer
+
+    answers = (
+        db.query(LeadAnswer)
+        .filter(LeadAnswer.lead_id == lead_id)
+        .order_by(LeadAnswer.created_at)
+        .all()
+    )
+
+    # Get recent system events for this lead
+    from sqlalchemy import desc
+
+    from app.db.models import SystemEvent
+
+    events = (
+        db.query(SystemEvent)
+        .filter(SystemEvent.lead_id == lead_id)
+        .order_by(desc(SystemEvent.created_at))
+        .limit(50)
+        .all()
+    )
+
+    # Get processed messages for this lead
+    from app.db.models import ProcessedMessage
+
+    processed_messages = (
+        db.query(ProcessedMessage)
+        .filter(ProcessedMessage.lead_id == lead_id)
+        .order_by(desc(ProcessedMessage.processed_at))
+        .limit(20)
+        .all()
+    )
+
+    # Build status history from timestamps
+    status_history = []
+    if lead.qualifying_started_at:
+        status_history.append(
+            {
+                "status": "QUALIFYING",
+                "timestamp": lead.qualifying_started_at.isoformat(),
+                "type": "started",
+            }
+        )
+    if lead.qualifying_completed_at:
+        status_history.append(
+            {
+                "status": "QUALIFYING",
+                "timestamp": lead.qualifying_completed_at.isoformat(),
+                "type": "completed",
+            }
+        )
+    if lead.pending_approval_at:
+        status_history.append(
+            {
+                "status": "PENDING_APPROVAL",
+                "timestamp": lead.pending_approval_at.isoformat(),
+                "type": "entered",
+            }
+        )
+    if lead.approved_at:
+        status_history.append(
+            {"status": "APPROVED", "timestamp": lead.approved_at.isoformat(), "type": "action"}
+        )
+    if lead.deposit_sent_at:
+        status_history.append(
+            {
+                "status": "AWAITING_DEPOSIT",
+                "timestamp": lead.deposit_sent_at.isoformat(),
+                "type": "entered",
+            }
+        )
+    if lead.deposit_paid_at:
+        status_history.append(
+            {
+                "status": "DEPOSIT_PAID",
+                "timestamp": lead.deposit_paid_at.isoformat(),
+                "type": "entered",
+            }
+        )
+    if lead.booking_pending_at:
+        status_history.append(
+            {
+                "status": "BOOKING_PENDING",
+                "timestamp": lead.booking_pending_at.isoformat(),
+                "type": "entered",
+            }
+        )
+    if lead.booked_at:
+        status_history.append(
+            {"status": "BOOKED", "timestamp": lead.booked_at.isoformat(), "type": "entered"}
+        )
+    if lead.rejected_at:
+        status_history.append(
+            {"status": "REJECTED", "timestamp": lead.rejected_at.isoformat(), "type": "entered"}
+        )
+    if lead.needs_artist_reply_at:
+        status_history.append(
+            {
+                "status": "NEEDS_ARTIST_REPLY",
+                "timestamp": lead.needs_artist_reply_at.isoformat(),
+                "type": "entered",
+            }
+        )
+    if lead.needs_follow_up_at:
+        status_history.append(
+            {
+                "status": "NEEDS_FOLLOW_UP",
+                "timestamp": lead.needs_follow_up_at.isoformat(),
+                "type": "entered",
+            }
+        )
+
+    status_history.sort(key=lambda x: x["timestamp"])
+
+    return {
+        "lead": {
+            "id": lead.id,
+            "wa_from": lead.wa_from,
+            "status": lead.status,
+            "current_step": lead.current_step,
+            "created_at": lead.created_at.isoformat() if lead.created_at else None,
+            "updated_at": lead.updated_at.isoformat() if lead.updated_at else None,
+        },
+        "handover_packet": packet,
+        "answers": [
+            {
+                "id": a.id,
+                "question_key": a.question_key,
+                "answer_text": a.answer_text,
+                "created_at": a.created_at.isoformat() if a.created_at else None,
+            }
+            for a in answers
+        ],
+        "system_events": [
+            {
+                "id": e.id,
+                "created_at": e.created_at.isoformat() if e.created_at else None,
+                "level": e.level,
+                "event_type": e.event_type,
+                "payload": e.payload,
+            }
+            for e in events
+        ],
+        "processed_messages": [
+            {
+                "id": pm.id,
+                "message_id": pm.message_id,
+                "event_type": pm.event_type,
+                "processed_at": pm.processed_at.isoformat() if pm.processed_at else None,
+            }
+            for pm in processed_messages
+        ],
+        "status_history": status_history,
+        "parse_failures": lead.parse_failure_counts or {},
+        "timestamps": {
+            "last_client_message_at": lead.last_client_message_at.isoformat()
+            if lead.last_client_message_at
+            else None,
+            "last_bot_message_at": lead.last_bot_message_at.isoformat()
+            if lead.last_bot_message_at
+            else None,
+        },
+    }
+
+
+@router.post("/sweep-expired-deposits")
+def sweep_expired_deposits(
+    _auth: bool = Security(get_admin_auth),
+    db: Session = Depends(get_db),
+    hours_threshold: int = 24,
+):
+    """
+    Sweep expired deposits - mark leads with expired deposit links as DEPOSIT_EXPIRED.
+
+    This endpoint can be called by:
+    - Cron jobs (Render Cron, external cron services)
+    - Background workers
+    - Manual admin action
+
+    Args:
+        hours_threshold: Hours after deposit_sent_at to mark as expired (default: 24)
+
+    Returns:
+        Summary of sweep operation
+    """
+    from datetime import UTC, datetime, timedelta
+
+    from app.services.conversation import STATUS_AWAITING_DEPOSIT, STATUS_DEPOSIT_EXPIRED
+    from app.services.system_event_service import info
+
+    # Find leads in AWAITING_DEPOSIT status with deposit_sent_at older than threshold
+    cutoff_time = datetime.now(UTC) - timedelta(hours=hours_threshold)
+
+    expired_leads = (
+        db.query(Lead)
+        .filter(
+            Lead.status == STATUS_AWAITING_DEPOSIT,
+            Lead.deposit_sent_at.isnot(None),
+            Lead.deposit_sent_at < cutoff_time,
+            Lead.deposit_paid_at.is_(None),  # Not yet paid
+        )
+        .all()
+    )
+
+    results = {
+        "checked": len(expired_leads),
+        "expired": 0,
+        "skipped": 0,
+        "errors": 0,
+        "lead_ids": [],
+    }
+
+    for lead in expired_leads:
+        try:
+            # Use existing function from reminders service
+            from app.services.reminders import check_and_mark_deposit_expired
+
+            result = check_and_mark_deposit_expired(db, lead, hours_threshold=hours_threshold)
+
+            if result.get("status") == "expired":
+                results["expired"] += 1
+                results["lead_ids"].append(lead.id)
+
+                # Log system event
+                info(
+                    db=db,
+                    lead_id=lead.id,
+                    event_type="deposit_expired_sweep",
+                    payload={
+                        "lead_id": lead.id,
+                        "deposit_sent_at": lead.deposit_sent_at.isoformat()
+                        if lead.deposit_sent_at
+                        else None,
+                        "hours_threshold": hours_threshold,
+                    },
+                )
+            else:
+                results["skipped"] += 1
+        except Exception as e:
+            logger.error(f"Error marking lead {lead.id} as expired: {e}")
+            results["errors"] += 1
+
+    db.commit()
+
+    logger.info(
+        f"Deposit expiry sweep completed: {results['expired']} expired, "
+        f"{results['skipped']} skipped, {results['errors']} errors"
+    )
+
+    return {
+        "success": True,
+        "summary": results,
+        "hours_threshold": hours_threshold,
+        "cutoff_time": cutoff_time.isoformat(),
     }

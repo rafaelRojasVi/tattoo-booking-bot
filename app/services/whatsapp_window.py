@@ -93,26 +93,162 @@ async def send_with_window_check(
 
         message_with_voice = apply_voice(message, is_template=False)
 
-        result = await send_whatsapp_message(
-            to=lead.wa_from,
-            message=message_with_voice,
-            dry_run=dry_run,
-        )
-        result["window_status"] = "open"
-        result["window_expires_at"] = window_expires_at.isoformat() if window_expires_at else None
-        return result
+        try:
+            result = await send_whatsapp_message(
+                to=lead.wa_from,
+                message=message_with_voice,
+                dry_run=dry_run,
+            )
+            result["window_status"] = "open"
+            result["window_expires_at"] = (
+                window_expires_at.isoformat() if window_expires_at else None
+            )
+            return result
+        except Exception as e:
+            # Log WhatsApp send failure
+            from app.services.system_event_service import error
+
+            error(
+                db=db,
+                event_type="whatsapp.send_failure",
+                lead_id=lead.id,
+                payload={
+                    "to": lead.wa_from,
+                    "error_type": type(e).__name__,
+                    "error": str(e)[:200],  # Truncate to avoid storing too much
+                },
+            )
+            raise
     # Window closed - need template message
     elif template_name:
-        # Try to send template message
-        result = await send_template_message(
-            to=lead.wa_from,
-            template_name=template_name,
-            template_params=template_params or {},
-            dry_run=dry_run,
-        )
-        result["window_status"] = "closed_template_used"
-        result["window_expires_at"] = window_expires_at.isoformat() if window_expires_at else None
-        return result
+        # Check if template is configured (graceful degradation)
+        from app.services.template_registry import get_all_required_templates
+
+        required_templates = get_all_required_templates()
+        if template_name not in required_templates:
+            # Template not configured - graceful degradation
+            from app.core.config import settings
+            from app.services.metrics import record_window_closed
+
+            record_window_closed(
+                lead_id=lead.id, message_type=f"template_not_configured_{template_name}"
+            )
+
+            # Log SystemEvent (structured logging)
+            from app.services.system_event_service import warn
+
+            warn(
+                db=db,
+                event_type=f"whatsapp.template_not_configured.{template_name}",
+                lead_id=lead.id,
+                payload={
+                    "template_name": template_name,
+                    "wa_from": lead.wa_from,
+                    "lead_status": lead.status,
+                    "message_preview": message[:100] if message else None,
+                },
+            )
+            logger.error(
+                f"SYSTEM_EVENT: Template '{template_name}' not configured for lead {lead.id}. "
+                f"Message outside 24h window blocked. Lead: {lead.wa_from}, Status: {lead.status}"
+            )
+
+            # Notify artist if notifications enabled
+            if settings.feature_notifications_enabled and settings.artist_whatsapp_number:
+                try:
+                    from app.services.artist_notifications import send_system_alert
+
+                    await send_system_alert(
+                        message=(
+                            f"⚠️ Template '{template_name}' not configured. "
+                            f"Message to lead {lead.id} ({lead.wa_from}) blocked outside 24h window. "
+                            f"Please configure template in WhatsApp Manager."
+                        ),
+                        dry_run=dry_run,
+                    )
+                except Exception as e:
+                    logger.error(f"Failed to notify artist about missing template: {e}")
+
+            # Don't send message - graceful degradation
+            return {
+                "status": "window_closed_template_not_configured",
+                "message_id": None,
+                "to": lead.wa_from,
+                "message": message,
+                "template_name": template_name,
+                "window_status": "closed",
+                "window_expires_at": window_expires_at.isoformat() if window_expires_at else None,
+                "warning": f"24-hour window expired. Template '{template_name}' required but not configured.",
+            }
+
+        # Template is configured - try to send
+        try:
+            result = await send_template_message(
+                to=lead.wa_from,
+                template_name=template_name,
+                template_params=template_params or {},
+                dry_run=dry_run,
+            )
+            result["window_status"] = "closed_template_used"
+            result["window_expires_at"] = (
+                window_expires_at.isoformat() if window_expires_at else None
+            )
+
+            # Log template fallback usage
+            from app.services.system_event_service import info
+
+            info(
+                db=db,
+                event_type="template.fallback_used",
+                lead_id=lead.id,
+                payload={
+                    "template_name": template_name,
+                    "window_expires_at": window_expires_at.isoformat()
+                    if window_expires_at
+                    else None,
+                },
+            )
+
+            return result
+        except Exception as e:
+            # Template send failed - log and degrade gracefully
+            from app.core.config import settings
+            from app.services.metrics import record_window_closed
+
+            record_window_closed(
+                lead_id=lead.id, message_type=f"template_send_failed_{template_name}"
+            )
+            logger.error(
+                f"SYSTEM_EVENT: Failed to send template '{template_name}' to lead {lead.id}. "
+                f"Error: {e}"
+            )
+
+            # Notify artist
+            if settings.feature_notifications_enabled and settings.artist_whatsapp_number:
+                try:
+                    from app.services.artist_notifications import send_system_alert
+
+                    await send_system_alert(
+                        message=(
+                            f"⚠️ Failed to send template '{template_name}' to lead {lead.id}. "
+                            f"Error: {str(e)[:100]}"
+                        ),
+                        dry_run=dry_run,
+                    )
+                except Exception:
+                    pass  # Don't fail if alert send fails
+
+            return {
+                "status": "window_closed_template_send_failed",
+                "message_id": None,
+                "to": lead.wa_from,
+                "message": message,
+                "template_name": template_name,
+                "window_status": "closed",
+                "window_expires_at": window_expires_at.isoformat() if window_expires_at else None,
+                "error": str(e),
+                "warning": "24-hour window expired. Template send failed.",
+            }
     else:
         # No template available - graceful degradation
         from app.services.metrics import record_window_closed
@@ -167,8 +303,6 @@ async def send_template_message(
         }
 
     try:
-        import httpx
-
         url = f"https://graph.facebook.com/v18.0/{settings.whatsapp_phone_number_id}/messages"
         headers = {
             "Authorization": f"Bearer {settings.whatsapp_access_token}",
@@ -181,7 +315,7 @@ async def send_template_message(
             # Convert params to template components
             # Format depends on template structure - simplified here
             body_params = []
-            for key, value in template_params.items():
+            for _key, value in template_params.items():
                 body_params.append({"type": "text", "text": str(value)})
 
             if body_params:
@@ -209,7 +343,9 @@ async def send_template_message(
         if not components:
             payload["template"].pop("components", None)
 
-        async with httpx.AsyncClient() as client:
+        from app.services.http_client import create_httpx_client
+
+        async with create_httpx_client() as client:
             response = await client.post(url, headers=headers, json=payload)
             response.raise_for_status()
             result = response.json()

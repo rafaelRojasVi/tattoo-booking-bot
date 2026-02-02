@@ -1,0 +1,237 @@
+# WhatsApp Message Copy - English (GB)
+# Each message has 2-3 variants for variety
+# Use {variable_name} for template substitution
+
+# Test key for template testing
+test:
+  - "Hello {name}!"
+
+# Welcome & Onboarding
+welcome:
+  - "👋 Hi! Thanks for reaching out. Let's get some details about your tattoo idea.\n\n{question_text}"
+  - "Hey! Great to hear from you. I'd love to learn more about your tattoo idea.\n\n{question_text}"
+  - "Hi there! Thanks for getting in touch. Let's start by gathering some details about your tattoo.\n\n{question_text}"
+
+# Ask next question (ACK baked in — one message, not two)
+ask_question:
+  - "Got it — next: {question_text}"
+  - "Next: {question_text}"
+  - "{question_text}"
+  - "Whenever you're ready: {question_text}"
+  - "Thanks — next one: {question_text}"
+
+# Status Messages
+panic_mode_response:
+  - "Thanks — Jonah will reply shortly."
+  - "Got it! Jonah will get back to you soon."
+  - "Thanks for your message. Jonah will respond shortly."
+
+pending_approval:
+  - "Thanks! I'm reviewing your request and will get back to you soon."
+  - "Thank you! I'm looking over your details and will be in touch soon."
+  - "Got it! I'll review everything and get back to you shortly."
+
+awaiting_deposit:
+  - "Thanks! Please check your messages for the deposit link to secure your booking. If you need it resent, let me know!"
+  - "Thank you! You should have received a deposit link—please use it to secure your booking. Need it again? Just ask!"
+  - "Great! Check your messages for the deposit payment link. Let me know if you need it sent again."
+
+deposit_paid:
+  - "Thanks for your deposit! I'll send you a booking link shortly."
+  - "Deposit received! I'll send you a booking link soon."
+  - "Thank you for your deposit! A booking link will be on its way shortly."
+
+booking_pending:
+  - "Thanks for your deposit! Jonah will confirm your date in the calendar and message you."
+  - "Deposit confirmed! Jonah will lock in your date and get in touch."
+  - "Perfect! Your deposit is received. Jonah will finalise your booking date and message you."
+
+# Tour Messages
+tour_accept:
+  - "Great! I'll proceed with your booking for {city}. Jonah will review and get back to you soon."
+  - "Excellent! I'll move forward with your booking for {city}. Jonah will take a look and be in touch."
+  - "Perfect! I'll set up your booking for {city}. Jonah will review everything and get back to you."
+
+tour_decline:
+  - "I'll add you to the waitlist for {city}. I'll let you know when I'm planning to visit!"
+  - "No problem! I'll put you on the waitlist for {city} and notify you when I'm heading there."
+  - "Got it! You're on the waitlist for {city}. I'll reach out when I'm planning a visit there."
+
+tour_prompt:
+  - "Please reply 'yes' to book for the tour city, or 'no' to be waitlisted."
+  - "Reply 'yes' if you'd like to book for the tour city, or 'no' to join the waitlist."
+  - "Type 'yes' to proceed with the tour city booking, or 'no' to be waitlisted."
+
+tour_waitlisted:
+  - "You're on the waitlist. I'll contact you when I'm planning to visit your city!"
+  - "You're added to the waitlist! I'll get in touch when I'm planning a visit to your city."
+  - "Waitlist confirmed! I'll reach out when I'm planning to visit your area."
+
+# Multi-answer bundle: one at a time reprompt
+one_at_a_time_reprompt:
+  - "Got it — we'll do one question at a time so nothing gets missed. For now: {question_text}"
+  - "Thanks! One at a time keeps it tidy. First: {question_text}"
+
+# Attachment at wrong step (store + ack + reprompt)
+attachment_ack_reprompt:
+  - "Got it, I've saved the image. For this step I need: {question_text}"
+  - "Thanks — image saved. For this step: {question_text}"
+  - "Saved the image. For this step I need: {question_text}"
+
+# Human / refund / delete data (ack + handover)
+refund_ack:
+  - "Refunds are handled by Jonah — I've passed your message to him. He'll get back to you soon."
+  - "I've passed your refund question to Jonah. He'll reply shortly."
+
+delete_data_ack:
+  - "I've passed your data request to Jonah. He'll handle it and get back to you."
+  - "Jonah will handle your data request and be in touch shortly."
+
+# Opt-out
+opt_out_confirmation:
+  - "You've been unsubscribed. You won't receive any more automated messages from us.\n\nSend 'START' anytime to resume."
+  - "Unsubscribed successfully. You won't get any more automated messages.\n\nType 'START' if you want to resume later."
+  - "You're now unsubscribed from automated messages.\n\nSend 'START' whenever you'd like to continue."
+
+opt_out_prompt:
+  - "You're currently unsubscribed. Send 'START' to resume."
+  - "You're unsubscribed. Type 'START' to continue."
+  - "Currently unsubscribed. Send 'START' to resume the conversation."
+
+# Handover Messages
+handover_coverup:
+  - "Thanks for the details! Cover-ups need extra attention, so I'm passing this to Jonah. He'll review and get back to you soon."
+  - "Got it! Cover-ups require special consideration, so I'm handing this over to Jonah. He'll take a look and be in touch."
+  - "Thank you! Since this is a cover-up, I'm passing it to Jonah for review. He'll get back to you shortly."
+
+handover_high_complexity:
+  - "Thanks! This sounds like a detailed piece. I'm passing it to Jonah so he can review and discuss options with you."
+  - "Got it! This seems quite detailed. I'm handing this over to Jonah for review—he'll be in touch to discuss."
+  - "Thank you! This looks like a complex piece. I'm passing it to Jonah for review, and he'll get back to you."
+
+handover_client_question:
+  - "Thanks for your question! I'm passing this to Jonah so he can give you a proper answer. He'll get back to you soon."
+  - "Good question! I'm handing this over to Jonah so he can respond properly. He'll be in touch shortly."
+  - "Thanks! I'm passing your question to Jonah for a detailed answer. He'll get back to you soon."
+
+handover_question_prompt:
+  - "And what's the main thing you'd like to clarify? (1 sentence)"
+  - "What's the key thing you'd like to know? (Keep it to one sentence)"
+  - "What's the main question you have? (One sentence, please)"
+
+# Budget Messages
+budget_below_minimum:
+  - "Thanks! Based on your location, the minimum booking value is *£{min_gbp:.0f}*. Your budget may need adjusting. Jonah can review options—do you want to continue?"
+  - "Thank you! For your location, the minimum booking is *£{min_gbp:.0f}*. Your budget might need to be adjusted. Would you like Jonah to review options?"
+  - "Got it! The minimum booking value for your area is *£{min_gbp:.0f}*. Your budget may need tweaking. Should Jonah look into options for you?"
+
+# Continue Flow
+continue_prompt:
+  - "Great! Let's continue.\n\n{question_text}"
+  - "Perfect! Moving on.\n\n{question_text}"
+  - "Excellent! Next question.\n\n{question_text}"
+
+# Deposit & Payment
+deposit_link:
+  - "💳 *Deposit Payment Link*\n\nGreat news! Your booking request has been approved.\n\nTo secure your booking, please pay the deposit of *£{amount_gbp:.2f}* using the link below:\n\n{checkout_url}\n\nOnce your deposit is confirmed, I'll send you a booking link to schedule your appointment.\n\nThanks! 🙏"
+  - "💳 *Deposit Payment Link*\n\nExcellent! Your booking has been approved.\n\nPlease pay the deposit of *£{amount_gbp:.2f}* using this link:\n\n{checkout_url}\n\nAfter your deposit is confirmed, I'll send you a booking link to choose your appointment time.\n\nThank you! 🙏"
+  - "💳 *Deposit Payment Link*\n\nYour booking request is approved!\n\nSecure your booking by paying the deposit of *£{amount_gbp:.2f}* here:\n\n{checkout_url}\n\nOnce confirmed, I'll send you a booking link to schedule your appointment.\n\nThanks! 🙏"
+
+payment_confirmation:
+  - "✅ *Deposit Confirmed!*\n\nThank you! Your deposit of *£{amount_gbp:.2f}* has been received.\n\nI'll send you a booking link shortly so you can schedule your appointment.\n\nLooking forward to working with you! 🎨"
+  - "✅ *Deposit Confirmed!*\n\nPerfect! Your deposit of *£{amount_gbp:.2f}* is confirmed.\n\nA booking link will be on its way soon so you can pick your appointment time.\n\nCan't wait to work with you! 🎨"
+  - "✅ *Deposit Confirmed!*\n\nGreat! Your deposit of *£{amount_gbp:.2f}* has been received.\n\nI'll send you a booking link shortly to schedule your appointment.\n\nExcited to work with you! 🎨"
+
+# Time Windows
+time_window_request:
+  - "I don't have any available slots in my calendar right now.\n\nCould you share 2-3 preferred day/time windows that work for you? Please include your timezone if different from mine.\n\nFor example:\n• Monday afternoon (GMT)\n• Wednesday morning (GMT)\n• Friday anytime (GMT)\n\nI'll work with you to find a time that works!"
+  - "I'm currently fully booked, but I'd love to find a time that works for you.\n\nCould you share 2-3 preferred day/time windows? Don't forget to include your timezone if it's different.\n\nExamples:\n• Monday afternoon (GMT)\n• Wednesday morning (GMT)\n• Friday anytime (GMT)\n\nLet's find something that works for both of us!"
+  - "My calendar is full at the moment, but let's find a time that suits you.\n\nPlease share 2-3 preferred day/time windows that work for you (include your timezone if different).\n\nFor example:\n• Monday afternoon (GMT)\n• Wednesday morning (GMT)\n• Friday anytime (GMT)\n\nI'll do my best to accommodate!"
+
+time_window_collected:
+  - "Perfect! I've received {window_count} time windows. Jonah will review them and get back to you with available options soon."
+  - "Great! I've got your {window_count} time windows. Jonah will take a look and suggest some options that work."
+  - "Excellent! I've noted your {window_count} time windows. Jonah will review them and get back to you with options."
+
+time_window_follow_up:
+  - "Thanks! Could you share 1-2 more preferred time windows? This helps me find the best time for you."
+  - "Great! Could you add 1-2 more time windows? This will help me find the perfect slot."
+  - "Perfect! Could you share 1-2 additional time windows? This helps me find the best option for you."
+
+time_window_follow_up_remaining:
+  - "Great! Could you share {remaining} more preferred time window(s)? This helps me find the best time for you."
+  - "Perfect! Could you add {remaining} more time window(s)? This will help me find the perfect slot."
+  - "Excellent! Could you share {remaining} additional time window(s)? This helps me find the best option."
+
+# Calendar & Slots
+slot_suggestions_empty:
+  - "I'm checking my calendar for available slots. I'll send you some options shortly!"
+  - "Let me check my calendar for available times. I'll send you options soon!"
+  - "Checking my calendar now. I'll send you some available slots shortly!"
+
+slot_suggestions_header:
+  - "📅 *Available Booking Slots*\n\nHere are some available times ({tz_name}):\n"
+  - "📅 *Available Slots*\n\nHere are some times that work ({tz_name}):\n"
+  - "📅 *Booking Options*\n\nHere are some available times ({tz_name}):\n"
+
+slot_suggestions_footer:
+  - "\nPlease reply with the number (1-8) or describe which slot works for you."
+  - "\nReply with the number (1-8) or tell me which slot works best."
+  - "\nLet me know which slot works by replying with the number (1-8) or describing it."
+
+# Handover Messages
+handover_generic:
+  - "I've paused the automated flow so Jonah can reply directly.\n\nWould you prefer a quick call or chat?\n\nPlease share 2-3 time windows that work for you (and your timezone)."
+  - "I'm passing this to Jonah so he can respond personally.\n\nDo you prefer a quick call or chat?\n\nPlease share 2-3 time windows that work for you (and your timezone)."
+  - "I've paused the bot so Jonah can handle this directly.\n\nWould you like a quick call or chat?\n\nShare 2-3 time windows that work for you (and your timezone)."
+
+handover_coverup:
+  - "I've paused the automated flow so Jonah can assess your cover-up request.\n\nWould you prefer a quick call or chat?\n\nPlease share 2-3 time windows that work for you (and your timezone)."
+  - "Cover-ups need special attention, so I'm passing this to Jonah.\n\nDo you prefer a quick call or chat?\n\nPlease share 2-3 time windows that work for you (and your timezone)."
+  - "I've paused the bot so Jonah can review your cover-up request.\n\nWould you like a quick call or chat?\n\nShare 2-3 time windows that work for you (and your timezone)."
+
+handover_question:
+  - "I've paused the automated flow so the artist can reply directly.\n\nDo you prefer a quick chat or a call?\nAnd what's the main thing you'd like to clarify? (1 sentence)"
+  - "I'm passing this to the artist so they can answer your question.\n\nDo you prefer a quick chat or a call?\nWhat's the main thing you'd like to know? (Keep it to one sentence)"
+  - "I've paused the bot so the artist can respond personally.\n\nWould you like a quick chat or a call?\nWhat's the key question you have? (One sentence, please)"
+
+# Error Messages
+error_no_questions:
+  - "No questions configured"
+  - "Questions not set up"
+  - "Configuration error: no questions"
+
+# Soft Repair Messages (friendly, no commands)
+# Retry 1 = gentle (first variant), retry 2 = short + example + boundary (second variant), retry 3 = handover
+repair_size:
+  - "Just to make sure I've got it right — could you give me a rough size like `10×7cm` or 'palm-sized'?"
+  - "Size? e.g. 10×7cm or palm-sized. One more try then I'll get Jonah to help."
+
+repair_budget:
+  - "Just to clarify — what's your budget amount? A number like 500, 1000, or 2000 works."
+  - "Budget? e.g. 500 or 1000 (in £). One more try then I'll get Jonah to help."
+
+repair_location:
+  - "Just to make sure — what city are you currently in?"
+  - "City? e.g. London or Manchester. One more try then I'll get Jonah to help."
+
+repair_slot:
+  - "Just to make sure I've got it right — which option number do you mean? (1–8)"
+  - "Which slot? Reply with a number 1–8. One more try then I'll get Jonah to help."
+
+# Micro-Confirmations (friendly, no commands)
+confirmation_summary:
+  - "Got it — {size}, {location}, budget ~£{budget}. Reply if you want to change anything."
+  - "Perfect — {size}, {location}, budget ~£{budget}. Let me know if anything needs adjusting."
+  - "Great — {size}, {location}, budget ~£{budget}. Feel free to correct anything."
+
+confirmation_slot:
+  - "Got it — slot {slot_number} selected. I'll confirm the details shortly."
+  - "Perfect — slot {slot_number} it is. I'll get that confirmed for you."
+  - "Great — slot {slot_number} works. I'll lock that in."
+
+# Handover Bridge
+handover_bridge:
+  - "I'm going to have Jonah jump in here — one sec."
+  - "Let me get Jonah involved — he'll reply shortly."
+  - "I'll have Jonah take over from here — he'll be in touch soon."

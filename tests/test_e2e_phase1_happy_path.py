@@ -56,11 +56,14 @@ async def test_e2e_happy_path_city_on_tour_new_to_booked(db, frozen_time):
     """
     wa_from = "1234567890"
 
-    # Mock external services
+    # Mock external services (conversation + messaging so _maybe_send_confirmation_summary uses mock)
     with (
         patch(
             "app.services.conversation.send_whatsapp_message", new_callable=AsyncMock
         ) as mock_whatsapp,
+        patch(
+            "app.services.messaging.send_whatsapp_message", new_callable=AsyncMock
+        ) as mock_whatsapp_messaging,
         patch("app.services.calendar_service.get_available_slots") as mock_slots,
         patch("app.services.stripe_service.create_checkout_session") as mock_stripe,
         patch("app.services.sheets.log_lead_to_sheets") as mock_sheets,
@@ -76,6 +79,7 @@ async def test_e2e_happy_path_city_on_tour_new_to_booked(db, frozen_time):
     ):
         # Setup mocks
         mock_whatsapp.return_value = {"id": "wamock_123", "status": "sent"}
+        mock_whatsapp_messaging.return_value = {"id": "wamock_123", "status": "sent"}
         mock_window_send.return_value = {
             "id": "wamock_123",
             "status": "sent",
@@ -191,6 +195,8 @@ async def test_e2e_happy_path_city_on_tour_new_to_booked(db, frozen_time):
         mock_request = build_stripe_webhook_request(webhook_event)
 
         # Mock webhook signature verification to return our payload
+        from fastapi import BackgroundTasks
+
         with (
             patch(
                 "app.services.stripe_service.verify_webhook_signature", return_value=webhook_event
@@ -200,7 +206,10 @@ async def test_e2e_happy_path_city_on_tour_new_to_booked(db, frozen_time):
             ) as mock_webhook_send,
         ):
             mock_webhook_send.return_value = {"id": "wamock_456", "status": "sent"}
-            webhook_result = await stripe_webhook(mock_request, db=db)
+            background_tasks = BackgroundTasks()
+            webhook_result = await stripe_webhook(
+                mock_request, background_tasks=background_tasks, db=db
+            )
 
         db.refresh(lead)
         assert lead.status == STATUS_BOOKING_PENDING
@@ -249,12 +258,16 @@ async def test_e2e_no_unexpected_statuses(db, frozen_time):
         patch(
             "app.services.conversation.send_whatsapp_message", new_callable=AsyncMock
         ) as mock_whatsapp,
+        patch(
+            "app.services.messaging.send_whatsapp_message", new_callable=AsyncMock
+        ) as mock_whatsapp_messaging,
         patch("app.services.sheets.log_lead_to_sheets", return_value=True) as mock_sheets,
         patch("app.services.handover_service.should_handover", return_value=(False, None)),
         patch("app.services.tour_service.is_city_on_tour", return_value=True),
         patch("app.services.tour_service.closest_upcoming_city", return_value=None),
     ):  # Disable tour conversion
         mock_whatsapp.return_value = {"id": "wamock_123", "status": "sent"}
+        mock_whatsapp_messaging.return_value = {"id": "wamock_123", "status": "sent"}
 
         lead = get_or_create_lead(db, wa_from)
 

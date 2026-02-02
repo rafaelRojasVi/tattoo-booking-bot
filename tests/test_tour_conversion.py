@@ -31,15 +31,16 @@ async def test_city_not_on_tour_offers_conversion(db):
     """
     wa_from = "9999999999"
 
+    # Patch both: conversation uses module-level import; _maybe_send_confirmation_summary imports from messaging
+    mock_whatsapp_fn = AsyncMock(return_value={"id": "wamock_123", "status": "sent"})
     with (
-        patch(
-            "app.services.conversation.send_whatsapp_message", new_callable=AsyncMock
-        ) as mock_whatsapp,
+        patch("app.services.conversation.send_whatsapp_message", mock_whatsapp_fn),
+        patch("app.services.messaging.send_whatsapp_message", mock_whatsapp_fn),
         patch("app.services.tour_service.is_city_on_tour", return_value=False),
         patch("app.services.tour_service.closest_upcoming_city") as mock_closest,
         patch("app.services.handover_service.should_handover", return_value=(False, None)),
     ):
-        mock_whatsapp.return_value = {"id": "wamock_123", "status": "sent"}
+        mock_whatsapp = mock_whatsapp_fn
 
         # Mock closest city to return a tour stop
         from datetime import datetime, timedelta
@@ -82,7 +83,7 @@ async def test_city_not_on_tour_offers_conversion(db):
         # Should be in TOUR_CONVERSION_OFFERED status
         assert lead.status == STATUS_TOUR_CONVERSION_OFFERED
         assert lead.offered_tour_city == "Manchester"
-        assert mock_whatsapp.called
+        assert mock_whatsapp_fn.called
 
 
 @pytest.mark.asyncio

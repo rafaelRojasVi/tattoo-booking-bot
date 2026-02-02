@@ -105,18 +105,23 @@ def should_handover(
     return False, None
 
 
-def get_handover_message(reason: str) -> str:
+def get_handover_message(reason: str, lead_id: int | None = None) -> str:
     """
     Get handover message for client.
 
     Args:
         reason: Reason for handover
+        lead_id: Lead ID for deterministic variant selection
 
     Returns:
         Formatted message
     """
-    return (
-        "I've paused the automated flow so Jonah can reply directly.\n\n"
-        "Would you prefer a quick call or chat?\n\n"
-        "Please share 2-3 time windows that work for you (and your timezone)."
-    )
+    from app.services.message_composer import render_message
+
+    # Select message key based on reason
+    if "cover" in reason.lower() or "coverup" in reason.lower():
+        return render_message("handover_coverup", lead_id=lead_id)
+    elif "question" in reason.lower() or "clarify" in reason.lower():
+        return render_message("handover_question", lead_id=lead_id)
+    else:
+        return render_message("handover_generic", lead_id=lead_id)

@@ -14,5 +14,6 @@ services:
       STRIPE_SECRET_KEY: sk_test_test
       STRIPE_WEBHOOK_SECRET: whsec_test
       FRESHA_BOOKING_URL: https://test.com
+      RATE_LIMIT_ENABLED: "false"
     command: pytest tests/ -v
     working_dir: /app

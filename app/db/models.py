@@ -1,4 +1,4 @@
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, func
+from sqlalchemy import JSON, Boolean, DateTime, Float, ForeignKey, Integer, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -40,7 +40,19 @@ class Lead(Base):
     estimated_category: Mapped[str | None] = mapped_column(
         String(20), nullable=True
     )  # SMALL, MEDIUM, LARGE, XL
+    estimated_days: Mapped[float | None] = mapped_column(
+        Float, nullable=True
+    )  # Estimated days for XL projects (e.g., 1.5, 2.0, 2.5 days)
     estimated_deposit_amount: Mapped[int | None] = mapped_column(Integer, nullable=True)  # in pence
+    estimated_price_min_pence: Mapped[int | None] = mapped_column(
+        Integer, nullable=True
+    )  # Minimum estimated price in pence (internal use only)
+    estimated_price_max_pence: Mapped[int | None] = mapped_column(
+        Integer, nullable=True
+    )  # Maximum estimated price in pence (internal use only)
+    pricing_trace_json: Mapped[dict | None] = mapped_column(
+        JSON, nullable=True
+    )  # Pricing calculation trace (internal use only)
     min_budget_amount: Mapped[int | None] = mapped_column(
         Integer, nullable=True
     )  # region minimum in pence
@@ -55,10 +67,19 @@ class Lead(Base):
     # Deposit fields
     deposit_amount_pence: Mapped[int | None] = mapped_column(Integer, nullable=True)
     stripe_checkout_session_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    deposit_checkout_expires_at: Mapped[DateTime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )  # Timestamp when checkout session expires (24h from creation)
     stripe_payment_intent_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
     stripe_payment_status: Mapped[str | None] = mapped_column(String(50), nullable=True)
     deposit_paid_at: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     deposit_sent_at: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    deposit_amount_locked_at: Mapped[DateTime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )  # Timestamp when deposit amount was locked
+    deposit_rule_version: Mapped[str | None] = mapped_column(
+        String(20), nullable=True
+    )  # Version of deposit rules used (e.g., "v1")
 
     # Booking fields (Phase 1 - manual booking)
     booking_link: Mapped[str | None] = mapped_column(String(500), nullable=True)
@@ -79,6 +100,15 @@ class Lead(Base):
         DateTime(timezone=True), nullable=True
     )
     calendar_end_at: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    suggested_slots_json: Mapped[dict | None] = mapped_column(
+        JSON, nullable=True
+    )  # Stores suggested slots when sent: [{"start": "2026-01-25T10:00:00Z", "end": "2026-01-25T12:00:00Z"}, ...]
+    selected_slot_start_at: Mapped[DateTime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )  # Client's selected slot start time
+    selected_slot_end_at: Mapped[DateTime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )  # Client's selected slot end time
 
     # Timestamps for reminders and tracking
     last_client_message_at: Mapped[DateTime | None] = mapped_column(
@@ -137,10 +167,18 @@ class Lead(Base):
 
     # Handover fields (Phase 1)
     handover_reason: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    handover_last_hold_reply_at: Mapped[DateTime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )  # Rate-limit holding "I've paused..." message (e.g. once per 6h)
     preferred_handover_channel: Mapped[str | None] = mapped_column(
         String(20), nullable=True, default="CALL"
     )  # CALL, CHAT
     call_availability_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    # Parse failure tracking (two-strikes handover)
+    parse_failure_counts: Mapped[dict | None] = mapped_column(
+        JSON, nullable=True
+    )  # Tracks parse failures per field: {"dimensions": 2, "budget": 1, "location_city": 0, "slot": 1}
 
     created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[DateTime] = mapped_column(
@@ -217,3 +255,66 @@ class ActionToken(Base):
 
     # Relationship to lead
     lead: Mapped["Lead"] = relationship("Lead")
+
+
+class SystemEvent(Base):
+    """System events table for logging key system events and failures."""
+
+    __tablename__ = "system_events"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    created_at: Mapped[DateTime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), index=True
+    )
+    level: Mapped[str] = mapped_column(String(10), index=True)  # INFO, WARN, ERROR
+    event_type: Mapped[str] = mapped_column(
+        String(100), index=True
+    )  # e.g., "whatsapp.send_failure"
+    lead_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("leads.id"), nullable=True, index=True
+    )
+    payload: Mapped[dict | None] = mapped_column(JSON, nullable=True)  # Additional event data
+
+    # Relationship to lead (optional)
+    lead: Mapped["Lead | None"] = relationship("Lead")
+
+
+class Attachment(Base):
+    """Attachment model for reference images and media files."""
+
+    __tablename__ = "attachments"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    lead_id: Mapped[int] = mapped_column(Integer, ForeignKey("leads.id"), nullable=False, index=True)
+    lead_answer_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("lead_answers.id"), nullable=True, index=True
+    )
+
+    # WhatsApp media tracking
+    whatsapp_media_id: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
+
+    # Storage provider info
+    provider: Mapped[str] = mapped_column(String(50), default="supabase")  # supabase, s3, etc.
+    bucket: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    object_key: Mapped[str | None] = mapped_column(String(500), nullable=True, index=True)
+
+    # File metadata
+    content_type: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    size_bytes: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+    # Upload status tracking
+    upload_status: Mapped[str] = mapped_column(
+        String(20), default="PENDING", index=True
+    )  # PENDING, UPLOADED, FAILED
+    upload_attempts: Mapped[int] = mapped_column(Integer, default=0)
+    last_attempt_at: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    uploaded_at: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    failed_at: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    # Timestamps
+    created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    # Relationships
+    lead: Mapped["Lead"] = relationship("Lead")
+    lead_answer: Mapped["LeadAnswer | None"] = relationship("LeadAnswer")

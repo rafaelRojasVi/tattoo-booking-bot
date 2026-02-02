@@ -22,4 +22,7 @@ COPY . /app
 
 EXPOSE 8000
 
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Use WEB_CONCURRENCY env var if set, otherwise default to 2 workers
+# This allows tuning per deployment (small machines: 1-2, large machines: 4-8)
+# Using shell form ensures env var expansion works correctly
+CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers ${WEB_CONCURRENCY:-2}"]

@@ -16,3 +16,6 @@ pre-commit>=3.4.0
 
 # Dependency management
 pip-tools>=7.0.0
+
+# Testing
+pytest-mock>=3.12.0

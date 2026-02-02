@@ -73,7 +73,7 @@ source .venv/bin/activate  # On Windows: .venv\Scripts\activate
 
 # Install dependencies
 pip install -r requirements.txt
-pip install -r requirements-dev.txt
+pip install -r requirements-dev.txt  # Includes pytest, pytest-mock, and other dev tools
 
 # Set up environment variables (copy .env.example to .env)
 cp .env.example .env
@@ -103,6 +103,10 @@ Create a `.env` file from `.env.example` template. Required variables:
 
 ### Optional
 
+- `WEB_CONCURRENCY` - Number of uvicorn worker processes (default: 2). Tune based on machine size:
+  - Small machines: 1-2 workers
+  - Medium machines: 2-4 workers
+  - Large machines: 4-8 workers
 - `OPENAI_API_KEY` - For AI features (if enabled)
 - `GOOGLE_SHEETS_*` - Google Sheets integration settings
 - `GOOGLE_CALENDAR_*` - Google Calendar integration settings
@@ -171,11 +175,17 @@ The test suite includes 390+ tests covering:
 ### Code Quality
 
 ```bash
-# Run linter
-ruff check app tests
+# Run linter (app code only - tests have relaxed rules)
+ruff check app
+
+# Auto-fix issues where possible
+ruff check app --fix
 
 # Format code
-ruff format app tests
+ruff format .
+
+# Check formatting without changes
+ruff format . --check
 
 # Type checking
 mypy app
@@ -184,6 +194,8 @@ mypy app
 bandit -r app
 pip-audit -r requirements.txt
 ```
+
+**Note:** Ruff is configured to enforce quality in `app/` while allowing flexibility in `tests/`. See `pyproject.toml` for configuration details.
 
 ### Database Migrations
 
@@ -234,17 +246,27 @@ This will:
 
 ## Production Deployment
 
-### Prerequisites
+### Deployment Options
 
-1. Set `APP_ENV=production` in environment
-2. Configure `ADMIN_API_KEY` (server refuses to start if missing in production)
-3. Set `WHATSAPP_DRY_RUN=false` to enable real message sending
-4. Configure WhatsApp templates for 24h window fallback
-5. Set up Google Sheets integration (if needed)
-6. Configure Stripe webhook endpoint
-7. Set production URLs for action tokens and Stripe callbacks
+#### Render.com (Recommended)
 
-### Docker Deployment
+See **[Deployment Guide](docs/DEPLOYMENT_RENDER.md)** for step-by-step instructions.
+
+Quick start:
+1. Create `render.yaml` Blueprint (already included in repo)
+2. Connect your GitHub repository to Render
+3. Render will automatically detect and deploy the services
+4. Set environment variables in Render Dashboard
+5. Run database migrations
+
+**Key Features:**
+- Web Service with health checks (`/health`, `/ready`)
+- Managed PostgreSQL database
+- Automatic deployments from Git
+- Environment variable management
+- Built-in HTTPS
+
+#### Docker Deployment
 
 ```bash
 # Pull latest image
@@ -254,18 +276,50 @@ docker pull ghcr.io/rafaelRojasVi/tattoo-booking-bot:latest
 docker compose -f docker-compose.prod.yml up -d
 ```
 
+### Environment Variables
+
+Set environment variables in your deployment platform (Render Dashboard, Docker Compose, etc.):
+
+**Required:**
+- `APP_ENV=production`
+- `ADMIN_API_KEY` - Strong random key (server refuses to start if missing in production)
+- `DATABASE_URL` - PostgreSQL connection string
+- `WHATSAPP_VERIFY_TOKEN`, `WHATSAPP_ACCESS_TOKEN`, `WHATSAPP_PHONE_NUMBER_ID`
+- `WHATSAPP_APP_SECRET` - Required for webhook signature verification
+- `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`
+- `FRESHA_BOOKING_URL`
+
+**Production Settings:**
+- `DEMO_MODE=false` (required in production)
+- `WHATSAPP_DRY_RUN=false` (to enable real message sending)
+- `WEB_CONCURRENCY=2` (tune based on instance size: 1-2 for small, 4-8 for large)
+
+**URLs:**
+- `ACTION_TOKEN_BASE_URL` - Your production domain (e.g., `https://your-service.onrender.com`)
+- `STRIPE_SUCCESS_URL`, `STRIPE_CANCEL_URL` - Payment redirect URLs
+
+**Optional:**
+- `RATE_LIMIT_ENABLED=true` (default: enabled)
+- `RATE_LIMIT_REQUESTS=10` (requests per window)
+- `RATE_LIMIT_WINDOW_SECONDS=60` (time window)
+
+See `.env.example` for complete list of available environment variables.
+
 ### Environment Checklist
 
 - [ ] `APP_ENV=production`
 - [ ] `ADMIN_API_KEY` set (strong random key)
+- [ ] `DEMO_MODE=false`
 - [ ] `WHATSAPP_DRY_RUN=false`
+- [ ] `WHATSAPP_APP_SECRET` set (for webhook verification)
 - [ ] `DATABASE_URL` points to production database
 - [ ] `ACTION_TOKEN_BASE_URL` set to production domain
 - [ ] `STRIPE_SUCCESS_URL` and `STRIPE_CANCEL_URL` configured
 - [ ] Stripe webhook endpoint configured
 - [ ] WhatsApp webhook configured
+- [ ] Database migrations applied (`alembic upgrade head`)
 
-See **[Operations Runbook](docs/ops_runbook.md)** for detailed production setup and troubleshooting.
+See **[Deployment Guide](docs/DEPLOYMENT_RENDER.md)** for Render.com deployment or **[Operations Runbook](docs/ops_runbook.md)** for detailed production setup and troubleshooting.
 
 ## Security
 
