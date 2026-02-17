@@ -34,6 +34,8 @@ def test_sheets_disabled_by_feature_flag(db):
 
 def test_calendar_disabled_by_feature_flag(db):
     """Test that calendar slot suggestions are skipped when feature flag is disabled."""
+    import asyncio
+
     lead = Lead(
         id=301,
         wa_from="1234567890",
@@ -44,10 +46,8 @@ def test_calendar_disabled_by_feature_flag(db):
     db.refresh(lead)
 
     with patch.object(settings, "feature_calendar_enabled", False):
-        # send_slot_suggestions_to_client returns bool, but we can check it doesn't send
-        # by checking it returns early
         with patch("app.services.calendar_service.get_available_slots") as mock_slots:
-            result = send_slot_suggestions_to_client(db, lead, dry_run=True)
+            result = asyncio.run(send_slot_suggestions_to_client(db, lead, dry_run=True))
             # Should return False (not sent) and not call get_available_slots
             assert result is False
             assert not mock_slots.called

@@ -1,6 +1,7 @@
-from sqlalchemy import JSON, Boolean, DateTime, Float, ForeignKey, Integer, String, Text, func
+from sqlalchemy import JSON, Boolean, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
+from app.constants.providers import PROVIDER_WHATSAPP
 from app.db.base import Base
 
 
@@ -8,7 +9,7 @@ class Lead(Base):
     __tablename__ = "leads"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    channel: Mapped[str] = mapped_column(String(20), default="whatsapp")
+    channel: Mapped[str] = mapped_column(String(20), default=PROVIDER_WHATSAPP)
     wa_from: Mapped[str] = mapped_column(String(64), index=True)
     status: Mapped[str] = mapped_column(String(32), default="NEW")
     current_step: Mapped[int] = mapped_column(Integer, default=0)
@@ -218,11 +219,13 @@ class ProcessedMessage(Base):
     """Idempotency table - stores processed WhatsApp message IDs, Stripe event IDs, and other events to prevent duplicates."""
 
     __tablename__ = "processed_messages"
+    __table_args__ = (UniqueConstraint("provider", "message_id", name="ix_processed_messages_provider_message_id"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    message_id: Mapped[str] = mapped_column(
-        String(255), unique=True, index=True
-    )  # Can be message ID, event ID, etc.
+    provider: Mapped[str] = mapped_column(
+        String(32), default="whatsapp", index=True
+    )  # "whatsapp" or "stripe"
+    message_id: Mapped[str] = mapped_column(String(255), index=True)  # Message ID, event ID, etc.
     event_type: Mapped[str | None] = mapped_column(
         String(100), nullable=True
     )  # e.g., "whatsapp.message", "stripe.checkout.session.completed"
@@ -276,6 +279,35 @@ class SystemEvent(Base):
     payload: Mapped[dict | None] = mapped_column(JSON, nullable=True)  # Additional event data
 
     # Relationship to lead (optional)
+    lead: Mapped["Lead | None"] = relationship("Lead")
+
+
+class OutboxMessage(Base):
+    """
+    Outbox-lite for WhatsApp sends: persist intent, retry on failure.
+    Used when OUTBOX_ENABLED=true.
+    """
+
+    __tablename__ = "outbox_messages"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    created_at: Mapped[DateTime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), index=True
+    )
+    lead_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("leads.id"), nullable=True, index=True
+    )
+    channel: Mapped[str] = mapped_column(String(20), default="whatsapp")
+    payload_json: Mapped[dict] = mapped_column(JSON)  # {to, message, template_name?, template_params?}
+    status: Mapped[str] = mapped_column(
+        String(20), default="PENDING", index=True
+    )  # PENDING, SENT, FAILED
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    next_retry_at: Mapped[DateTime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, index=True
+    )
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+
     lead: Mapped["Lead | None"] = relationship("Lead")
 
 

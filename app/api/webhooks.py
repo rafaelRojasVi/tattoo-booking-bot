@@ -4,8 +4,23 @@ from datetime import UTC
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, Response
 from fastapi.responses import JSONResponse
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.constants.event_types import (
+    EVENT_DEPOSIT_PAID,
+    EVENT_PILOT_MODE_BLOCKED,
+    EVENT_SHEETS_BACKGROUND_DB_ERROR,
+    EVENT_SHEETS_BACKGROUND_LOG_FAILURE,
+    EVENT_STRIPE_CHECKOUT_SESSION_COMPLETED,
+    EVENT_STRIPE_SESSION_ID_MISMATCH,
+    EVENT_STRIPE_SIGNATURE_VERIFICATION_FAILURE,
+    EVENT_STRIPE_WEBHOOK_FAILURE,
+    EVENT_WHATSAPP_MESSAGE,
+    EVENT_WHATSAPP_SIGNATURE_VERIFICATION_FAILURE,
+    EVENT_WHATSAPP_WEBHOOK_FAILURE,
+)
+from app.constants.providers import PROVIDER_WHATSAPP
 from app.core.config import settings
 from app.db.deps import get_db
 from app.db.models import Lead, ProcessedMessage
@@ -27,6 +42,28 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
+def _is_processed_message_unique_violation(exc: IntegrityError) -> bool:
+    """
+    Return True only if the IntegrityError is a unique-constraint violation
+    on ProcessedMessage(provider, message_id). Re-raise otherwise to avoid hiding real DB bugs.
+    """
+    orig = exc.orig
+    if orig is None:
+        return False
+    # Postgres: SQLSTATE 23505 = unique_violation; optionally match constraint name
+    if hasattr(orig, "pgcode") and orig.pgcode == "23505":
+        err_msg = str(orig).lower() if orig else ""
+        if "ix_processed_messages_provider_message_id" in err_msg:
+            return True
+        # ProcessedMessage has only one unique constraint; in this insert context, 23505 is ours
+        return True
+    # SQLite: check error message
+    err_msg = str(orig).lower() if orig else ""
+    if "unique constraint" in err_msg or "unique constraint failed" in err_msg:
+        return True
+    return False
+
+
 @router.get("/whatsapp")
 def whatsapp_verify(
     hub_mode: str | None = None,
@@ -44,12 +81,10 @@ async def whatsapp_inbound(
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
 ):
-    # Generate correlation ID for this inbound event
-    import uuid
+    # Use correlation ID from middleware (X-Correlation-ID or generated)
+    from app.middleware.correlation_id import get_correlation_id
 
-    correlation_id = str(uuid.uuid4())
-
-    # Log structured event with correlation ID
+    correlation_id = get_correlation_id(request)
     logger.info(
         f"whatsapp.inbound_received correlation_id={correlation_id}",
         extra={
@@ -70,7 +105,7 @@ async def whatsapp_inbound(
 
         warn(
             db=db,
-            event_type="whatsapp.signature_verification_failure",
+            event_type=EVENT_WHATSAPP_SIGNATURE_VERIFICATION_FAILURE,
             lead_id=None,
             payload={"has_signature_header": signature_header is not None},
         )
@@ -159,19 +194,38 @@ async def whatsapp_inbound(
             status_code=400, content={"received": False, "error": "Invalid phone number format"}
         )
 
-    # Idempotency check: if we have a message_id, check if we've already processed it
+    # Idempotency: insert ProcessedMessage FIRST (before any processing).
+    # Only treat unique-constraint violation on (provider, message_id) as duplicate.
+    processed_msg = None
     if message_id:
-        stmt = select(ProcessedMessage).where(ProcessedMessage.message_id == message_id)
-        existing = db.execute(stmt).scalar_one_or_none()
-        if existing:
-            # Already processed - return success without reprocessing
+        try:
+            processed_msg = ProcessedMessage(
+                provider=PROVIDER_WHATSAPP,
+                message_id=message_id,
+                event_type=EVENT_WHATSAPP_MESSAGE,
+                lead_id=None,  # Will update after we have lead
+            )
+            db.add(processed_msg)
+            db.flush()
+        except IntegrityError as e:
+            if not _is_processed_message_unique_violation(e):
+                raise  # Re-raise to avoid hiding real DB bugs
+            db.rollback()
+            stmt = select(ProcessedMessage).where(
+                ProcessedMessage.provider == PROVIDER_WHATSAPP,
+                ProcessedMessage.message_id == message_id,
+            )
+            existing = db.execute(stmt).scalar_one_or_none()
+            existing_ts = (
+                existing.processed_at.isoformat()
+                if existing and existing.processed_at
+                else None
+            )
             return {
                 "received": True,
                 "type": "duplicate",
                 "message_id": message_id,
-                "processed_at": existing.processed_at.isoformat()
-                if existing.processed_at
-                else None,
+                "processed_at": existing_ts,
             }
 
     try:
@@ -219,7 +273,7 @@ async def whatsapp_inbound(
 
             info(
                 db=db,
-                event_type="pilot_mode.blocked",
+                event_type=EVENT_PILOT_MODE_BLOCKED,
                 lead_id=lead.id if lead else None,
                 payload={
                     "wa_from": wa_from,
@@ -227,15 +281,10 @@ async def whatsapp_inbound(
                 },
             )
 
-            # Mark message as processed (idempotency) but don't start consultation
-            if message_id:
-                processed = ProcessedMessage(
-                    message_id=message_id,
-                    event_type="whatsapp.message",
-                    lead_id=lead.id if lead else None,
-                )
-                db.add(processed)
-                db.commit()
+            # Update lead_id on ProcessedMessage we inserted at start
+            if processed_msg:
+                processed_msg.lead_id = lead.id
+            db.commit()
 
             return {
                 "received": True,
@@ -285,17 +334,10 @@ async def whatsapp_inbound(
                 has_media=has_media,
             )
 
-            # CRITICAL FIX: Mark message as processed ONLY after successful processing
-            # This prevents dropped events if we crash before finishing side effects
-            # If we crash here, WhatsApp will retry and we'll process it again (correct behavior)
-            if message_id:
-                processed = ProcessedMessage(
-                    message_id=message_id,
-                    event_type="whatsapp.message",
-                    lead_id=lead.id,
-                )
-                db.add(processed)
-                db.commit()
+            # Update lead_id on ProcessedMessage we inserted at start (idempotency)
+            if processed_msg:
+                processed_msg.lead_id = lead.id
+            db.commit()
 
             # Create Attachment record for media messages (reference images)
             if media_id and message_type in ["image", "document"]:
@@ -343,14 +385,10 @@ async def whatsapp_inbound(
 
             error(
                 db=db,
-                event_type="whatsapp.webhook_failure",
+                event_type=EVENT_WHATSAPP_WEBHOOK_FAILURE,
                 lead_id=lead.id if lead else None,
-                payload={
-                    "message_id": message_id,
-                    "wa_from": wa_from,
-                    "error_type": type(e).__name__,
-                    "error": str(e)[:200],  # Truncate to avoid storing too much
-                },
+                payload={"message_id": message_id, "wa_from": wa_from},
+                exc=e,
             )
             return {
                 "received": True,
@@ -438,7 +476,7 @@ async def stripe_webhook(
 
         warn(
             db=db,
-            event_type="stripe.signature_verification_failure",
+            event_type=EVENT_STRIPE_SIGNATURE_VERIFICATION_FAILURE,
             lead_id=None,
             payload={"error": str(e)[:200]},  # Truncate to avoid storing too much
         )
@@ -453,8 +491,14 @@ async def stripe_webhook(
         return JSONResponse(status_code=500, content={"error": "Webhook verification failed"})
 
     # Handle the event
-    event_type = event["type"]
-    event_data = event["data"]["object"]
+    event_type = event.get("type")
+    data = event.get("data")
+    event_data = data.get("object") if isinstance(data, dict) else None
+    if event_data is None:
+        return JSONResponse(
+            status_code=400,
+            content={"error": "Malformed event: missing data.object"},
+        )
 
     # Idempotency: Stripe sends idempotency key in event id
     event_id = event.get("id")
@@ -465,14 +509,28 @@ async def stripe_webhook(
         client_reference_id = event_data.get("client_reference_id")  # Contains lead_id
         metadata = event_data.get("metadata", {})
 
-        # Get lead_id from metadata or client_reference_id
+        # Get lead_id from metadata or client_reference_id (safe parse - reject invalid)
+        def _safe_parse_lead_id(val) -> int | None:
+            if val is None:
+                return None
+            s = str(val).strip()
+            if not s:
+                return None
+            try:
+                n = int(s)
+                if n != float(s):  # Reject "1.5" etc
+                    return None
+                return n if n > 0 else None
+            except (ValueError, TypeError):
+                return None
+
         lead_id = None
         if metadata and "lead_id" in metadata:
-            lead_id = int(metadata["lead_id"])
-        elif client_reference_id:
-            lead_id = int(client_reference_id)
+            lead_id = _safe_parse_lead_id(metadata["lead_id"])
+        if lead_id is None and client_reference_id:
+            lead_id = _safe_parse_lead_id(client_reference_id)
 
-        if not lead_id:
+        if lead_id is None or lead_id <= 0:
             return JSONResponse(
                 status_code=400, content={"error": "No lead_id found in checkout session"}
             )
@@ -494,7 +552,7 @@ async def stripe_webhook(
 
                 error(
                     db=db,
-                    event_type="stripe.session_id_mismatch",
+                    event_type=EVENT_STRIPE_SESSION_ID_MISMATCH,
                     lead_id=lead_id,
                     payload={
                         "expected_session_id": lead.stripe_checkout_session_id,
@@ -573,7 +631,7 @@ async def stripe_webhook(
 
                 error(
                     db=db,
-                    event_type="stripe.webhook_failure",
+                    event_type=EVENT_STRIPE_WEBHOOK_FAILURE,
                     lead_id=lead_id,
                     payload={
                         "event_type": event_type,
@@ -620,8 +678,13 @@ async def stripe_webhook(
         # 3. Finally record as processed (so if we crash, we can retry)
 
         # Log to Google Sheets in background (non-blocking)
-        # Pass lead_id to avoid reusing request-scoped DB session
-        background_tasks.add_task(_log_lead_to_sheets_background, lead_id=lead_id)
+        # Pass lead_id and correlation_id for tracing
+        from app.middleware.correlation_id import get_correlation_id
+
+        cid = get_correlation_id(request)
+        background_tasks.add_task(
+            _log_lead_to_sheets_background, lead_id=lead_id, correlation_id=cid
+        )
 
         # Phase 1: Send WhatsApp confirmation message to client (with 24h window check)
         if lead.deposit_amount_pence:
@@ -677,7 +740,7 @@ async def stripe_webhook(
                 await notify_artist(
                     db=db,
                     lead=lead,
-                    event_type="deposit_paid",
+                    event_type=EVENT_DEPOSIT_PAID,
                     dry_run=settings.whatsapp_dry_run,
                 )
             except Exception as e:
@@ -695,7 +758,7 @@ async def stripe_webhook(
             record_processed_event(
                 db=db,
                 event_id=event_id,
-                event_type="stripe.checkout.session.completed",
+                event_type=EVENT_STRIPE_CHECKOUT_SESSION_COMPLETED,
                 lead_id=lead_id,
             )
         except Exception as e:
@@ -719,16 +782,21 @@ async def stripe_webhook(
     }
 
 
-def _log_lead_to_sheets_background(lead_id: int) -> None:
+def _log_lead_to_sheets_background(lead_id: int, correlation_id: str | None = None) -> None:
     """
     Background task to log lead to Google Sheets.
 
     Opens a fresh DB session to avoid reusing request-scoped session.
-    Logs SystemEvent(ERROR) on failure so failures aren't silent.
+    Logs a system event (ERROR level) on failure so failures aren't silent.
 
     Args:
         lead_id: Lead ID to log
+        correlation_id: Optional correlation ID for request tracing
     """
+    if correlation_id:
+        from app.middleware.correlation_id import set_correlation_id
+
+        set_correlation_id(correlation_id)
     from app.db.models import Lead
     from app.db.session import SessionLocal
     from app.services.system_event_service import error as log_system_error
@@ -751,14 +819,10 @@ def _log_lead_to_sheets_background(lead_id: int) -> None:
                     try:
                         log_system_error(
                             db=db,
-                            event_type="sheets.background_log_failure",
+                            event_type=EVENT_SHEETS_BACKGROUND_LOG_FAILURE,
                             lead_id=lead_id,
-                            payload={
-                                "error_type": type(e).__name__,
-                                "error": str(e)[:200],  # Truncate to avoid storing too much
-                            },
+                            exc=e,
                         )
-                        db.commit()
                     except Exception as event_error:
                         # If SystemEvent logging fails, at least log to logger
                         logger.error(f"Failed to log SystemEvent for Sheets failure: {event_error}")
@@ -774,14 +838,10 @@ def _log_lead_to_sheets_background(lead_id: int) -> None:
             try:
                 log_system_error(
                     db=db,
-                    event_type="sheets.background_db_error",
+                    event_type=EVENT_SHEETS_BACKGROUND_DB_ERROR,
                     lead_id=lead_id,
-                    payload={
-                        "error_type": type(e).__name__,
-                        "error": str(e)[:200],
-                    },
+                    exc=e,
                 )
-                db.commit()
             except Exception:
                 # If SystemEvent logging fails, ignore (already logged to logger)
                 pass

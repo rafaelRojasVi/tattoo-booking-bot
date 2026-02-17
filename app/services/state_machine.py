@@ -11,9 +11,13 @@ IMPROVEMENTS:
 
 import logging
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
 
+from app.constants.event_types import (
+    EVENT_ADVANCE_STEP_PENDING_CHANGES,
+    EVENT_ATOMIC_UPDATE_CONFLICT,
+)
 from app.db.models import Lead
 from app.services.conversation import (
     STATUS_ABANDONED,
@@ -306,8 +310,10 @@ def advance_step_if_at(
     """
     Atomically advance current_step only if it equals expected_step (prevents double-advance).
 
-    Uses SELECT FOR UPDATE to lock the row, then updates current_step.
-    Call this when advancing step after saving an answer; use returned lead for next question.
+    Uses conditional UPDATE (portable: SQLite + Postgres):
+      UPDATE leads SET current_step = current_step + 1
+      WHERE id = :id AND current_step = :expected_step
+    rowcount == 1 => success; rowcount == 0 => conflict (another request advanced first).
 
     Args:
         db: Database session
@@ -317,20 +323,52 @@ def advance_step_if_at(
     Returns:
         (True, updated_lead) if step was advanced, (False, None) if another request already advanced
     """
-    stmt = select(Lead).where(Lead.id == lead_id).with_for_update()
-    locked = db.execute(stmt).scalar_one_or_none()
-    if not locked:
-        return False, None
-    if locked.current_step != expected_step:
-        logger.debug(
-            f"Lead {lead_id} step mismatch: expected {expected_step}, got {locked.current_step}"
+    # Safety guard: detect pending changes before UPDATE; commit would flush them unexpectedly
+    n_new = len(db.new)
+    n_dirty = len(db.dirty)
+    n_deleted = len(db.deleted)
+    if n_new or n_dirty or n_deleted:
+        from app.services.system_event_service import warn
+
+        warn(
+            db=db,
+            event_type=EVENT_ADVANCE_STEP_PENDING_CHANGES,
+            lead_id=lead_id,
+            payload={
+                "new_count": n_new,
+                "dirty_count": n_dirty,
+                "deleted_count": n_deleted,
+            },
         )
-        return False, None
-    locked.current_step = expected_step + 1
+
+    stmt = (
+        update(Lead)
+        .where(Lead.id == lead_id)
+        .where(Lead.current_step == expected_step)
+        .values(current_step=expected_step + 1)
+    )
+    result = db.execute(stmt)
     db.commit()
-    db.refresh(locked)
-    logger.info(f"Lead {lead_id} step advanced: {expected_step} -> {locked.current_step}")
-    return True, locked
+    if result.rowcount == 0:
+        lead = db.get(Lead, lead_id)
+        if lead and lead.current_step != expected_step:
+            from app.services.system_event_service import warn
+
+            warn(
+                db=db,
+                event_type=EVENT_ATOMIC_UPDATE_CONFLICT,
+                lead_id=lead_id,
+                payload={
+                    "operation": "advance_step",
+                    "expected_step": expected_step,
+                    "actual_step": lead.current_step,
+                },
+            )
+        return False, None
+    lead = db.get(Lead, lead_id)
+    db.refresh(lead)
+    logger.info(f"Lead {lead_id} step advanced: {expected_step} -> {lead.current_step}")
+    return True, lead
 
 
 def get_allowed_transitions(from_status: str) -> list[str]:

@@ -78,6 +78,20 @@ def test_system_event_error(db):
     assert event.event_type == "test.error_event"
 
 
+def test_system_event_exc_nested_under_payload_error(db):
+    """Exception info is nested under payload['error'] = {type, message}."""
+    exc = ValueError("Something went wrong")
+    event = error(
+        db=db,
+        event_type="test.exc_event",
+        lead_id=None,
+        payload={"context": "extra"},
+        exc=exc,
+    )
+    assert event.payload["error"] == {"type": "ValueError", "message": "Something went wrong"}
+    assert event.payload["context"] == "extra"
+
+
 def test_system_event_with_lead(db, sample_lead):
     """Test logging system event with lead ID."""
     event = info(

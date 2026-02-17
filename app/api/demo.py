@@ -13,6 +13,7 @@ from pydantic import BaseModel
 from sqlalchemy import desc, select
 from sqlalchemy.orm import Session
 
+from app.constants.event_types import EVENT_STRIPE_CHECKOUT_SESSION_COMPLETED
 from app.core.config import settings
 from app.db.deps import get_db
 from app.db.models import Lead, LeadAnswer
@@ -238,7 +239,7 @@ async def demo_stripe_pay(
     is_duplicate, _ = check_and_record_processed_event(
         db=db,
         event_id=event_id,
-        event_type="stripe.checkout.session.completed",
+        event_type=EVENT_STRIPE_CHECKOUT_SESSION_COMPLETED,
         lead_id=lead.id,
     )
 

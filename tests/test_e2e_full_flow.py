@@ -66,7 +66,10 @@ async def test_complete_flow_start_to_finish(client, db):
 
     # Verify message was marked as processed
     processed = db.execute(
-        select(ProcessedMessage).where(ProcessedMessage.message_id == "msg_001")
+        select(ProcessedMessage).where(
+            ProcessedMessage.provider == "whatsapp",
+            ProcessedMessage.message_id == "msg_001",
+        )
     ).scalar_one_or_none()
     assert processed is not None
 
@@ -273,10 +276,6 @@ async def test_complete_flow_start_to_finish(client, db):
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(
-    reason="Flaky: QUALIFYING→PENDING_APPROVAL may not complete; handover/tour mocks may not cover all paths",
-    strict=False,
-)
 async def test_artist_handover_and_resume(client, db):
     """
     Test ARTIST handover functionality and CONTINUE resume.

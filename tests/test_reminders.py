@@ -55,7 +55,10 @@ def test_qualifying_reminder_sent(db):
     # Verify idempotency - event recorded
     event_id = result["event_id"]
     processed = db.execute(
-        select(ProcessedMessage).where(ProcessedMessage.message_id == event_id)
+        select(ProcessedMessage).where(
+            ProcessedMessage.provider == "reminder",
+            ProcessedMessage.message_id == event_id,
+        )
     ).scalar_one_or_none()
     assert processed is not None
     assert processed.event_type == "reminder.qualifying.1"
@@ -103,7 +106,10 @@ def test_booking_reminder_24h_sent(db):
     # Verify idempotency
     event_id = result["event_id"]
     processed = db.execute(
-        select(ProcessedMessage).where(ProcessedMessage.message_id == event_id)
+        select(ProcessedMessage).where(
+            ProcessedMessage.provider == "reminder",
+            ProcessedMessage.message_id == event_id,
+        )
     ).scalar_one_or_none()
     assert processed is not None
     assert processed.event_type == "reminder.booking.24h"

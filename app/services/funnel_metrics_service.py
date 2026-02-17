@@ -33,6 +33,8 @@ def get_funnel_metrics(db: Session, days: int = 7) -> dict:
     Returns:
         Dict with counts and conversion rates
     """
+    # Clamp days to avoid OverflowError (timedelta max ~999999999 days on some platforms)
+    days = max(1, min(days, 3650))  # 1 to ~10 years
     cutoff_date = datetime.now(UTC) - timedelta(days=days)
 
     # Base query: leads created in time window

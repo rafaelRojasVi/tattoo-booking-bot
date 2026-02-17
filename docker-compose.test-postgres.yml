@@ -1,0 +1,37 @@
+# Docker Compose for running concurrency tests against Postgres
+# SQLite does not support row locks; these tests are skipped on SQLite.
+# Usage: docker compose -f docker-compose.test-postgres.yml run --rm test-postgres
+
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: test
+      POSTGRES_PASSWORD: test
+      POSTGRES_DB: test
+    ports:
+      - "5433:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U test -d test"]
+      interval: 2s
+      timeout: 5s
+      retries: 5
+
+  test-postgres:
+    build: .
+    volumes:
+      - ./:/app
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: "postgresql://test:test@db:5432/test"
+      WHATSAPP_VERIFY_TOKEN: test_token
+      WHATSAPP_ACCESS_TOKEN: test_token
+      WHATSAPP_PHONE_NUMBER_ID: test_id
+      STRIPE_SECRET_KEY: sk_test_test
+      STRIPE_WEBHOOK_SECRET: whsec_test
+      FRESHA_BOOKING_URL: https://test.com
+      RATE_LIMIT_ENABLED: "false"
+    command: pytest tests/test_production_hardening.py -k concurrent -v
+    working_dir: /app

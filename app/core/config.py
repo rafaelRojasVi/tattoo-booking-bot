@@ -91,6 +91,9 @@ class Settings(BaseSettings):
     rate_limit_requests: int = 10  # Number of requests allowed per window
     rate_limit_window_seconds: int = 60  # Time window in seconds
 
+    # Outbox-lite for WhatsApp (durable retries when enabled)
+    outbox_enabled: bool = False  # When True: persist send intent, retry on failure
+
 
 # Settings will load from environment variables or .env file
 # Required fields will raise ValidationError if missing (fail-fast)

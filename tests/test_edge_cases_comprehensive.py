@@ -20,7 +20,7 @@ from app.services.conversation import (
 from app.services.estimation_service import get_deposit_amount
 from app.services.parse_repair import increment_parse_failure, should_handover_after_failure
 from app.services.pricing_service import calculate_price_range
-from app.services.slot_parsing import parse_slot_selection
+from app.services.slot_parsing import parse_slot_selection_logged
 
 # ============================================================================
 # Consultation Flow Edge Cases
@@ -295,28 +295,28 @@ async def test_tour_conversion_city_case_insensitive(db, lead_with_answers):
 
 def test_slot_parsing_empty_slots():
     """Test parsing with empty slots list."""
-    result = parse_slot_selection("1", [], max_slots=8)
+    result = parse_slot_selection_logged("1", [], max_slots=8)
     assert result is None
 
 
 def test_slot_parsing_invalid_number():
     """Test parsing with number outside range (e.g., '9' when only 8 slots)."""
     slots = [{"start": datetime.now(UTC), "end": datetime.now(UTC) + timedelta(hours=2)}] * 8
-    result = parse_slot_selection("9", slots, max_slots=8)
+    result = parse_slot_selection_logged("9", slots, max_slots=8)
     assert result is None
 
 
 def test_slot_parsing_zero():
     """Test parsing with '0' (invalid)."""
     slots = [{"start": datetime.now(UTC), "end": datetime.now(UTC) + timedelta(hours=2)}] * 8
-    result = parse_slot_selection("0", slots, max_slots=8)
+    result = parse_slot_selection_logged("0", slots, max_slots=8)
     assert result is None
 
 
 def test_slot_parsing_negative():
     """Test parsing with negative number."""
     slots = [{"start": datetime.now(UTC), "end": datetime.now(UTC) + timedelta(hours=2)}] * 8
-    result = parse_slot_selection("-1", slots, max_slots=8)
+    result = parse_slot_selection_logged("-1", slots, max_slots=8)
     # Parser might match the "1" part, which is valid slot 1
     # Or might return None - both are acceptable
     # The important thing is it doesn't crash
@@ -330,7 +330,7 @@ def test_slot_parsing_ambiguous_time():
         {"start": now + timedelta(days=1, hours=15), "end": now + timedelta(days=1, hours=17)},
         {"start": now + timedelta(days=2, hours=15), "end": now + timedelta(days=2, hours=17)},
     ]
-    result = parse_slot_selection("3pm", slots, max_slots=8)
+    result = parse_slot_selection_logged("3pm", slots, max_slots=8)
     # Parser might return one of them, or None if ambiguous
     # Both behaviors are acceptable - the important thing is it doesn't crash
     assert result is None or result in [1, 2]

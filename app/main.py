@@ -1,4 +1,5 @@
 import logging
+from contextlib import asynccontextmanager
 
 from fastapi import Depends, FastAPI
 from sqlalchemy.orm import Session
@@ -9,22 +10,15 @@ from app.api.demo import router as demo_router
 from app.api.webhooks import router as webhooks_router
 from app.core.config import settings
 from app.db.deps import get_db
+from app.middleware.correlation_id import CorrelationIdMiddleware
 from app.middleware.rate_limit import RateLimitMiddleware
 
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="Tattoo Booking Bot")
 
-# Add rate limiting middleware for admin and action endpoints
-app.add_middleware(
-    RateLimitMiddleware,
-    rate_limited_paths=["/admin", "/a/"],  # Admin endpoints and action tokens
-)
-
-
-@app.on_event("startup")
-async def startup_event():
-    """Run startup checks and validation."""
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Startup and shutdown lifecycle."""
     from app.core.config import settings
     from app.services.template_check import startup_check_templates
 
@@ -62,11 +56,16 @@ async def startup_event():
                 "Set WHATSAPP_APP_SECRET environment variable with your Meta App Secret."
             )
 
-        # Require STRIPE_WEBHOOK_SECRET in production (should already be checked above, but double-check)
+        # Require STRIPE_WEBHOOK_SECRET in production (must not be test stub)
         if not settings.stripe_webhook_secret:
             production_errors.append(
                 "STRIPE_WEBHOOK_SECRET is required in production. "
                 "Set STRIPE_WEBHOOK_SECRET environment variable with your Stripe webhook signing secret."
+            )
+        elif settings.stripe_webhook_secret == "whsec_test":
+            production_errors.append(
+                "STRIPE_WEBHOOK_SECRET cannot be 'whsec_test' in production. "
+                "Use your live Stripe webhook signing secret."
             )
 
         # Require DEMO_MODE to be False in production
@@ -106,6 +105,20 @@ async def startup_event():
         f"Startup: Template check completed - "
         f"{len(template_status['templates_configured'])} templates configured"
     )
+
+    yield
+    # Shutdown (none currently)
+
+
+app = FastAPI(title="Tattoo Booking Bot", lifespan=lifespan)
+
+# Add rate limiting middleware for admin and action endpoints
+app.add_middleware(
+    RateLimitMiddleware,
+    rate_limited_paths=["/admin", "/a/"],  # Admin endpoints and action tokens
+)
+# Correlation ID middleware (outermost - runs first for request tracing)
+app.add_middleware(CorrelationIdMiddleware)
 
 
 @app.get("/health")

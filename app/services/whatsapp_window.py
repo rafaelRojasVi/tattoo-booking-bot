@@ -11,6 +11,11 @@ from datetime import UTC, datetime, timedelta
 
 from sqlalchemy.orm import Session
 
+from app.constants.event_types import (
+    EVENT_TEMPLATE_FALLBACK_USED,
+    EVENT_WHATSAPP_SEND_FAILURE,
+    whatsapp_template_not_configured_event_type,
+)
 from app.db.models import Lead
 
 logger = logging.getLogger(__name__)
@@ -93,30 +98,41 @@ async def send_with_window_check(
 
         message_with_voice = apply_voice(message, is_template=False)
 
+        outbox = None
+        if not dry_run:
+            from app.services.outbox_service import write_outbox
+
+            outbox = write_outbox(db, lead.id, lead.wa_from, message_with_voice)
+
         try:
             result = await send_whatsapp_message(
                 to=lead.wa_from,
                 message=message_with_voice,
                 dry_run=dry_run,
             )
+            if outbox:
+                from app.services.outbox_service import mark_outbox_sent
+
+                mark_outbox_sent(db, outbox)
             result["window_status"] = "open"
             result["window_expires_at"] = (
                 window_expires_at.isoformat() if window_expires_at else None
             )
             return result
         except Exception as e:
+            if outbox:
+                from app.services.outbox_service import mark_outbox_failed
+
+                mark_outbox_failed(db, outbox, e)
             # Log WhatsApp send failure
             from app.services.system_event_service import error
 
             error(
                 db=db,
-                event_type="whatsapp.send_failure",
+                event_type=EVENT_WHATSAPP_SEND_FAILURE,
                 lead_id=lead.id,
-                payload={
-                    "to": lead.wa_from,
-                    "error_type": type(e).__name__,
-                    "error": str(e)[:200],  # Truncate to avoid storing too much
-                },
+                payload={"to": lead.wa_from},
+                exc=e,
             )
             raise
     # Window closed - need template message
@@ -139,7 +155,7 @@ async def send_with_window_check(
 
             warn(
                 db=db,
-                event_type=f"whatsapp.template_not_configured.{template_name}",
+                event_type=whatsapp_template_not_configured_event_type(template_name),
                 lead_id=lead.id,
                 payload={
                     "template_name": template_name,
@@ -182,6 +198,15 @@ async def send_with_window_check(
             }
 
         # Template is configured - try to send
+        outbox = None
+        if not dry_run:
+            from app.services.outbox_service import write_outbox
+
+            outbox = write_outbox(
+                db, lead.id, lead.wa_from, message,
+                template_name=template_name,
+                template_params=template_params or {},
+            )
         try:
             result = await send_template_message(
                 to=lead.wa_from,
@@ -189,6 +214,10 @@ async def send_with_window_check(
                 template_params=template_params or {},
                 dry_run=dry_run,
             )
+            if outbox:
+                from app.services.outbox_service import mark_outbox_sent
+
+                mark_outbox_sent(db, outbox)
             result["window_status"] = "closed_template_used"
             result["window_expires_at"] = (
                 window_expires_at.isoformat() if window_expires_at else None
@@ -199,7 +228,7 @@ async def send_with_window_check(
 
             info(
                 db=db,
-                event_type="template.fallback_used",
+                event_type=EVENT_TEMPLATE_FALLBACK_USED,
                 lead_id=lead.id,
                 payload={
                     "template_name": template_name,
@@ -211,6 +240,10 @@ async def send_with_window_check(
 
             return result
         except Exception as e:
+            if outbox:
+                from app.services.outbox_service import mark_outbox_failed
+
+                mark_outbox_failed(db, outbox, e)
             # Template send failed - log and degrade gracefully
             from app.core.config import settings
             from app.services.metrics import record_window_closed

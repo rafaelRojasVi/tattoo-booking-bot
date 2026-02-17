@@ -14,6 +14,8 @@ from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.constants.event_types import EVENT_ATOMIC_UPDATE_CONFLICT
+from app.constants.providers import PROVIDER_REMINDER, PROVIDER_STRIPE, PROVIDER_WHATSAPP
 from app.db.models import ActionToken, Lead, ProcessedMessage
 
 logger = logging.getLogger(__name__)
@@ -73,7 +75,7 @@ def update_lead_status_if_matches(
 
             warn(
                 db=db,
-                event_type="atomic_update.conflict",
+                event_type=EVENT_ATOMIC_UPDATE_CONFLICT,
                 lead_id=lead_id,
                 payload={
                     "operation": "update_lead_status",
@@ -94,6 +96,7 @@ def update_lead_status_if_matches(
 def check_processed_event(
     db: Session,
     event_id: str,
+    provider: str = PROVIDER_STRIPE,
 ) -> tuple[bool, ProcessedMessage | None]:
     """
     Check if an event has already been processed (read-only check).
@@ -101,11 +104,15 @@ def check_processed_event(
     Args:
         db: Database session
         event_id: Unique event identifier
+        provider: "whatsapp" or "stripe"
 
     Returns:
         Tuple of (is_duplicate: bool, processed_message: ProcessedMessage | None)
     """
-    stmt = select(ProcessedMessage).where(ProcessedMessage.message_id == event_id)
+    stmt = select(ProcessedMessage).where(
+        ProcessedMessage.provider == provider,
+        ProcessedMessage.message_id == event_id,
+    )
     existing = db.execute(stmt).scalar_one_or_none()
 
     if existing:
@@ -124,6 +131,7 @@ def record_processed_event(
     event_id: str,
     event_type: str,
     lead_id: int | None = None,
+    provider: str = PROVIDER_STRIPE,
 ) -> ProcessedMessage:
     """
     Record an event as processed (call this AFTER successful processing).
@@ -146,6 +154,7 @@ def record_processed_event(
     """
     try:
         processed = ProcessedMessage(
+            provider=provider,
             message_id=event_id,
             event_type=event_type,
             lead_id=lead_id,
@@ -157,7 +166,10 @@ def record_processed_event(
     except IntegrityError:
         # Race condition: another request processed it between check and insert
         db.rollback()
-        stmt = select(ProcessedMessage).where(ProcessedMessage.message_id == event_id)
+        stmt = select(ProcessedMessage).where(
+            ProcessedMessage.provider == provider,
+            ProcessedMessage.message_id == event_id,
+        )
         existing = db.execute(stmt).scalar_one_or_none()
         if existing:
             logger.info(f"Event {event_id} processed by concurrent request")
@@ -172,6 +184,7 @@ def check_and_record_processed_event(
     event_id: str,
     event_type: str,
     lead_id: int | None = None,
+    provider: str = PROVIDER_STRIPE,
 ) -> tuple[bool, ProcessedMessage | None]:
     """
     DEPRECATED: Use check_processed_event() + record_processed_event() instead.
@@ -179,18 +192,21 @@ def check_and_record_processed_event(
     This function records BEFORE processing, which can cause dropped events.
     Kept for backward compatibility but should be refactored.
     """
-    is_duplicate, existing = check_processed_event(db, event_id)
+    is_duplicate, existing = check_processed_event(db, event_id, provider=provider)
     if is_duplicate:
         return True, existing
 
     # WARNING: This records BEFORE processing - not ideal
     # Better pattern: check_processed_event() -> process -> record_processed_event()
     try:
-        return False, record_processed_event(db, event_id, event_type, lead_id)
+        return False, record_processed_event(db, event_id, event_type, lead_id, provider=provider)
     except IntegrityError:
         # Race condition handled in record_processed_event
         existing = db.execute(
-            select(ProcessedMessage).where(ProcessedMessage.message_id == event_id)
+            select(ProcessedMessage).where(
+                ProcessedMessage.provider == provider,
+                ProcessedMessage.message_id == event_id,
+            )
         ).scalar_one_or_none()
         return True, existing
 

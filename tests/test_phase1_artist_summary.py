@@ -2,6 +2,7 @@
 Test Phase 1 artist WhatsApp summary functionality.
 """
 
+import importlib
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -195,8 +196,12 @@ async def test_notify_artist_sends_notification(db):
     ) as mock_send:
         mock_send.return_value = {"status": "sent"}
 
-        # Mock artist WhatsApp number
-        with patch.object(settings, "artist_whatsapp_number", "447700900123"):
+        # Mock artist WhatsApp number and ensure notifications feature is enabled
+        # Use current config (may be replaced by other tests) so patch reaches notify_artist
+        _config = importlib.import_module("app.core.config")
+        with patch.object(
+            _config.settings, "artist_whatsapp_number", "447700900123"
+        ), patch.object(_config.settings, "feature_notifications_enabled", True):
             result = await notify_artist(
                 db=db,
                 lead=lead,
@@ -228,7 +233,10 @@ async def test_notify_artist_deposit_paid(db):
     ) as mock_send:
         mock_send.return_value = {"status": "sent"}
 
-        with patch.object(settings, "artist_whatsapp_number", "447700900123"):
+        _config = importlib.import_module("app.core.config")
+        with patch.object(
+            _config.settings, "artist_whatsapp_number", "447700900123"
+        ), patch.object(_config.settings, "feature_notifications_enabled", True):
             result = await notify_artist(
                 db=db,
                 lead=lead,
@@ -253,7 +261,8 @@ async def test_notify_artist_handles_unknown_event(db):
     db.commit()
     db.refresh(lead)
 
-    with patch.object(settings, "artist_whatsapp_number", "447700900123"):
+    _config = importlib.import_module("app.core.config")
+    with patch.object(_config.settings, "artist_whatsapp_number", "447700900123"):
         result = await notify_artist(
             db=db,
             lead=lead,

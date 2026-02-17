@@ -16,7 +16,7 @@ import pytest
 
 from app.services.estimation_service import parse_budget_from_text, parse_dimensions
 from app.services.location_parsing import is_valid_location, parse_location_input
-from app.services.slot_parsing import parse_slot_selection
+from app.services.slot_parsing import parse_slot_selection_logged
 
 
 # ---------------------------------------------------------------------------
@@ -95,6 +95,32 @@ class TestParseBudgetEdgeCases:
         assert parse_budget_from_text("four hundred") is None
 
 
+class TestBudgetMinimumInConversation:
+    """Budget step rejects amounts < £50 (conversation flow only; raw parser unchanged)."""
+
+    def test_budget_under_50_triggers_repair_in_flow(self, db):
+        """At budget step, '4' or '£10' should trigger repair (not advance)."""
+        from app.services.conversation import handle_inbound_message
+        from app.services.questions import CONSULTATION_QUESTIONS
+        from app.db.models import Lead, LeadAnswer
+
+        lead = Lead(wa_from="1234567890", status="QUALIFYING", current_step=7)  # budget step
+        db.add(lead)
+        db.commit()
+        db.refresh(lead)
+        for i, q in enumerate(CONSULTATION_QUESTIONS[:7]):
+            if q.key != "budget":
+                db.add(LeadAnswer(lead_id=lead.id, question_key=q.key, answer_text="x"))
+        db.commit()
+
+        import asyncio
+        result = asyncio.get_event_loop().run_until_complete(
+            handle_inbound_message(db, lead, "4", dry_run=True)
+        )
+        assert result.get("status") == "repair_needed"
+        assert result.get("question_key") == "budget"
+
+
 # ---------------------------------------------------------------------------
 # Dimensions parsing (parse_dimensions)
 # ---------------------------------------------------------------------------
@@ -134,6 +160,12 @@ class TestParseDimensionsFormats:
         assert dims is not None
         assert dims[0] == pytest.approx(25.4, rel=0.01)
         assert dims[1] == pytest.approx(30.48, rel=0.01)
+
+    def test_parse_dimensions_sanity_bounds_reject_oversized(self):
+        """Oversized dimensions (> 100 cm) rejected as likely typo."""
+        assert parse_dimensions("200x300cm") is None
+        assert parse_dimensions("150x50cm") is None
+        assert parse_dimensions("50x150cm") is None
 
 
 # ---------------------------------------------------------------------------
@@ -196,27 +228,27 @@ class TestSlotParsingNumberVariants:
 
     def test_slot_parsing_accepts_option_1_and_1_dot(self, sample_slots):
         """Best ROI: option 1 and 1. both select slot 1."""
-        assert parse_slot_selection("1", sample_slots) == 1
-        assert parse_slot_selection("1.", sample_slots) == 1
-        assert parse_slot_selection("option 1", sample_slots) == 1
-        assert parse_slot_selection("#1", sample_slots) == 1
+        assert parse_slot_selection_logged("1", sample_slots) == 1
+        assert parse_slot_selection_logged("1.", sample_slots) == 1
+        assert parse_slot_selection_logged("option 1", sample_slots) == 1
+        assert parse_slot_selection_logged("#1", sample_slots) == 1
 
     def test_slot_parsing_rejects_out_of_range(self, sample_slots):
         """Best ROI: 0, 9, 11 → None (repair without state advance)."""
-        assert parse_slot_selection("0", sample_slots) is None
-        assert parse_slot_selection("9", sample_slots) is None
-        assert parse_slot_selection("11", sample_slots) is None
+        assert parse_slot_selection_logged("0", sample_slots) is None
+        assert parse_slot_selection_logged("9", sample_slots) is None
+        assert parse_slot_selection_logged("11", sample_slots) is None
 
     def test_slot_parsing_multiple_choices_prompts_pick_one(self, sample_slots):
         """Best ROI: '1 or 2', '2, 4, 5' → None so caller sends REPAIR_SLOT / pick one."""
-        assert parse_slot_selection("1 or 2", sample_slots) is None
-        assert parse_slot_selection("2, 4, 5", sample_slots) is None
+        assert parse_slot_selection_logged("1 or 2", sample_slots) is None
+        assert parse_slot_selection_logged("2, 4, 5", sample_slots) is None
 
     def test_slot_parsing_day_time_variants(self, sample_slots):
         """Tuesday pm, Tue afternoon, Mon 10am."""
-        assert parse_slot_selection("Monday morning", sample_slots) == 1
-        assert parse_slot_selection("Monday afternoon", sample_slots) == 2
-        assert parse_slot_selection("Tue afternoon", sample_slots) == 4
+        assert parse_slot_selection_logged("Monday morning", sample_slots) == 1
+        assert parse_slot_selection_logged("Monday afternoon", sample_slots) == 2
+        assert parse_slot_selection_logged("Tue afternoon", sample_slots) == 4
 
 
 # ---------------------------------------------------------------------------
@@ -449,9 +481,9 @@ class TestSlotParsingMultipleNumbers:
 
     def test_slot_parsing_multiple_numbers_returns_none(self, sample_slots):
         """'1 or 2', '2, 4, 5' → None (ambiguous)."""
-        assert parse_slot_selection("1 or 2", sample_slots) is None
-        assert parse_slot_selection("2, 4, 5", sample_slots) is None
-        assert parse_slot_selection("option 3 or 4", sample_slots) is None
+        assert parse_slot_selection_logged("1 or 2", sample_slots) is None
+        assert parse_slot_selection_logged("2, 4, 5", sample_slots) is None
+        assert parse_slot_selection_logged("option 3 or 4", sample_slots) is None
 
     @pytest.mark.asyncio
     async def test_slot_parsing_multiple_numbers_triggers_pick_one_repair(self, db, sample_slots):

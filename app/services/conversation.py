@@ -8,6 +8,10 @@ from datetime import UTC, datetime, timedelta
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app.constants.event_types import (
+    EVENT_NEEDS_ARTIST_REPLY,
+    EVENT_SLOT_UNAVAILABLE_AFTER_SELECTION,
+)
 from app.db.models import Lead, LeadAnswer
 from app.services.action_tokens import generate_action_tokens_for_lead
 from app.services.messaging import format_summary_message, send_whatsapp_message
@@ -106,7 +110,7 @@ async def handle_inbound_message(
             await notify_artist(
                 db=db,
                 lead=lead,
-                event_type="needs_artist_reply",
+                event_type=EVENT_NEEDS_ARTIST_REPLY,
                 dry_run=dry_run,
             )
 
@@ -176,7 +180,7 @@ async def handle_inbound_message(
         # Check if client is selecting a slot
         if lead.suggested_slots_json:
             # Convert JSON slots back to datetime objects for parsing
-            from app.services.slot_parsing import parse_slot_selection
+            from app.services.slot_parsing import parse_slot_selection_logged
 
             slots = []
             for slot_json in lead.suggested_slots_json:
@@ -187,8 +191,10 @@ async def handle_inbound_message(
                     }
                 )
 
-            # Try to parse slot selection
-            selected_index = parse_slot_selection(message_text, slots, max_slots=8)
+            # Try to parse slot selection (pass db/lead_id for observability)
+            selected_index = parse_slot_selection_logged(
+                message_text, slots, max_slots=8, db=db, lead_id=lead.id
+            )
 
             if selected_index is not None:
                 # Valid selection - use stored slots (don't fail as unavailable unless no stored slots)
@@ -232,7 +238,7 @@ async def handle_inbound_message(
 
                         warn(
                             db=db,
-                            event_type="slot.unavailable_after_selection",
+                            event_type=EVENT_SLOT_UNAVAILABLE_AFTER_SELECTION,
                             lead_id=lead.id,
                             payload={
                                 "selected_slot_index": selected_index,
@@ -550,6 +556,8 @@ async def handle_inbound_message(
 
     elif lead.status in [STATUS_ABANDONED, STATUS_STALE]:
         # Inactive leads - allow restart (ABANDONED/STALE -> NEW)
+        # Update last_client_message_at so 24h window opens for next message
+        lead.last_client_message_at = func.now()
         transition(db, lead, STATUS_NEW)
         lead.current_step = 0
         db.commit()
@@ -699,10 +707,36 @@ async def _handle_qualifying_lead(
     ):
         return await _handle_delete_data_request(db, lead, dry_run)
 
+    # Wrong-field guard: at idea/placement, reject budget-only or dimensions-only
+    from app.services.bundle_guard import (
+        looks_like_multi_answer_bundle,
+        looks_like_wrong_field_single_answer,
+    )
+
+    if looks_like_wrong_field_single_answer(message_text, current_question.key):
+        from app.services.message_composer import compose_message
+
+        wrong_field_msg = compose_message(
+            "ONE_AT_A_TIME_REPROMPT",
+            {"lead_id": lead.id, "question_text": current_question.text},
+        )
+        await send_whatsapp_message(
+            to=lead.wa_from,
+            message=wrong_field_msg,
+            dry_run=dry_run,
+        )
+        lead.last_bot_message_at = func.now()
+        db.commit()
+        return {
+            "status": "wrong_field_reprompt",
+            "message": wrong_field_msg,
+            "lead_status": lead.status,
+            "current_step": current_step,
+            "question_key": current_question.key,
+        }
+
     # Multi-answer bundle guard: one at a time, do not save or advance
     # Exception: if the message is a valid single answer for the current question, skip the guard
-    from app.services.bundle_guard import looks_like_multi_answer_bundle
-
     def _is_valid_single_answer_for_current_question() -> bool:
         if current_question.key == "dimensions":
             from app.services.estimation_service import parse_dimensions
@@ -716,7 +750,9 @@ async def _handle_qualifying_lead(
             return not parsed["is_flexible"] and is_valid_location(message_text.strip())
         return False
 
-    if looks_like_multi_answer_bundle(message_text) and not _is_valid_single_answer_for_current_question():
+    if looks_like_multi_answer_bundle(
+        message_text, current_question_key=current_question.key
+    ) and not _is_valid_single_answer_for_current_question():
         from app.services.message_composer import compose_message
 
         one_at_a_time_msg = compose_message(
@@ -815,6 +851,9 @@ async def _handle_qualifying_lead(
         )
 
         budget_pence = parse_budget_from_text(message_text)
+        # Reject unrealistically low amounts (< £50) to avoid "4" or "10" false positives
+        if budget_pence is not None and budget_pence < 5000:
+            budget_pence = None
         if budget_pence is None:
             increment_parse_failure(db, lead, "budget")
             if should_handover_after_failure(lead, "budget"):
@@ -945,11 +984,19 @@ async def _handle_qualifying_lead(
 
     # If confirmation was sent but not the last question, still advance to next question
     # (confirmation is just informational, doesn't block flow)
-    # Order: send first, then advance (so send failure does not advance step)
+    # Order: advance FIRST, then send (only winner sends; loser exits without messaging)
     if confirmation_sent:
         lead_id_for_step = lead.id
         next_question = get_question_by_index(current_step + 1)
         if next_question:
+            success, lead = advance_step_if_at(db, lead_id_for_step, current_step)
+            if not success:
+                refreshed = db.get(Lead, lead_id_for_step)
+                return {
+                    "status": "step_already_advanced",
+                    "lead_status": refreshed.status if refreshed else None,
+                    "message": "Another message was processed first",
+                }
             from app.services.message_composer import compose_message
 
             next_msg = compose_message(
@@ -961,14 +1008,6 @@ async def _handle_qualifying_lead(
                 message=next_msg,
                 dry_run=dry_run,
             )
-            success, lead = advance_step_if_at(db, lead_id_for_step, current_step)
-            if not success:
-                refreshed = db.get(Lead, lead_id_for_step)
-                return {
-                    "status": "step_already_advanced",
-                    "lead_status": refreshed.status if refreshed else None,
-                    "message": "Another message was processed first",
-                }
             lead.last_bot_message_at = func.now()
             db.commit()
             return {
@@ -978,7 +1017,7 @@ async def _handle_qualifying_lead(
                 "question_key": next_question.key,
             }
 
-    # Move to next question: send first, then advance (so send failure does not advance step)
+    # Move to next question: advance FIRST, then send (only winner sends)
     lead_id = lead.id
     next_question = get_question_by_index(current_step + 1)
     if not next_question:
@@ -987,6 +1026,15 @@ async def _handle_qualifying_lead(
         return {
             "status": "error",
             "message": "No next question found",
+        }
+
+    success, lead = advance_step_if_at(db, lead_id, current_step)
+    if not success:
+        refreshed = db.get(Lead, lead_id)
+        return {
+            "status": "step_already_advanced",
+            "lead_status": refreshed.status if refreshed else None,
+            "message": "Another message was processed first",
         }
 
     from app.services.message_composer import compose_message
@@ -1000,15 +1048,6 @@ async def _handle_qualifying_lead(
         message=next_msg,
         dry_run=dry_run,
     )
-
-    success, lead = advance_step_if_at(db, lead_id, current_step)
-    if not success:
-        refreshed = db.get(Lead, lead_id)
-        return {
-            "status": "step_already_advanced",
-            "lead_status": refreshed.status if refreshed else None,
-            "message": "Another message was processed first",
-        }
 
     lead.last_bot_message_at = func.now()
     db.commit()

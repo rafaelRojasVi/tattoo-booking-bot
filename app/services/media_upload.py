@@ -12,6 +12,7 @@ from datetime import UTC, datetime
 
 from sqlalchemy.orm import Session
 
+from app.constants.event_types import EVENT_MEDIA_UPLOAD_FAILURE
 from app.core.config import settings
 from app.db.models import Attachment
 
@@ -90,7 +91,7 @@ async def attempt_upload_attachment(db: Session, attachment_id: int) -> None:
 
         error(
             db=db,
-            event_type="media_upload.failure",
+            event_type=EVENT_MEDIA_UPLOAD_FAILURE,
             lead_id=attachment.lead_id,
             payload={
                 "attachment_id": attachment_id,

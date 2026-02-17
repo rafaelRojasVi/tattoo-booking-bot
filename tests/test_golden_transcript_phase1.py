@@ -15,9 +15,11 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from app.services.conversation import (
+    STATUS_ABANDONED,
     STATUS_NEEDS_ARTIST_REPLY,
     STATUS_PENDING_APPROVAL,
     STATUS_QUALIFYING,
+    get_lead_summary,
     handle_inbound_message,
 )
 from app.services.leads import get_or_create_lead
@@ -656,3 +658,498 @@ async def test_golden_transcript_outside_24h_template_then_resume(db):
     assert any("[TEMPLATE:" in m for m in bot_messages), (
         f"Template marker must appear in transcript.\n\n{transcript}"
     )
+
+
+# Idea question text (step 0) — from questions.py for snapshot assertion
+_IDEA_QUESTION_TEXT = "What tattoo do you want? Please describe it in detail."
+
+
+def _print_transcript_audit(test_name: str, transcript: str) -> None:
+    """Print full transcript with UTF-8 encoding (audit-grade, no truncation)."""
+    import sys
+
+    if hasattr(sys.stdout, "reconfigure"):
+        try:
+            sys.stdout.reconfigure(encoding="utf-8")
+        except Exception:
+            pass
+    print("\n" + "=" * 60 + f"\nGOLDEN TRANSCRIPT ({test_name})\n" + "=" * 60)
+    print(transcript)
+    print("=" * 60)
+
+
+@pytest.mark.asyncio
+async def test_golden_transcript_multi_answer_single_message_one_at_a_time(db):
+    """
+    Golden transcript: user sends multiple answers in one message at step 0 (idea question).
+
+    Policy A: bot does NOT advance step; sends "one at a time" reprompt + current question.
+    Audit-grade: status/step at each message, exactly one send per inbound, snapshot from copy.
+    """
+    bot_messages: list[str] = []
+    wa_from = "447700123462"
+    capturing_send = make_capturing_send(bot_messages, wa_from)
+
+    lead = get_or_create_lead(db, wa_from=wa_from)
+    db.commit()
+    db.refresh(lead)
+
+    user_messages: list[str] = []
+
+    with (
+        patch(
+            "app.services.conversation.send_whatsapp_message",
+            new_callable=AsyncMock,
+            side_effect=capturing_send,
+        ),
+        patch("app.services.tour_service.is_city_on_tour", return_value=True),
+        patch("app.services.tour_service.closest_upcoming_city", return_value=None),
+        patch("app.services.handover_service.should_handover", return_value=(False, None)),
+    ):
+        # 1) Hi -> welcome + Q0 (idea)
+        user_messages.append("Hi")
+        n_bot_before = len(bot_messages)
+        await handle_inbound_message(db, lead, user_messages[-1], dry_run=True)
+        db.refresh(lead)
+        transcript = format_transcript(user_messages, bot_messages, max_line=None)
+        n_sent = len(bot_messages) - n_bot_before
+        assert n_sent == 1, (
+            f"Exactly one outbound send per inbound (got {n_sent}).\n\n{transcript}"
+        )
+        assert lead.status == STATUS_QUALIFYING, (
+            f"After Hi: expected status QUALIFYING, got {lead.status}.\n\n{transcript}"
+        )
+        assert lead.current_step == 0, (
+            f"After Hi: expected step 0, got {lead.current_step}.\n\n{transcript}"
+        )
+
+        # 2) Bundle at step 0 (idea question) -> one_at_a_time reprompt, step unchanged
+        step_before_bundle = lead.current_step
+        user_messages.append("Upper arm, realism, about 10x15, budget 500")
+        n_bot_before = len(bot_messages)
+        await handle_inbound_message(db, lead, user_messages[-1], dry_run=True)
+        db.refresh(lead)
+        transcript = format_transcript(user_messages, bot_messages, max_line=None)
+        n_sent = len(bot_messages) - n_bot_before
+        assert n_sent == 1, (
+            f"Exactly one outbound send per inbound on bundle (got {n_sent}).\n\n{transcript}"
+        )
+        assert lead.current_step == step_before_bundle, (
+            f"Step must NOT change on one-at-a-time reprompt: was {step_before_bundle}, got {lead.current_step}.\n\n{transcript}"
+        )
+        assert lead.status == STATUS_QUALIFYING, (
+            f"After bundle: expected status QUALIFYING, got {lead.status}.\n\n{transcript}"
+        )
+        # Reprompt must include current question text
+        one_at_a_time_msg = bot_messages[-1] if bot_messages else ""
+        assert _IDEA_QUESTION_TEXT in one_at_a_time_msg or "What tattoo do you want" in one_at_a_time_msg, (
+            f"Reprompt must include current question text 'What tattoo do you want?'.\n\n{transcript}"
+        )
+        # Snapshot: message must come from copy/YAML key (one_at_a_time_reprompt)
+        from app.services.message_composer import compose_message
+
+        canonical = compose_message(
+            "ONE_AT_A_TIME_REPROMPT",
+            {"lead_id": lead.id, "question_text": _IDEA_QUESTION_TEXT},
+            apply_voice_to_result=True,
+        )
+        assert one_at_a_time_msg == canonical, (
+            f"One-at-a-time message must come from copy key one_at_a_time_reprompt; "
+            f"got different output.\n\nExpected (from YAML+voice): {canonical!r}\n\nGot: {one_at_a_time_msg!r}\n\n{transcript}"
+        )
+
+        # 3) Single answer -> next question (placement), step 1
+        user_messages.append("A dragon tattoo on my arm")
+        n_bot_before = len(bot_messages)
+        await handle_inbound_message(db, lead, user_messages[-1], dry_run=True)
+        db.refresh(lead)
+        transcript = format_transcript(user_messages, bot_messages, max_line=None)
+        n_sent = len(bot_messages) - n_bot_before
+        assert n_sent == 1, (
+            f"Exactly one outbound send per inbound (got {n_sent}).\n\n{transcript}"
+        )
+        assert lead.current_step == 1, (
+            f"Step advanced after single answer: expected 1, got {lead.current_step}.\n\n{transcript}"
+        )
+        assert lead.status == STATUS_QUALIFYING, (
+            f"After single answer: expected status QUALIFYING, got {lead.status}.\n\n{transcript}"
+        )
+
+    transcript = format_transcript(user_messages, bot_messages, max_line=None)
+    if os.environ.get("GOLDEN_TRANSCRIPT_PRINT"):
+        _print_transcript_audit("multi_answer_single_message_one_at_a_time", transcript)
+
+    assert lead.status == STATUS_QUALIFYING, (
+        f"Expected status QUALIFYING, got {lead.status}.\n\n{transcript}"
+    )
+    assert lead.current_step == 1, (
+        f"Expected current_step 1 after single answer, got {lead.current_step}.\n\n{transcript}"
+    )
+
+
+@pytest.mark.asyncio
+async def test_golden_transcript_user_goes_quiet_then_returns_later(db):
+    """
+    Golden transcript: user goes quiet beyond abandonment threshold, then returns.
+
+    Policy: ABANDONED leads restart on any message (welcome + first question).
+    Audit-grade: status/step at each message, exactly one send per inbound, full transcript.
+    """
+    from datetime import UTC, datetime, timedelta
+
+    from app.services.reminders import check_and_mark_abandoned
+
+    bot_messages: list[str] = []
+    wa_from = "447700123463"
+    capturing_send = make_capturing_send(bot_messages, wa_from)
+
+    lead = get_or_create_lead(db, wa_from=wa_from)
+    db.commit()
+    db.refresh(lead)
+
+    user_messages: list[str] = []
+
+    with (
+        patch(
+            "app.services.conversation.send_whatsapp_message",
+            new_callable=AsyncMock,
+            side_effect=capturing_send,
+        ),
+        patch("app.services.tour_service.is_city_on_tour", return_value=True),
+        patch("app.services.tour_service.closest_upcoming_city", return_value=None),
+        patch("app.services.handover_service.should_handover", return_value=(False, None)),
+    ):
+        # 1) Hi -> welcome + Q0
+        user_messages.append("Hi")
+        n_bot_before = len(bot_messages)
+        await handle_inbound_message(db, lead, user_messages[-1], dry_run=True)
+        db.refresh(lead)
+        transcript = format_transcript(user_messages, bot_messages, max_line=None)
+        assert len(bot_messages) - n_bot_before == 1, (
+            f"Exactly one outbound send per inbound (got {len(bot_messages) - n_bot_before}).\n\n{transcript}"
+        )
+        assert lead.status == STATUS_QUALIFYING, (
+            f"After Hi: expected status QUALIFYING, got {lead.status}.\n\n{transcript}"
+        )
+        assert lead.current_step == 0, (
+            f"After Hi: expected step 0, got {lead.current_step}.\n\n{transcript}"
+        )
+
+        # 2) idea -> Q1 (placement)
+        user_messages.append("A dragon on my arm")
+        n_bot_before = len(bot_messages)
+        await handle_inbound_message(db, lead, user_messages[-1], dry_run=True)
+        db.refresh(lead)
+        transcript = format_transcript(user_messages, bot_messages, max_line=None)
+        assert len(bot_messages) - n_bot_before == 1, (
+            f"Exactly one outbound send per inbound (got {len(bot_messages) - n_bot_before}).\n\n{transcript}"
+        )
+        assert lead.status == STATUS_QUALIFYING, (
+            f"After idea: expected status QUALIFYING, got {lead.status}.\n\n{transcript}"
+        )
+        assert lead.current_step == 1, (
+            f"After idea: expected step 1, got {lead.current_step}.\n\n{transcript}"
+        )
+
+        # 3) placement -> Q2 (dimensions)
+        user_messages.append("Upper arm")
+        n_bot_before = len(bot_messages)
+        await handle_inbound_message(db, lead, user_messages[-1], dry_run=True)
+        db.refresh(lead)
+        transcript = format_transcript(user_messages, bot_messages, max_line=None)
+        assert len(bot_messages) - n_bot_before == 1, (
+            f"Exactly one outbound send per inbound (got {len(bot_messages) - n_bot_before}).\n\n{transcript}"
+        )
+        assert lead.status == STATUS_QUALIFYING, (
+            f"After placement: expected status QUALIFYING, got {lead.status}.\n\n{transcript}"
+        )
+        assert lead.current_step == 2, (
+            f"After placement: expected step 2, got {lead.current_step}.\n\n{transcript}"
+        )
+
+        # 4) Simulate 50h passing -> run abandonment sweep
+        lead.last_client_message_at = datetime.now(UTC) - timedelta(hours=50)
+        db.commit()
+        db.refresh(lead)
+
+        check_and_mark_abandoned(db, lead, hours_threshold=48)
+        db.refresh(lead)
+        transcript = format_transcript(user_messages, bot_messages, max_line=None)
+        assert lead.status == STATUS_ABANDONED, (
+            f"Expected ABANDONED after sweep, got {lead.status}.\n\n{transcript}"
+        )
+
+        # 5) User returns -> restart (ABANDONED -> NEW -> welcome + Q0)
+        user_messages.append("sorry im back")
+        n_bot_before = len(bot_messages)
+        await handle_inbound_message(db, lead, user_messages[-1], dry_run=True)
+        db.refresh(lead)
+        transcript = format_transcript(user_messages, bot_messages, max_line=None)
+        n_sent = len(bot_messages) - n_bot_before
+        assert n_sent == 1, (
+            f"Exactly one outbound send per inbound on return (got {n_sent}).\n\n{transcript}"
+        )
+        assert lead.status == STATUS_QUALIFYING, (
+            f"Expected QUALIFYING after restart, got {lead.status}.\n\n{transcript}"
+        )
+        assert lead.current_step == 0, (
+            f"Expected step 0 after restart, got {lead.current_step}.\n\n{transcript}"
+        )
+
+    transcript = format_transcript(user_messages, bot_messages, max_line=None)
+    if os.environ.get("GOLDEN_TRANSCRIPT_PRINT"):
+        _print_transcript_audit("user_goes_quiet_then_returns_later", transcript)
+
+    assert lead.status == STATUS_QUALIFYING, (
+        f"Expected status QUALIFYING after restart, got {lead.status}.\n\n{transcript}"
+    )
+    assert lead.current_step == 0, (
+        f"Expected current_step 0 after restart, got {lead.current_step}.\n\n{transcript}"
+    )
+
+
+# Answers to reach dimensions step (0–1): idea, placement
+_ANSWERS_TO_DIMENSIONS = ["A dragon on my arm", "Upper arm"]
+
+
+@pytest.mark.asyncio
+async def test_golden_transcript_dimensions_accepts_10x15cm_currency_advances_to_style(db):
+    """
+    Golden transcript: at dimensions step, "10x15cm £500" accepted and advances to style.
+
+    Valid dimensions (parse_dimensions works) bypass bundle guard; step advances by 1.
+    """
+    bot_messages: list[str] = []
+    wa_from = "447700123464"
+    capturing_send = make_capturing_send(bot_messages, wa_from)
+
+    lead = get_or_create_lead(db, wa_from=wa_from)
+    db.commit()
+    db.refresh(lead)
+
+    user_messages: list[str] = []
+    previous_step: int | None = None
+
+    with (
+        patch(
+            "app.services.conversation.send_whatsapp_message",
+            new_callable=AsyncMock,
+            side_effect=capturing_send,
+        ),
+        patch("app.services.tour_service.is_city_on_tour", return_value=True),
+        patch("app.services.tour_service.closest_upcoming_city", return_value=None),
+        patch("app.services.handover_service.should_handover", return_value=(False, None)),
+    ):
+        user_messages.append("Hi")
+        n_bot_before = len(bot_messages)
+        await handle_inbound_message(db, lead, user_messages[-1], dry_run=True)
+        db.refresh(lead)
+        transcript = format_transcript(user_messages, bot_messages, max_line=None)
+        assert len(bot_messages) - n_bot_before == 1, (
+            f"Exactly one outbound per inbound.\n\n{transcript}"
+        )
+        previous_step = 0
+
+        for ans in _ANSWERS_TO_DIMENSIONS:
+            user_messages.append(ans)
+            n_bot_before = len(bot_messages)
+            await handle_inbound_message(db, lead, user_messages[-1], dry_run=True)
+            db.refresh(lead)
+            transcript = format_transcript(user_messages, bot_messages, max_line=None)
+            assert len(bot_messages) - n_bot_before == 1, (
+                f"Exactly one outbound per inbound.\n\n{transcript}"
+            )
+            assert lead.current_step == previous_step + 1, (
+                f"Step monotonicity: expected {previous_step + 1}, got {lead.current_step}.\n\n{transcript}"
+            )
+            previous_step = lead.current_step
+
+        assert lead.current_step == 2
+
+        user_messages.append("10x15cm £500")
+        n_bot_before = len(bot_messages)
+        await handle_inbound_message(db, lead, user_messages[-1], dry_run=True)
+        db.refresh(lead)
+        transcript = format_transcript(user_messages, bot_messages, max_line=None)
+        assert len(bot_messages) - n_bot_before == 1, (
+            f"Exactly one outbound per inbound.\n\n{transcript}"
+        )
+        assert lead.current_step == 3, (
+            f"Expected step 3 (style); got {lead.current_step}.\n\n{transcript}"
+        )
+
+    transcript = format_transcript(user_messages, bot_messages, max_line=None)
+    if os.environ.get("GOLDEN_TRANSCRIPT_PRINT"):
+        _print_transcript_audit("dimensions_accepts_10x15cm_currency_advances_to_style", transcript)
+    assert lead.current_step == 3, f"Final step 3.\n\n{transcript}"
+
+
+# Answers to reach reference_images (0–5)
+_ANSWERS_TO_REFERENCE_IMAGES = [
+    "A dragon on my arm",
+    "Upper arm",
+    "10x15cm",
+    "Realism",
+    "2",
+    "No",
+]
+
+
+@pytest.mark.asyncio
+async def test_golden_transcript_reference_images_accepts_realism_at_advances_to_budget(db):
+    """
+    Golden transcript: at reference_images step, "Realism like @someartist" accepted and advances to budget.
+    """
+    bot_messages: list[str] = []
+    wa_from = "447700123465"
+    capturing_send = make_capturing_send(bot_messages, wa_from)
+
+    lead = get_or_create_lead(db, wa_from=wa_from)
+    db.commit()
+    db.refresh(lead)
+
+    user_messages: list[str] = []
+    previous_step: int | None = None
+
+    with (
+        patch(
+            "app.services.conversation.send_whatsapp_message",
+            new_callable=AsyncMock,
+            side_effect=capturing_send,
+        ),
+        patch("app.services.tour_service.is_city_on_tour", return_value=True),
+        patch("app.services.tour_service.closest_upcoming_city", return_value=None),
+        patch("app.services.handover_service.should_handover", return_value=(False, None)),
+    ):
+        user_messages.append("Hi")
+        await handle_inbound_message(db, lead, user_messages[-1], dry_run=True)
+        db.refresh(lead)
+        previous_step = 0
+
+        for ans in _ANSWERS_TO_REFERENCE_IMAGES:
+            user_messages.append(ans)
+            n_bot_before = len(bot_messages)
+            await handle_inbound_message(db, lead, user_messages[-1], dry_run=True)
+            db.refresh(lead)
+            transcript = format_transcript(user_messages, bot_messages, max_line=None)
+            assert len(bot_messages) - n_bot_before == 1, (
+                f"Exactly one outbound per inbound.\n\n{transcript}"
+            )
+            assert lead.current_step == previous_step + 1, (
+                f"Step monotonicity: expected {previous_step + 1}, got {lead.current_step}.\n\n{transcript}"
+            )
+            previous_step = lead.current_step
+
+        assert lead.current_step == 6
+
+        user_messages.append("Realism like @someartist")
+        n_bot_before = len(bot_messages)
+        await handle_inbound_message(db, lead, user_messages[-1], dry_run=True)
+        db.refresh(lead)
+        transcript = format_transcript(user_messages, bot_messages, max_line=None)
+        assert len(bot_messages) - n_bot_before == 1, (
+            f"Exactly one outbound per inbound.\n\n{transcript}"
+        )
+        assert lead.current_step == 7, (
+            f"Expected step 7 (budget); got {lead.current_step}.\n\n{transcript}"
+        )
+
+    transcript = format_transcript(user_messages, bot_messages, max_line=None)
+    if os.environ.get("GOLDEN_TRANSCRIPT_PRINT"):
+        _print_transcript_audit("reference_images_accepts_realism_at_advances_to_budget", transcript)
+    assert lead.current_step == 7, f"Final step 7.\n\n{transcript}"
+
+
+@pytest.mark.asyncio
+async def test_restart_then_new_answers_override_old_answers_in_summary(db):
+    """
+    After ABANDONED restart, new answers override old in get_lead_summary (latest wins).
+    """
+    from datetime import UTC, datetime, timedelta
+
+    from app.services.reminders import check_and_mark_abandoned
+
+    bot_messages: list[str] = []
+    wa_from = "447700123466"
+    capturing_send = make_capturing_send(bot_messages, wa_from)
+
+    lead = get_or_create_lead(db, wa_from=wa_from)
+    db.commit()
+    db.refresh(lead)
+
+    user_messages: list[str] = []
+
+    with (
+        patch(
+            "app.services.conversation.send_whatsapp_message",
+            new_callable=AsyncMock,
+            side_effect=capturing_send,
+        ),
+        patch("app.services.tour_service.is_city_on_tour", return_value=True),
+        patch("app.services.tour_service.closest_upcoming_city", return_value=None),
+        patch("app.services.handover_service.should_handover", return_value=(False, None)),
+    ):
+        # 1) Hi -> Q0
+        user_messages.append("Hi")
+        await handle_inbound_message(db, lead, user_messages[-1], dry_run=True)
+        db.refresh(lead)
+
+        # 2) Old idea and placement
+        user_messages.append("dragon tattoo")
+        await handle_inbound_message(db, lead, user_messages[-1], dry_run=True)
+        db.refresh(lead)
+        user_messages.append("upper arm")
+        await handle_inbound_message(db, lead, user_messages[-1], dry_run=True)
+        db.refresh(lead)
+
+        # 3) Simulate 50h, mark abandoned
+        lead.last_client_message_at = datetime.now(UTC) - timedelta(hours=50)
+        db.commit()
+        db.refresh(lead)
+        check_and_mark_abandoned(db, lead, hours_threshold=48)
+        db.refresh(lead)
+        assert lead.status == STATUS_ABANDONED
+
+        # 4) Restart
+        user_messages.append("im back")
+        await handle_inbound_message(db, lead, user_messages[-1], dry_run=True)
+        db.refresh(lead)
+        assert lead.status == STATUS_QUALIFYING
+        assert lead.current_step == 0
+
+        # 5) New answers (override old)
+        user_messages.append("sleeve tattoo flowers")
+        n_bot_before_sleeve = len(bot_messages)
+        await handle_inbound_message(db, lead, user_messages[-1], dry_run=True)
+        db.refresh(lead)
+        # Assert processed as normal (no template-only fallback): step advanced, exactly one bot reply
+        assert lead.current_step == 1, (
+            f"'sleeve tattoo flowers' must be processed normally (24h window open); got step {lead.current_step}"
+        )
+        assert len(bot_messages) - n_bot_before_sleeve == 1, (
+            f"Exactly one outbound for sleeve message (no template-only path)"
+        )
+
+        user_messages.append("forearm")
+        await handle_inbound_message(db, lead, user_messages[-1], dry_run=True)
+        db.refresh(lead)
+
+    summary = get_lead_summary(db, lead.id)
+    transcript = format_transcript(user_messages, bot_messages, max_line=None)
+
+    assert "idea" in summary.get("answers", {}), (
+        f"Summary should have idea.\n\n{transcript}"
+    )
+    assert "placement" in summary.get("answers", {}), (
+        f"Summary should have placement.\n\n{transcript}"
+    )
+    # Latest wins: new answers override old
+    assert "sleeve" in summary["answers"].get("idea", "").lower(), (
+        f"Summary idea should be new answer 'sleeve tattoo flowers', got: {summary['answers'].get('idea')}\n\n{transcript}"
+    )
+    assert "forearm" in summary["answers"].get("placement", "").lower(), (
+        f"Summary placement should be new answer 'forearm', got: {summary['answers'].get('placement')}\n\n{transcript}"
+    )
+
+    if os.environ.get("GOLDEN_TRANSCRIPT_PRINT"):
+        _print_transcript_audit("restart_then_new_answers_override_old_in_summary", transcript)

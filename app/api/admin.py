@@ -5,8 +5,9 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.api.auth import get_admin_auth
+from app.constants.event_types import EVENT_DEPOSIT_EXPIRED_SWEEP, EVENT_PENDING_APPROVAL
 from app.db.deps import get_db
-from app.db.models import Lead
+from app.db.models import Lead, OutboxMessage
 from app.schemas.admin import (
     RejectRequest,
     SendBookingLinkRequest,
@@ -28,6 +29,104 @@ from app.services.sheets import log_lead_to_sheets
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+
+@router.get("/outbox")
+def list_outbox_messages(
+    status: str | None = None,
+    limit: int = 50,
+    db: Session = Depends(get_db),
+    _auth: bool = Security(get_admin_auth),
+):
+    """
+    List outbox rows (e.g. FAILED) for inspection.
+    Query params: status (PENDING, SENT, FAILED), limit (default 50).
+    """
+    from sqlalchemy import desc
+
+    stmt = select(OutboxMessage).order_by(desc(OutboxMessage.created_at))
+    if status:
+        stmt = stmt.where(OutboxMessage.status == status.upper())
+    stmt = stmt.limit(max(0, min(limit, 100)))  # Clamp to [0, 100]; negative -> 0
+    rows = db.execute(stmt).scalars().all()
+    return [
+        {
+            "id": r.id,
+            "lead_id": r.lead_id,
+            "channel": r.channel,
+            "status": r.status,
+            "attempts": r.attempts,
+            "last_error": r.last_error,
+            "next_retry_at": r.next_retry_at.isoformat() if r.next_retry_at else None,
+            "created_at": r.created_at.isoformat() if r.created_at else None,
+        }
+        for r in rows
+    ]
+
+
+@router.post("/outbox/retry")
+def retry_outbox_messages(
+    limit: int = 50,
+    db: Session = Depends(get_db),
+    _auth: bool = Security(get_admin_auth),
+):
+    """
+    Retry due outbox rows (PENDING/FAILED with next_retry_at <= now).
+    Only active when OUTBOX_ENABLED=true.
+    """
+    from app.services.outbox_service import retry_due_outbox_rows
+
+    results = retry_due_outbox_rows(db, limit=limit)
+    return {"outbox_retry": results}
+
+
+@router.post("/test-webhook-exception")
+def test_webhook_exception_simulation(
+    db: Session = Depends(get_db),
+    _auth: bool = Security(get_admin_auth),
+):
+    """
+    Simulate webhook processing exception (staging only).
+    Returns HTTP 200 and logs SystemEvent with correlation_id, mimicking WhatsApp webhook behavior.
+    Disabled in production (APP_ENV=production).
+    """
+    from app.core.config import settings
+    from app.constants.event_types import EVENT_WHATSAPP_WEBHOOK_FAILURE
+    from app.services.system_event_service import error
+
+    if settings.app_env == "production":
+        raise HTTPException(
+            status_code=404,
+            detail="Test endpoint disabled in production",
+        )
+
+    try:
+        raise RuntimeError("Simulated webhook processing exception (staging test)")
+    except Exception as e:
+        error(
+            db=db,
+            event_type=EVENT_WHATSAPP_WEBHOOK_FAILURE,
+            lead_id=None,
+            payload={"simulated": True, "message": "Staging test endpoint"},
+            exc=e,
+        )
+        return {"received": True, "simulated": True, "error_logged": True}
+
+
+@router.post("/events/retention-cleanup")
+def cleanup_system_events_retention(
+    retention_days: int = 90,
+    db: Session = Depends(get_db),
+    _auth: bool = Security(get_admin_auth),
+):
+    """
+    Delete SystemEvents older than retention_days (default 90).
+    Admin-only. Use for periodic retention or manual cleanup.
+    """
+    from app.services.system_event_service import cleanup_old_events
+
+    deleted = cleanup_old_events(db, retention_days=retention_days)
+    return {"deleted": deleted, "retention_days": retention_days}
 
 
 @router.get("/metrics")
@@ -61,6 +160,26 @@ def get_funnel(
     from app.services.funnel_metrics_service import get_funnel_metrics
 
     return get_funnel_metrics(db, days=days)
+
+
+@router.get("/slot-parse-stats")
+def get_slot_parse_stats_endpoint(
+    days: int = 7,
+    db: Session = Depends(get_db),
+    _auth: bool = Security(get_admin_auth),
+):
+    """
+    Get slot parse metrics: counts by matched_by and reject reason.
+
+    Args:
+        days: Number of days to look back (default 7)
+
+    Returns:
+        Dict with success/reject counts
+    """
+    from app.services.slot_parsing import get_slot_parse_stats
+
+    return get_slot_parse_stats(db, last_days=days)
 
 
 @router.get("/leads")
@@ -97,7 +216,7 @@ def get_lead_detail(
 
 
 @router.post("/leads/{lead_id}/approve")
-def approve_lead(
+async def approve_lead(
     lead_id: int,
     db: Session = Depends(get_db),
     _auth: bool = Security(get_admin_auth),
@@ -136,7 +255,7 @@ def approve_lead(
     from app.services.calendar_service import send_slot_suggestions_to_client
 
     try:
-        send_slot_suggestions_to_client(
+        await send_slot_suggestions_to_client(
             db=db,
             lead=lead,
             dry_run=settings.whatsapp_dry_run,
@@ -146,18 +265,14 @@ def approve_lead(
         logger.error(f"Failed to send slot suggestions to lead {lead_id}: {e}")
 
     # Phase 1: Notify artist that lead was approved
-    import asyncio
-
     from app.services.artist_notifications import notify_artist
 
     try:
-        asyncio.run(
-            notify_artist(
-                db=db,
-                lead=lead,
-                event_type="pending_approval",  # Actually "approved" but using existing notification
-                dry_run=settings.whatsapp_dry_run,
-            )
+        await notify_artist(
+            db=db,
+            lead=lead,
+            event_type=EVENT_PENDING_APPROVAL,  # Actually "approved" but using existing notification
+            dry_run=settings.whatsapp_dry_run,
         )
     except Exception as e:
         logger.error(f"Failed to notify artist of approval for lead {lead_id}: {e}")
@@ -214,7 +329,7 @@ def reject_lead(
 
 
 @router.post("/leads/{lead_id}/send-deposit")
-def send_deposit(
+async def send_deposit(
     lead_id: int,
     request: SendDepositRequest | None = None,
     db: Session = Depends(get_db),
@@ -266,8 +381,13 @@ def send_deposit(
     elif lead.estimated_deposit_amount:
         # Use estimated deposit amount
         amount_pence = lead.estimated_deposit_amount
-    elif request and request.amount_pence:
-        # Use amount from request
+    elif request and request.amount_pence is not None:
+        # Use amount from request (validate: must be positive)
+        if request.amount_pence < 1:
+            raise HTTPException(
+                status_code=400,
+                detail="amount_pence must be a positive integer (minimum 1 pence)",
+            )
         amount_pence = request.amount_pence
     else:
         # Fallback to estimated_category calculation
@@ -329,47 +449,14 @@ def send_deposit(
         checkout_result["checkout_url"], amount_pence, lead_id=lead.id
     )
 
-    # Send message (async function in sync context)
-    import asyncio
-
-    try:
-        asyncio.run(
-            send_with_window_check(
-                db=db,
-                lead=lead,
-                message=deposit_message,
-                template_name=get_template_for_next_steps(),  # Re-open window template
-                template_params=get_template_params_next_steps_reply_to_continue(),
-                dry_run=settings.whatsapp_dry_run,
-            )
-        )
-    except RuntimeError:
-        # Event loop already running, use different approach
-        import nest_asyncio
-
-        try:
-            nest_asyncio.apply()
-            asyncio.run(
-                send_whatsapp_message(
-                    to=lead.wa_from,
-                    message=deposit_message,
-                    dry_run=settings.whatsapp_dry_run,
-                )
-            )
-        except ImportError:
-            # Fallback: create new event loop in thread
-            import concurrent.futures
-
-            with concurrent.futures.ThreadPoolExecutor() as executor:
-                future = executor.submit(
-                    asyncio.run,
-                    send_whatsapp_message(
-                        to=lead.wa_from,
-                        message=deposit_message,
-                        dry_run=settings.whatsapp_dry_run,
-                    ),
-                )
-                future.result()
+    await send_with_window_check(
+        db=db,
+        lead=lead,
+        message=deposit_message,
+        template_name=get_template_for_next_steps(),  # Re-open window template
+        template_params=get_template_params_next_steps_reply_to_continue(),
+        dry_run=settings.whatsapp_dry_run,
+    )
 
     # Update last bot message timestamp
     lead.last_bot_message_at = func.now()
@@ -797,7 +884,7 @@ def sweep_expired_deposits(
                 info(
                     db=db,
                     lead_id=lead.id,
-                    event_type="deposit_expired_sweep",
+                    event_type=EVENT_DEPOSIT_EXPIRED_SWEEP,
                     payload={
                         "lead_id": lead.id,
                         "deposit_sent_at": lead.deposit_sent_at.isoformat()

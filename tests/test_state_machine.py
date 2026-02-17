@@ -15,7 +15,9 @@ from app.services.conversation import (
     STATUS_QUALIFYING,
     STATUS_REJECTED,
 )
+from app.db.models import SystemEvent
 from app.services.state_machine import (
+    advance_step_if_at,
     get_allowed_transitions,
     is_transition_allowed,
     transition,
@@ -172,3 +174,31 @@ def test_transition_handover_reason_only_for_needs_artist_reply(db):
     assert lead.status == STATUS_AWAITING_DEPOSIT
     # Reason should not be stored (only for NEEDS_ARTIST_REPLY)
     assert lead.handover_reason is None
+
+
+def test_advance_step_if_at_warns_on_pending_changes(db):
+    """advance_step_if_at logs SystemEvent when session has pending changes before UPDATE."""
+    lead = Lead(wa_from="7999111222", status=STATUS_QUALIFYING, current_step=2)
+    db.add(lead)
+    db.commit()
+    db.refresh(lead)
+
+    # Simulate pending changes (dirty) - caller forgot to flush/commit before advance
+    lead.status = STATUS_PENDING_APPROVAL  # makes db.dirty non-empty
+
+    success, updated = advance_step_if_at(db, lead.id, 2)
+
+    assert success is True
+    assert updated is not None
+    assert updated.current_step == 3
+
+    # Assert the pending-changes warning was logged
+    event = (
+        db.query(SystemEvent)
+        .filter(SystemEvent.event_type == "advance_step.pending_changes")
+        .filter(SystemEvent.lead_id == lead.id)
+        .first()
+    )
+    assert event is not None
+    assert event.level == "WARN"
+    assert event.payload.get("dirty_count", 0) >= 1

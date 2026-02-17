@@ -377,7 +377,10 @@ async def test_whatsapp_webhook_duplicate_delivery_idempotency(db):
         # ProcessedMessage should exist for idempotency
         processed = (
             db.query(ProcessedMessage)
-            .filter(ProcessedMessage.message_id == "wamid.duplicate_test_123")
+            .filter(
+                ProcessedMessage.provider == "whatsapp",
+                ProcessedMessage.message_id == "wamid.duplicate_test_123",
+            )
             .first()
         )
         assert processed is not None

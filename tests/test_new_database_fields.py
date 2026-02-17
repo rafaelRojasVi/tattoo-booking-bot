@@ -92,6 +92,7 @@ def test_processed_message_model(db):
     db.refresh(lead)
 
     processed = ProcessedMessage(
+        provider="whatsapp",
         message_id="wamid.test123",
         lead_id=lead.id,
     )
@@ -108,14 +109,16 @@ def test_processed_message_model(db):
 def test_processed_message_unique_constraint(db):
     """Test that ProcessedMessage message_id is unique."""
     processed1 = ProcessedMessage(
+        provider="whatsapp",
         message_id="wamid.unique123",
         lead_id=None,
     )
     db.add(processed1)
     db.commit()
 
-    # Try to add duplicate
+    # Try to add duplicate (same provider + message_id)
     processed2 = ProcessedMessage(
+        provider="whatsapp",
         message_id="wamid.unique123",  # Same ID
         lead_id=None,
     )

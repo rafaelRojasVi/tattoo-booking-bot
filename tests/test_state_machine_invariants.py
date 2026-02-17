@@ -56,7 +56,8 @@ def lead_in_status(db, status: str):
         STATUS_REJECTED,
     ],
 )
-def test_approve_only_from_pending_approval(db, invalid_status):
+@pytest.mark.asyncio
+async def test_approve_only_from_pending_approval(db, invalid_status):
     """
     Test that approve only works from PENDING_APPROVAL.
 
@@ -76,13 +77,14 @@ def test_approve_only_from_pending_approval(db, invalid_status):
 
     with patch("app.api.admin.get_admin_auth", return_value=True):
         with pytest.raises(HTTPException) as exc_info:
-            approve_lead(lead.id, db=db)
+            await approve_lead(lead.id, db=db)
 
         assert exc_info.value.status_code == 400
         assert "PENDING_APPROVAL" in str(exc_info.value.detail)
 
 
-def test_approve_from_pending_approval_succeeds(db):
+@pytest.mark.asyncio
+async def test_approve_from_pending_approval_succeeds(db):
     """Test that approve works correctly from PENDING_APPROVAL."""
     lead = Lead(wa_from="2222222222", status=STATUS_PENDING_APPROVAL)
     db.add(lead)
@@ -91,14 +93,18 @@ def test_approve_from_pending_approval_succeeds(db):
 
     with (
         patch("app.api.admin.get_admin_auth", return_value=True),
-        patch("app.services.calendar_service.send_slot_suggestions_to_client", return_value=True),
+        patch(
+            "app.services.calendar_service.send_slot_suggestions_to_client",
+            new_callable=AsyncMock,
+            return_value=True,
+        ),
         patch(
             "app.services.artist_notifications.notify_artist", new_callable=AsyncMock
         ) as mock_notify,
     ):
         mock_notify.return_value = True
 
-        result = approve_lead(lead.id, db=db)
+        result = await approve_lead(lead.id, db=db)
         db.refresh(lead)
 
         assert lead.status == STATUS_AWAITING_DEPOSIT
@@ -157,7 +163,8 @@ def test_reject_from_pending_approval_succeeds(db):
         STATUS_REJECTED,
     ],
 )
-def test_send_deposit_only_from_awaiting_deposit(db, invalid_status):
+@pytest.mark.asyncio
+async def test_send_deposit_only_from_awaiting_deposit(db, invalid_status):
     """
     Test that send_deposit only works from AWAITING_DEPOSIT.
 
@@ -177,13 +184,14 @@ def test_send_deposit_only_from_awaiting_deposit(db, invalid_status):
 
     with patch("app.api.admin.get_admin_auth", return_value=True):
         with pytest.raises(HTTPException) as exc_info:
-            send_deposit(lead.id, request=SendDepositRequest(), db=db)
+            await send_deposit(lead.id, request=SendDepositRequest(), db=db)
 
         assert exc_info.value.status_code == 400
         assert "AWAITING_DEPOSIT" in str(exc_info.value.detail)
 
 
-def test_send_deposit_from_awaiting_deposit_succeeds(db):
+@pytest.mark.asyncio
+async def test_send_deposit_from_awaiting_deposit_succeeds(db):
     """Test that send_deposit works correctly from AWAITING_DEPOSIT."""
     lead = Lead(wa_from="6666666666", status=STATUS_AWAITING_DEPOSIT)
     lead.estimated_category = "MEDIUM"
@@ -205,7 +213,7 @@ def test_send_deposit_from_awaiting_deposit_succeeds(db):
         }
         mock_whatsapp.return_value = {"id": "wamock_123", "status": "sent"}
 
-        result = send_deposit(lead.id, request=SendDepositRequest(), db=db)
+        result = await send_deposit(lead.id, request=SendDepositRequest(), db=db)
         db.refresh(lead)
 
         assert lead.stripe_checkout_session_id == "cs_test_123"
@@ -267,7 +275,8 @@ def test_mark_booked_from_booking_pending_succeeds(db):
         assert lead.booked_at is not None
 
 
-def test_approve_after_rejected_fails(db):
+@pytest.mark.asyncio
+async def test_approve_after_rejected_fails(db):
     """Test that approve cannot be called after lead is rejected."""
     lead = Lead(wa_from="9999999999", status=STATUS_REJECTED)
     lead.rejected_at = datetime.now(UTC)
@@ -277,12 +286,13 @@ def test_approve_after_rejected_fails(db):
 
     with patch("app.api.admin.get_admin_auth", return_value=True):
         with pytest.raises(HTTPException) as exc_info:
-            approve_lead(lead.id, db=db)
+            await approve_lead(lead.id, db=db)
 
         assert exc_info.value.status_code == 400
 
 
-def test_send_deposit_before_approval_fails(db):
+@pytest.mark.asyncio
+async def test_send_deposit_before_approval_fails(db):
     """Test that send_deposit cannot be called before approval."""
     lead = Lead(wa_from="1010101010", status=STATUS_PENDING_APPROVAL)
     db.add(lead)
@@ -291,7 +301,7 @@ def test_send_deposit_before_approval_fails(db):
 
     with patch("app.api.admin.get_admin_auth", return_value=True):
         with pytest.raises(HTTPException) as exc_info:
-            send_deposit(lead.id, request=SendDepositRequest(), db=db)
+            await send_deposit(lead.id, request=SendDepositRequest(), db=db)
 
         assert exc_info.value.status_code == 400
         assert "AWAITING_DEPOSIT" in str(exc_info.value.detail)
@@ -328,7 +338,8 @@ def test_reject_after_booked_fails(db):
         assert "booked" in str(exc_info.value.detail).lower()
 
 
-def test_send_deposit_after_booked_fails(db):
+@pytest.mark.asyncio
+async def test_send_deposit_after_booked_fails(db):
     """Test that send_deposit cannot be called after lead is booked."""
     lead = Lead(wa_from="1414141414", status=STATUS_BOOKED)
     lead.booked_at = datetime.now(UTC)
@@ -338,13 +349,14 @@ def test_send_deposit_after_booked_fails(db):
 
     with patch("app.api.admin.get_admin_auth", return_value=True):
         with pytest.raises(HTTPException) as exc_info:
-            send_deposit(lead.id, request=SendDepositRequest(), db=db)
+            await send_deposit(lead.id, request=SendDepositRequest(), db=db)
 
         assert exc_info.value.status_code == 400
         assert "AWAITING_DEPOSIT" in str(exc_info.value.detail)
 
 
-def test_approve_after_booked_fails(db):
+@pytest.mark.asyncio
+async def test_approve_after_booked_fails(db):
     """Test that approve cannot be called after lead is booked."""
     lead = Lead(wa_from="1515151515", status=STATUS_BOOKED)
     lead.booked_at = datetime.now(UTC)
@@ -354,6 +366,6 @@ def test_approve_after_booked_fails(db):
 
     with patch("app.api.admin.get_admin_auth", return_value=True):
         with pytest.raises(HTTPException) as exc_info:
-            approve_lead(lead.id, db=db)
+            await approve_lead(lead.id, db=db)
 
         assert exc_info.value.status_code == 400

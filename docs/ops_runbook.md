@@ -616,7 +616,32 @@ curl -H "X-Admin-API-Key: <KEY>" https://yourdomain.com/admin/leads
 
 # Get funnel metrics
 curl -H "X-Admin-API-Key: <KEY>" https://yourdomain.com/admin/funnel?days=7
+
+# Get slot parse stats (matched_by / reject reason counts)
+curl -H "X-Admin-API-Key: <KEY>" https://yourdomain.com/admin/slot-parse-stats?days=7
 ```
+
+### Scheduled Jobs (SystemEvent Retention)
+
+To prevent `system_events` from growing unbounded (e.g. from slot parsing observability), run retention cleanup regularly.
+
+**Recommended schedule:** Daily (e.g. `0 3 * * *` at 3am UTC)
+
+**Option A – Admin endpoint (Render Cron or external cron):**
+```bash
+curl -X POST "https://yourdomain.com/admin/events/retention-cleanup?retention_days=90" \
+  -H "X-Admin-API-Key: ${ADMIN_API_KEY}"
+```
+
+**Option B – CLI job (cron or Render Cron):**
+```bash
+python -m app.jobs.cleanup_system_events --retention-days 90
+```
+
+**Endpoints:**
+- `POST /admin/events/retention-cleanup?retention_days=90` – Delete events older than N days (default 90)
+
+---
 
 ### Database Queries
 

@@ -112,7 +112,7 @@ async def test_no_slots_triggers_safe_fallback(db):
         mock_notify.return_value = True
 
         # Try to send slot suggestions when none are available
-        result = send_slot_suggestions_to_client(
+        result = await send_slot_suggestions_to_client(
             db=db,
             lead=lead,
             dry_run=False,
@@ -188,7 +188,7 @@ async def test_empty_slots_no_crash(db):
 
         # Should not raise exception
         try:
-            result = send_slot_suggestions_to_client(
+            result = await send_slot_suggestions_to_client(
                 db=db,
                 lead=lead,
                 dry_run=False,
@@ -224,7 +224,7 @@ async def test_slot_suggestions_not_sent_when_none_exist(db):
         mock_whatsapp.return_value = {"id": "wamock_123", "status": "sent"}
         mock_window.return_value = {"id": "wamock_123", "status": "sent"}
 
-        result = send_slot_suggestions_to_client(
+        result = await send_slot_suggestions_to_client(
             db=db,
             lead=lead,
             dry_run=False,

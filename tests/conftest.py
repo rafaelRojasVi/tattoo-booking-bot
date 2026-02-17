@@ -9,6 +9,8 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 # Set test environment variables before importing app
+# Force dev mode for default test app; production validation tests override and reload
+os.environ["APP_ENV"] = "dev"
 os.environ.setdefault("DATABASE_URL", "sqlite:///:memory:")
 os.environ.setdefault("WHATSAPP_VERIFY_TOKEN", "test_token")
 os.environ.setdefault("WHATSAPP_ACCESS_TOKEN", "test_token")
@@ -29,13 +31,24 @@ from app.db.models import Attachment, Lead, LeadAnswer, ProcessedMessage, Action
 from app.main import app
 
 # Test database URL (in-memory SQLite for fast tests)
-SQLALCHEMY_DATABASE_URL = "sqlite:///:memory:"
+SQLALCHEMY_DATABASE_URL = os.environ.get("DATABASE_URL", "sqlite:///:memory:")
 
-engine = create_engine(
-    SQLALCHEMY_DATABASE_URL,
-    connect_args={"check_same_thread": False},
-    poolclass=StaticPool,
-)
+
+def is_sqlite() -> bool:
+    """Return True if the test database is SQLite (e.g. in-memory tests)."""
+    url = SQLALCHEMY_DATABASE_URL or ""
+    return url.startswith("sqlite")
+
+
+# SQLite needs check_same_thread=False and StaticPool; Postgres does not support check_same_thread
+if is_sqlite():
+    engine = create_engine(
+        SQLALCHEMY_DATABASE_URL,
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+else:
+    engine = create_engine(SQLALCHEMY_DATABASE_URL)
 TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 # Make the app use the same DB so background tasks (e.g. attachment upload job) see the same schema

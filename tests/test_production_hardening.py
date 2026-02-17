@@ -40,16 +40,16 @@ from app.services.state_machine import (
     is_transition_allowed,
     transition,
 )
-from tests.conftest import TestingSessionLocal
+from tests.conftest import TestingSessionLocal, is_sqlite
 
 
 # ---- P0: Concurrency and races ----
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(
-    reason="Flaky with SQLite: SELECT FOR UPDATE / concurrent sessions may not behave as in PostgreSQL",
-    strict=False,
+@pytest.mark.skipif(
+    is_sqlite(),
+    reason="SQLite lacks proper concurrency; run with Postgres for conditional-UPDATE concurrency tests",
 )
 async def test_concurrent_inbound_does_not_double_advance_step(db):
     """
@@ -60,7 +60,7 @@ async def test_concurrent_inbound_does_not_double_advance_step(db):
     lead = Lead(
         wa_from=wa_from,
         status=STATUS_QUALIFYING,
-        current_step=0,  # dimensions step
+        current_step=2,  # dimensions step (0=idea, 1=placement, 2=dimensions)
     )
     db.add(lead)
     db.commit()
@@ -102,10 +102,10 @@ async def test_concurrent_inbound_does_not_double_advance_step(db):
             db2.close()
 
     db.refresh(lead)
-    # Desired: step advanced once (to 1), not twice (to 2)
-    assert lead.current_step == 1, (
+    # Desired: step advanced once (2 -> 3), not twice (2 -> 4)
+    assert lead.current_step == 3, (
         "Concurrent inbounds must not double-advance step; "
-        "expected current_step=1, got %s (add row locking if flaky)" % lead.current_step
+        "expected current_step=3 (one advance from 2), got %s" % lead.current_step
     )
 
 
@@ -172,7 +172,10 @@ async def test_duplicate_message_id_race_only_one_processes(db):
             db2.close()
 
     # Only one ProcessedMessage for this message_id
-    stmt = select(ProcessedMessage).where(ProcessedMessage.message_id == message_id)
+    stmt = select(ProcessedMessage).where(
+        ProcessedMessage.provider == "whatsapp",
+        ProcessedMessage.message_id == message_id,
+    )
     count = len(db.execute(stmt).scalars().all())
     assert count == 1, (
         "Duplicate message_id must be processed only once; "

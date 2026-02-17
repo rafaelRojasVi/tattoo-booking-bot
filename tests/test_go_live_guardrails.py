@@ -137,7 +137,14 @@ async def test_whatsapp_idempotency_duplicate_message_id(client, db):
     assert len(leads) == 1
 
     # Verify message was marked as processed
-    processed = db.query(ProcessedMessage).filter(ProcessedMessage.message_id == message_id).first()
+    processed = (
+        db.query(ProcessedMessage)
+        .filter(
+            ProcessedMessage.provider == "whatsapp",
+            ProcessedMessage.message_id == message_id,
+        )
+        .first()
+    )
     assert processed is not None
 
 
@@ -193,7 +200,14 @@ async def test_stripe_idempotency_duplicate_event(client, db):
     assert lead.status == status_after_first
 
     # Verify event was marked as processed
-    processed = db.query(ProcessedMessage).filter(ProcessedMessage.message_id == event_id).first()
+    processed = (
+        db.query(ProcessedMessage)
+        .filter(
+            ProcessedMessage.provider == "stripe",
+            ProcessedMessage.message_id == event_id,
+        )
+        .first()
+    )
     assert processed is not None
 
 
@@ -525,7 +539,7 @@ async def test_slot_selection_out_of_range(db):
 
     from datetime import datetime
 
-    from app.services.slot_parsing import parse_slot_selection
+    from app.services.slot_parsing import parse_slot_selection_logged
 
     slots = [
         {
@@ -539,7 +553,7 @@ async def test_slot_selection_out_of_range(db):
     ]
 
     # Out of range number
-    result = parse_slot_selection("10", slots, max_slots=8)
+    result = parse_slot_selection_logged("10", slots, max_slots=8)
     assert result is None  # Should not match out-of-range number
 
 
@@ -565,7 +579,7 @@ async def test_slot_selection_ambiguous_tuesday_afternoon(db):
     """Guardrail: Slot selection handles ambiguous 'Tuesday afternoon'."""
     from datetime import datetime
 
-    from app.services.slot_parsing import parse_slot_selection
+    from app.services.slot_parsing import parse_slot_selection_logged
 
     slots = [
         {
@@ -579,7 +593,7 @@ async def test_slot_selection_ambiguous_tuesday_afternoon(db):
     ]
 
     # Should match first Tuesday afternoon slot
-    result = parse_slot_selection("Tuesday afternoon", slots, max_slots=8)
+    result = parse_slot_selection_logged("Tuesday afternoon", slots, max_slots=8)
     # May return first match or None if ambiguous
     assert result is None or result in [1, 2]
 

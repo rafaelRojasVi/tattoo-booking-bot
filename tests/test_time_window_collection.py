@@ -5,7 +5,7 @@ Tests the flow: no slots → ask for time windows → collect 2-3 → notify art
 """
 
 from datetime import UTC, datetime
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from sqlalchemy import select
@@ -190,10 +190,6 @@ async def test_collect_third_time_window(db, lead_booking_pending):
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(
-    reason="Flaky when run in full suite: mock/settings isolation may vary with test order",
-    strict=False,
-)
 async def test_artist_notification_includes_time_windows(db, lead_booking_pending):
     """Test that artist notification includes collected time windows."""
     from app.services.artist_notifications import notify_artist_needs_reply
@@ -218,12 +214,14 @@ async def test_artist_notification_includes_time_windows(db, lead_booking_pendin
     lead_booking_pending.needs_artist_reply_notified_at = None  # Ensure not already notified
     db.commit()
 
-    # Patch artist_whatsapp_number and send_whatsapp_message so notification is sent
-    from app.core.config import settings
+    # Patch settings at module level: avoid import-time cached values affecting test order
+    mock_settings = MagicMock()
+    mock_settings.artist_whatsapp_number = "test_artist_number"
+    mock_settings.feature_notifications_enabled = True
+    mock_settings.whatsapp_dry_run = True
 
     with (
-        patch.object(settings, "artist_whatsapp_number", "test_artist_number"),
-        patch.object(settings, "feature_notifications_enabled", True),
+        patch("app.services.artist_notifications.settings", mock_settings),
         patch("app.services.artist_notifications.send_whatsapp_message", new_callable=AsyncMock) as mock_send,
     ):
         mock_send.return_value = {"status": "sent"}
@@ -262,8 +260,7 @@ async def test_no_slots_triggers_time_window_collection(db, lead_booking_pending
         # Return empty slots
         mock_slots.return_value = []
 
-        # send_slot_suggestions_to_client is not async, but uses asyncio.run internally
-        result = send_slot_suggestions_to_client(
+        result = await send_slot_suggestions_to_client(
             db=db,
             lead=lead_booking_pending,
             dry_run=True,

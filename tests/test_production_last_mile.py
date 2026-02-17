@@ -159,10 +159,6 @@ async def test_optout_restart_resets_step_and_handover_timestamps(db):
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(
-    reason="Flaky: first webhook request may not create answer (test isolation / db session)",
-    strict=False,
-)
 async def test_duplicate_message_id_different_text_is_ignored(db):
     """Same message_id with different text: second request is duplicate; only first text is stored."""
     from app.core.config import settings
@@ -171,7 +167,7 @@ async def test_duplicate_message_id_different_text_is_ignored(db):
     message_id = "wamid.dup_diff_1"
     lead = get_or_create_lead(db, wa_from=wa_from)
     lead.status = STATUS_QUALIFYING
-    lead.current_step = 0
+    lead.current_step = 2  # dimensions step (0=idea, 1=placement, 2=dimensions)
     db.commit()
     db.refresh(lead)
     lead_id = lead.id
@@ -221,6 +217,7 @@ async def test_duplicate_message_id_different_text_is_ignored(db):
             return_value=json.dumps(make_payload("10x12 cm")).encode("utf-8")
         )
         r1 = await whatsapp_inbound(mock_request, BackgroundTasks(), db=db)
+        db.commit()  # Commit first request so duplicate check in r2 sees committed row
 
         mock_request.body = AsyncMock(
             return_value=json.dumps(make_payload("15x15 cm", int(datetime.now(UTC).timestamp()) + 1)).encode(
@@ -234,7 +231,10 @@ async def test_duplicate_message_id_different_text_is_ignored(db):
 
     from sqlalchemy import select
 
-    stmt = select(ProcessedMessage).where(ProcessedMessage.message_id == message_id)
+    stmt = select(ProcessedMessage).where(
+        ProcessedMessage.provider == "whatsapp",
+        ProcessedMessage.message_id == message_id,
+    )
     count = len(db.execute(stmt).scalars().all())
     assert count == 1, "Duplicate message_id must be processed only once"
 
@@ -288,7 +288,10 @@ async def test_stripe_duplicate_events_do_not_double_transition(db):
 
     from app.services.conversation import STATUS_BOOKING_PENDING
 
-    stmt = select(ProcessedMessage).where(ProcessedMessage.message_id == event_id)
+    stmt = select(ProcessedMessage).where(
+        ProcessedMessage.provider == "stripe",
+        ProcessedMessage.message_id == event_id,
+    )
     count = len(db.execute(stmt).scalars().all())
     assert count == 1, "Duplicate Stripe event must be recorded only once"
 

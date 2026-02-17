@@ -270,7 +270,7 @@ async def test_suggested_slots_stored_when_sent(db: Session, sample_lead: Lead, 
         "app.services.calendar_service.get_available_slots", lambda *args, **kwargs: test_slots
     )
 
-    result = send_slot_suggestions_to_client(db=db, lead=sample_lead, dry_run=True)
+    result = await send_slot_suggestions_to_client(db=db, lead=sample_lead, dry_run=True)
 
     assert result is True
     assert sample_lead.suggested_slots_json is not None

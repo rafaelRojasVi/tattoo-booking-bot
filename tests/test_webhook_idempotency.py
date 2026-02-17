@@ -39,7 +39,10 @@ def test_duplicate_message_id_ignored(client, db):
     assert "lead_id" in data1
 
     # Check message was marked as processed
-    stmt = select(ProcessedMessage).where(ProcessedMessage.message_id == message_id)
+    stmt = select(ProcessedMessage).where(
+        ProcessedMessage.provider == "whatsapp",
+        ProcessedMessage.message_id == message_id,
+    )
     processed = db.execute(stmt).scalar_one_or_none()
     assert processed is not None
     assert processed.lead_id == data1["lead_id"]
@@ -74,7 +77,12 @@ def test_duplicate_message_id_ignored(client, db):
 
     # Should still have only one processed message record
     processed_count = (
-        db.query(ProcessedMessage).filter(ProcessedMessage.message_id == message_id).count()
+        db.query(ProcessedMessage)
+        .filter(
+            ProcessedMessage.provider == "whatsapp",
+            ProcessedMessage.message_id == message_id,
+        )
+        .count()
     )
     assert processed_count == 1
 

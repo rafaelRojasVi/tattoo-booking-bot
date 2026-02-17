@@ -54,6 +54,10 @@ def parse_dimensions(dimensions_text: str) -> tuple[float, float] | None:
                 w *= 2.54
                 h *= 2.54
 
+            # Sanity bounds: reject likely typos or wrong units (> 100 cm)
+            if w > 100 or h > 100:
+                return None
+
             return (w, h)
 
     return None

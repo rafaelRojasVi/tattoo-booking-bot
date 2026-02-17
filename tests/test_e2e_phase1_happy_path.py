@@ -142,9 +142,9 @@ async def test_e2e_happy_path_city_on_tour_new_to_booked(db, frozen_time):
         # Step 3: Artist approves
         from app.api.admin import approve_lead
 
-        # Mock auth to bypass security
+        # Mock auth to bypass security (send_slot_suggestions_to_client uses mock_slots + mock_window_send)
         with patch("app.api.admin.get_admin_auth", return_value=True):
-            approve_result = approve_lead(lead.id, db=db)
+            approve_result = await approve_lead(lead.id, db=db)
 
         db.refresh(lead)
 
@@ -167,7 +167,7 @@ async def test_e2e_happy_path_city_on_tour_new_to_booked(db, frozen_time):
         deposit_request = SendDepositRequest()
         # Mock auth to bypass security
         with patch("app.api.admin.get_admin_auth", return_value=True):
-            deposit_result = send_deposit(lead.id, request=deposit_request, db=db)
+            deposit_result = await send_deposit(lead.id, request=deposit_request, db=db)
 
         db.refresh(lead)
 

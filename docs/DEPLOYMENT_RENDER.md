@@ -157,7 +157,9 @@ python -m app.services.worker
 
 ## Cron Jobs (Optional)
 
-For periodic tasks (expired deposit sweeper), use Render Cron Jobs:
+For periodic tasks, use Render Cron Jobs or external cron services.
+
+### Expired deposit sweeper
 
 **Schedule:** `0 */6 * * *` (every 6 hours)  
 **Command:**
@@ -166,7 +168,18 @@ curl -X POST https://your-service.onrender.com/admin/sweep-expired-deposits \
   -H "X-Admin-API-Key: ${ADMIN_API_KEY}"
 ```
 
-Or create a dedicated endpoint that can be called by external cron services.
+### SystemEvent retention cleanup
+
+Prevents `system_events` from growing unbounded (slot parsing, WhatsApp events, etc.).
+
+**Schedule:** `0 3 * * *` (daily at 3am UTC)  
+**Command:**
+```bash
+curl -X POST "https://your-service.onrender.com/admin/events/retention-cleanup?retention_days=90" \
+  -H "X-Admin-API-Key: ${ADMIN_API_KEY}"
+```
+
+Or run the CLI job: `python -m app.jobs.cleanup_system_events --retention-days 90`
 
 ## Monitoring
 

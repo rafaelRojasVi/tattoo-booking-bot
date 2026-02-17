@@ -4,8 +4,9 @@ Tests for debug endpoint.
 
 from datetime import UTC, datetime
 
-from app.db.models import Lead, LeadAnswer, ProcessedMessage, SystemEvent
+from app.db.models import Lead, LeadAnswer, ProcessedMessage
 from app.services.conversation import STATUS_BOOKED, STATUS_NEEDS_ARTIST_REPLY
+from app.services.system_event_service import warn
 
 
 def test_debug_endpoint_returns_comprehensive_info(client, db):
@@ -35,23 +36,15 @@ def test_debug_endpoint_returns_comprehensive_info(client, db):
         )
         db.add(answer)
 
-    # Add system event
-    event = SystemEvent(
-        level="WARN",
-        event_type="test.event",
-        lead_id=lead.id,
-        payload={"test": "data"},
-    )
-    db.add(event)
-
     # Add processed message
     processed = ProcessedMessage(
+        provider="whatsapp",
         message_id="wamid.test123",
         event_type="whatsapp.message",
         lead_id=lead.id,
     )
     db.add(processed)
-    db.commit()
+    warn(db, event_type="test.event", lead_id=lead.id, payload={"test": "data"})
 
     # Call debug endpoint
     response = client.get(

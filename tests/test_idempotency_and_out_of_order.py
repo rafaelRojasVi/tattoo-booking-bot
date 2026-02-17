@@ -114,7 +114,10 @@ async def test_duplicate_whatsapp_message_idempotent(db):
         from sqlalchemy import select
 
         processed = db.execute(
-            select(ProcessedMessage).where(ProcessedMessage.message_id == message_id)
+            select(ProcessedMessage).where(
+                ProcessedMessage.provider == "whatsapp",
+                ProcessedMessage.message_id == message_id,
+            )
         ).scalar_one_or_none()
         assert processed is not None, "ProcessedMessage should exist for idempotency"
 
@@ -203,7 +206,10 @@ async def test_duplicate_stripe_webhook_idempotent(db):
         from sqlalchemy import select
 
         processed = db.execute(
-            select(ProcessedMessage).where(ProcessedMessage.message_id == event_id)
+            select(ProcessedMessage).where(
+                ProcessedMessage.provider == "stripe",
+                ProcessedMessage.message_id == event_id,
+            )
         ).scalar_one_or_none()
         assert processed is not None, "ProcessedMessage should exist for idempotency"
 
@@ -370,7 +376,10 @@ async def test_duplicate_whatsapp_exactly_one_state_transition(db):
         from sqlalchemy import select
 
         processed = db.execute(
-            select(ProcessedMessage).where(ProcessedMessage.message_id == message_id)
+            select(ProcessedMessage).where(
+                ProcessedMessage.provider == "whatsapp",
+                ProcessedMessage.message_id == message_id,
+            )
         ).scalar_one_or_none()
         assert processed is not None, "ProcessedMessage should exist after duplicate processing"
 
@@ -438,6 +447,9 @@ async def test_duplicate_stripe_exactly_one_transition(db):
         from sqlalchemy import select
 
         processed = db.execute(
-            select(ProcessedMessage).where(ProcessedMessage.message_id == event_id)
+            select(ProcessedMessage).where(
+                ProcessedMessage.provider == "stripe",
+                ProcessedMessage.message_id == event_id,
+            )
         ).scalar_one_or_none()
         assert processed is not None, "ProcessedMessage should exist after duplicate processing"

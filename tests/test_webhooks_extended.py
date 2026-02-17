@@ -286,7 +286,7 @@ def test_whatsapp_inbound_invalid_json(client):
     """Test handling of invalid JSON payload."""
     response = client.post(
         "/webhooks/whatsapp",
-        data="not json",
+        content=b"not json",
         headers={"Content-Type": "application/json"},
     )
     assert response.status_code == 400

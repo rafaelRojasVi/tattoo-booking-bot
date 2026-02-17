@@ -5,7 +5,7 @@ Admin API request/response schemas.
 from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 
 class RejectRequest(BaseModel):
@@ -30,6 +30,8 @@ class SendBookingLinkRequest(BaseModel):
 class LeadResponse(BaseModel):
     """Response schema for a single lead."""
 
+    model_config = ConfigDict(from_attributes=True)
+
     id: int
     wa_from: str
     status: str
@@ -38,21 +40,17 @@ class LeadResponse(BaseModel):
     # Optional detailed fields
     summary: dict[str, Any] | None = None
 
-    class Config:
-        from_attributes = True
-
 
 class LeadListResponse(BaseModel):
     """Response schema for list of leads."""
+
+    model_config = ConfigDict(from_attributes=True)
 
     id: int
     wa_from: str
     status: str
     current_step: int | None = None
     created_at: datetime
-
-    class Config:
-        from_attributes = True
 
 
 class FunnelMetricsResponse(BaseModel):

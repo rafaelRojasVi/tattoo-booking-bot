@@ -96,14 +96,45 @@ def test_production_validation_stripe_webhook_secret_checked(monkeypatch):
     # Verify the production validation code checks STRIPE_WEBHOOK_SECRET
     import inspect
 
-    from app.main import startup_event
+    from app.main import lifespan
 
-    # Check that the production validation code includes STRIPE_WEBHOOK_SECRET check
-    source = inspect.getsource(startup_event)
+    # Check that the lifespan startup code includes STRIPE_WEBHOOK_SECRET check
+    source = inspect.getsource(lifespan)
     assert (
         "STRIPE_WEBHOOK_SECRET is required in production" in source
         or "stripe_webhook_secret" in source.lower()
     )
+
+
+def test_production_validation_rejects_whsec_test(monkeypatch):
+    """Test that production mode fails when STRIPE_WEBHOOK_SECRET is whsec_test."""
+    monkeypatch.setenv("APP_ENV", "production")
+    monkeypatch.setenv("DATABASE_URL", "sqlite:///:memory:")
+    monkeypatch.setenv("WHATSAPP_VERIFY_TOKEN", "test_token")
+    monkeypatch.setenv("WHATSAPP_ACCESS_TOKEN", "test_token")
+    monkeypatch.setenv("WHATSAPP_PHONE_NUMBER_ID", "test_id")
+    monkeypatch.setenv("STRIPE_SECRET_KEY", "sk_test_test")
+    monkeypatch.setenv("STRIPE_WEBHOOK_SECRET", "whsec_test")
+    monkeypatch.setenv("FRESHA_BOOKING_URL", "https://test.com")
+    monkeypatch.setenv("ADMIN_API_KEY", "test_admin_key")
+    monkeypatch.setenv("WHATSAPP_APP_SECRET", "test_app_secret")
+    monkeypatch.setenv("DEMO_MODE", "false")
+
+    import sys
+
+    if "app.core.config" in sys.modules:
+        del sys.modules["app.core.config"]
+    if "app.main" in sys.modules:
+        del sys.modules["app.main"]
+
+    from app.main import app
+
+    with pytest.raises(RuntimeError) as exc_info, TestClient(app):
+        pass
+
+    error_message = str(exc_info.value)
+    assert "whsec_test" in error_message or "STRIPE_WEBHOOK_SECRET" in error_message
+    assert "Production environment validation failed" in error_message
 
 
 def test_production_validation_demo_mode_enabled(monkeypatch):
@@ -144,13 +175,14 @@ def test_production_validation_demo_mode_enabled(monkeypatch):
 def test_production_validation_all_requirements_met(monkeypatch):
     """Test that production mode succeeds when all requirements are met."""
     # Set production environment with all required settings
+    # Note: whsec_test is rejected in production; use a non-stub secret
     monkeypatch.setenv("APP_ENV", "production")
     monkeypatch.setenv("DATABASE_URL", "sqlite:///:memory:")
     monkeypatch.setenv("WHATSAPP_VERIFY_TOKEN", "test_token")
     monkeypatch.setenv("WHATSAPP_ACCESS_TOKEN", "test_token")
     monkeypatch.setenv("WHATSAPP_PHONE_NUMBER_ID", "test_id")
     monkeypatch.setenv("STRIPE_SECRET_KEY", "sk_test_test")
-    monkeypatch.setenv("STRIPE_WEBHOOK_SECRET", "whsec_test")
+    monkeypatch.setenv("STRIPE_WEBHOOK_SECRET", "whsec_abc123live")
     monkeypatch.setenv("FRESHA_BOOKING_URL", "https://test.com")
     monkeypatch.setenv("ADMIN_API_KEY", "test_admin_key")
     monkeypatch.setenv("WHATSAPP_APP_SECRET", "test_app_secret")

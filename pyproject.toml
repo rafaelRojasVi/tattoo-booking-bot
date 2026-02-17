@@ -70,6 +70,11 @@ python_classes = ["Test*"]
 python_functions = ["test_*"]
 addopts = ["-v", "--tb=short", "--strict-markers"]
 asyncio_mode = "auto"
+xfail_strict = true
+filterwarnings = [
+    "error:coroutine .* was never awaited:RuntimeWarning",
+    "ignore:The default datetime adapter is deprecated as of Python 3.12.*:DeprecationWarning",
+]
 markers = [
     "asyncio: marks tests as async (using pytest-asyncio)",
 ]

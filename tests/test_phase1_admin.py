@@ -6,7 +6,8 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from app.db.models import Lead
+from app.constants.event_types import EVENT_WHATSAPP_WEBHOOK_FAILURE
+from app.db.models import Lead, OutboxMessage, SystemEvent
 from app.services.conversation import (
     STATUS_AWAITING_DEPOSIT,
     STATUS_BOOKED,
@@ -298,3 +299,108 @@ def test_funnel_rates_calculation(client, db, admin_headers, setup_admin_key):
     # Overall conversion = booked / new_leads = 2 / 33 ≈ 0.06
     assert rates["overall_conversion"] > 0
     assert rates["overall_conversion"] <= 1.0
+
+
+def test_test_webhook_exception_returns_200_and_logs_system_event(
+    client, db, admin_headers, setup_admin_key
+):
+    """Test POST /admin/test-webhook-exception returns 200 and logs SystemEvent with correlation_id."""
+    response = client.post(
+        "/admin/test-webhook-exception",
+        headers={"X-Admin-API-Key": "test_admin_key", "X-Correlation-ID": "test-corr-123"},
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data.get("received") is True
+    assert data.get("simulated") is True
+    assert data.get("error_logged") is True
+
+    # Verify SystemEvent was logged with correlation_id
+    events = db.query(SystemEvent).filter(
+        SystemEvent.event_type == EVENT_WHATSAPP_WEBHOOK_FAILURE
+    ).all()
+    assert len(events) >= 1
+    ev = events[-1]
+    assert ev.payload is not None
+    assert ev.payload.get("correlation_id") == "test-corr-123"
+    assert ev.payload.get("simulated") is True
+
+
+def test_test_webhook_exception_returns_404_in_production(
+    db, monkeypatch
+):
+    """Test POST /admin/test-webhook-exception returns 404 when APP_ENV=production."""
+    monkeypatch.setenv("ADMIN_API_KEY", "test_admin_key")
+    monkeypatch.setenv("APP_ENV", "production")
+    monkeypatch.setenv("STRIPE_WEBHOOK_SECRET", "whsec_abc123live")  # Required for prod startup
+    monkeypatch.setenv("WHATSAPP_APP_SECRET", "test_app_secret")  # Required for prod startup
+
+    import sys
+
+    if "app.core.config" in sys.modules:
+        del sys.modules["app.core.config"]
+    if "app.main" in sys.modules:
+        del sys.modules["app.main"]
+
+    from app.main import app
+    from fastapi.testclient import TestClient
+
+    from app.db.deps import get_db
+
+    def override_get_db():
+        try:
+            yield db
+        finally:
+            pass
+
+    app.dependency_overrides[get_db] = override_get_db
+    with TestClient(app) as prod_client:
+        resp = prod_client.post(
+            "/admin/test-webhook-exception",
+            headers={"X-Admin-API-Key": "test_admin_key"},
+        )
+        assert resp.status_code == 404
+        assert "disabled in production" in resp.json().get("detail", "").lower()
+    app.dependency_overrides.clear()
+
+
+def test_admin_outbox_list(client, db, admin_headers, setup_admin_key):
+    """Test GET /admin/outbox returns list with status and limit params."""
+    # Create a lead and outbox messages
+    lead = Lead(wa_from="1234567890", status="NEW")
+    db.add(lead)
+    db.commit()
+
+    # Add FAILED outbox message
+    failed = OutboxMessage(
+        lead_id=lead.id,
+        channel="whatsapp",
+        payload_json={"to": "123", "message": "test"},
+        status="FAILED",
+        attempts=3,
+        last_error="Rate limit exceeded",
+        next_retry_at=datetime.now(UTC) + timedelta(minutes=5),
+    )
+    db.add(failed)
+    db.commit()
+
+    # Get FAILED outbox
+    response = client.get(
+        "/admin/outbox?status=FAILED&limit=50",
+        headers=admin_headers,
+    )
+    assert response.status_code == 200
+    rows = response.json()
+    assert isinstance(rows, list)
+    assert len(rows) >= 1
+    r = next(x for x in rows if x["id"] == failed.id)
+    assert r["lead_id"] == lead.id
+    assert r["status"] == "FAILED"
+    assert r["attempts"] == 3
+    assert r["last_error"] == "Rate limit exceeded"
+    assert r["next_retry_at"] is not None
+
+    # Get with limit
+    response2 = client.get("/admin/outbox?limit=1", headers=admin_headers)
+    assert response2.status_code == 200
+    assert len(response2.json()) <= 1

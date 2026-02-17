@@ -10,6 +10,7 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
+from app.constants.event_types import EVENT_CALENDAR_NO_SLOTS_FALLBACK
 from app.core.config import settings
 from app.db.models import Lead
 
@@ -328,7 +329,7 @@ def format_slot_suggestions(
     return "\n".join(message_lines)
 
 
-def send_slot_suggestions_to_client(
+async def send_slot_suggestions_to_client(
     db: Session,
     lead: Lead,
     dry_run: bool = True,
@@ -373,7 +374,7 @@ def send_slot_suggestions_to_client(
 
             info(
                 db=db,
-                event_type="calendar.no_slots_fallback",
+                event_type=EVENT_CALENDAR_NO_SLOTS_FALLBACK,
                 lead_id=lead.id,
                 payload={
                     "duration_minutes": settings.booking_duration_minutes,
@@ -397,35 +398,14 @@ def send_slot_suggestions_to_client(
             # Ask for preferred time windows
             request_message = format_time_windows_request(lead_id=lead.id)
 
-            import asyncio
-
-            try:
-                asyncio.run(
-                    send_with_window_check(
-                        db=db,
-                        lead=lead,
-                        message=request_message,
-                        template_name=get_template_for_next_steps(),
-                        template_params=get_template_params_next_steps_reply_to_continue(),
-                        dry_run=dry_run or settings.whatsapp_dry_run,
-                    )
-                )
-            except RuntimeError:
-                import concurrent.futures
-
-                with concurrent.futures.ThreadPoolExecutor() as executor:
-                    future = executor.submit(
-                        asyncio.run,
-                        send_with_window_check(
-                            db=db,
-                            lead=lead,
-                            message=request_message,
-                            template_name=get_template_for_next_steps(),
-                            template_params=get_template_params_next_steps_reply_to_continue(),
-                            dry_run=dry_run or settings.whatsapp_dry_run,
-                        ),
-                    )
-                    future.result()
+            await send_with_window_check(
+                db=db,
+                lead=lead,
+                message=request_message,
+                template_name=get_template_for_next_steps(),
+                template_params=get_template_params_next_steps_reply_to_continue(),
+                dry_run=dry_run or settings.whatsapp_dry_run,
+            )
 
             lead.last_bot_message_at = func.now()
             db.commit()
@@ -452,41 +432,20 @@ def send_slot_suggestions_to_client(
         message = format_slot_suggestions(slots, lead_id=lead.id)
 
         # Send via WhatsApp (with 24h window check)
-        import asyncio
-
         from app.services.whatsapp_templates import (
             get_template_for_next_steps,
             get_template_params_next_steps_reply_to_continue,
         )
         from app.services.whatsapp_window import send_with_window_check
 
-        try:
-            asyncio.run(
-                send_with_window_check(
-                    db=db,
-                    lead=lead,
-                    message=message,
-                    template_name=get_template_for_next_steps(),  # Re-open window template
-                    template_params=get_template_params_next_steps_reply_to_continue(),
-                    dry_run=dry_run or settings.whatsapp_dry_run,
-                )
-            )
-        except RuntimeError:
-            # Event loop already running
-            import concurrent.futures
-
-            from app.services.messaging import send_whatsapp_message
-
-            with concurrent.futures.ThreadPoolExecutor() as executor:
-                future = executor.submit(
-                    asyncio.run,
-                    send_whatsapp_message(
-                        to=lead.wa_from,
-                        message=message,
-                        dry_run=dry_run or settings.whatsapp_dry_run,
-                    ),
-                )
-                future.result()
+        await send_with_window_check(
+            db=db,
+            lead=lead,
+            message=message,
+            template_name=get_template_for_next_steps(),  # Re-open window template
+            template_params=get_template_params_next_steps_reply_to_continue(),
+            dry_run=dry_run or settings.whatsapp_dry_run,
+        )
 
         # Update last bot message timestamp
         from sqlalchemy import func

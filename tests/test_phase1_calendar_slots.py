@@ -3,7 +3,7 @@ Test Phase 1 calendar slot suggestions functionality.
 """
 
 from datetime import UTC, datetime, timedelta
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -130,10 +130,10 @@ async def test_send_slot_suggestions_to_client(db):
     db.commit()
     db.refresh(lead)
 
-    with patch("app.services.whatsapp_window.send_with_window_check") as mock_send:
+    with patch("app.services.whatsapp_window.send_with_window_check", new_callable=AsyncMock) as mock_send:
         mock_send.return_value = {"status": "sent"}
 
-        result = send_slot_suggestions_to_client(
+        result = await send_slot_suggestions_to_client(
             db=db,
             lead=lead,
             dry_run=True,
@@ -145,7 +145,8 @@ async def test_send_slot_suggestions_to_client(db):
         assert lead.last_bot_message_at is not None
 
 
-def test_send_slot_suggestions_handles_error(db):
+@pytest.mark.asyncio
+async def test_send_slot_suggestions_handles_error(db):
     """Test that send_slot_suggestions handles errors gracefully."""
     lead = Lead(
         wa_from="1234567890",
@@ -159,7 +160,7 @@ def test_send_slot_suggestions_handles_error(db):
     with patch("app.services.calendar_service.get_available_slots") as mock_slots:
         mock_slots.side_effect = Exception("Calendar API error")
 
-        result = send_slot_suggestions_to_client(
+        result = await send_slot_suggestions_to_client(
             db=db,
             lead=lead,
             dry_run=True,
@@ -169,7 +170,8 @@ def test_send_slot_suggestions_handles_error(db):
         assert result is False
 
 
-def test_slot_suggestions_integration_with_webhook(db):
+@pytest.mark.asyncio
+async def test_slot_suggestions_integration_with_webhook(db):
     """Test that slot suggestions are sent after deposit is paid (integration test)."""
     from sqlalchemy import func
 
@@ -183,11 +185,11 @@ def test_slot_suggestions_integration_with_webhook(db):
     db.commit()
     db.refresh(lead)
 
-    with patch("app.services.whatsapp_window.send_with_window_check") as mock_send:
+    with patch("app.services.whatsapp_window.send_with_window_check", new_callable=AsyncMock) as mock_send:
         mock_send.return_value = {"status": "sent"}
 
         # Simulate what webhook does
-        result = send_slot_suggestions_to_client(
+        result = await send_slot_suggestions_to_client(
             db=db,
             lead=lead,
             dry_run=True,

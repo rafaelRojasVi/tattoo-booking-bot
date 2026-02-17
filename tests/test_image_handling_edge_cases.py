@@ -1208,6 +1208,7 @@ def test_webhook_image_duplicate_message_id(client, db, lead, monkeypatch):
     """Test webhook handles duplicate message ID (idempotency)."""
     # Create processed message
     processed = ProcessedMessage(
+        provider="whatsapp",
         message_id="wamid.duplicate",
         event_type="whatsapp.message",
         lead_id=lead.id,
