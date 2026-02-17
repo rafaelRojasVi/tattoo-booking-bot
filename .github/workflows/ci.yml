@@ -34,10 +34,13 @@ jobs:
           docker compose -f docker-compose.test.yml build
           docker compose -f docker-compose.test.yml run --rm test
       
-      - name: Run linter in Docker
+      - name: Run ruff check
         run: |
-          docker compose -f docker-compose.test.yml run --rm test sh -c "pip install ruff && ruff check app/ || true"
-        continue-on-error: true
+          docker compose -f docker-compose.test.yml run --rm test sh -c "pip install ruff && ruff check app tests"
+
+      - name: Run ruff format check
+        run: |
+          docker compose -f docker-compose.test.yml run --rm test sh -c "pip install ruff && ruff format --check app tests"
 
   test-postgres-concurrency:
     runs-on: ubuntu-latest
