@@ -21,6 +21,7 @@ from app.services.action_tokens import generate_action_tokens_for_lead
 from app.services.conversation import get_lead_summary, handle_inbound_message
 from app.services.leads import get_or_create_lead
 from app.services.questions import CONSULTATION_QUESTIONS, get_question_by_index
+from app.utils.datetime_utils import iso_or_none
 
 logger = logging.getLogger(__name__)
 
@@ -187,10 +188,8 @@ async def demo_artist_inbox(
             "lead_id": lead.id,
             "wa_from": lead.wa_from,
             "status": lead.status,
-            "last_message_at": lead.last_client_message_at.isoformat()
-            if lead.last_client_message_at
-            else None,
-            "updated_at": lead.updated_at.isoformat() if lead.updated_at else None,
+            "last_message_at": iso_or_none(lead.last_client_message_at),
+            "updated_at": iso_or_none(lead.updated_at),
             "summary": summary.get("summary_text") if summary else None,
             "answers": summary.get("answers", {}) if summary else {},
             "action_links": action_tokens,

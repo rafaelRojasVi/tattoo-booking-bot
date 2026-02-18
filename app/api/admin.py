@@ -1,4 +1,5 @@
 import logging
+from typing import cast
 
 from fastapi import APIRouter, Depends, HTTPException, Security
 from sqlalchemy import func, select
@@ -390,13 +391,14 @@ async def send_deposit(
         amount_pence = request.amount_pence
     else:
         # Fallback to estimated_category calculation
-        from app.services.estimation_service import get_deposit_amount
+        from app.services.estimation_service import Category, get_deposit_amount
 
         if lead.estimated_category:
             # For XL, use estimated_days if available
             estimated_days = lead.estimated_days if lead.estimated_category == "XL" else None
             amount_pence = get_deposit_amount(
-                lead.estimated_category, estimated_days=estimated_days
+                cast(Category, lead.estimated_category),
+                estimated_days=estimated_days,
             )
         else:
             # Final fallback to default
@@ -850,13 +852,10 @@ def sweep_expired_deposits(
         .all()
     )
 
-    results: dict[str, int | list[int]] = {
-        "checked": len(expired_leads),
-        "expired": 0,
-        "skipped": 0,
-        "errors": 0,
-        "lead_ids": [],
-    }
+    expired_count = 0
+    skipped_count = 0
+    errors_count = 0
+    expired_lead_ids: list[int] = []
 
     for lead in expired_leads:
         try:
@@ -866,8 +865,8 @@ def sweep_expired_deposits(
             result = check_and_mark_deposit_expired(db, lead, hours_threshold=hours_threshold)
 
             if result.get("status") == "expired":
-                results["expired"] += 1
-                results["lead_ids"].append(lead.id)
+                expired_count += 1
+                expired_lead_ids.append(lead.id)
 
                 # Log system event
                 info(
@@ -881,12 +880,20 @@ def sweep_expired_deposits(
                     },
                 )
             else:
-                results["skipped"] += 1
+                skipped_count += 1
         except Exception as e:
             logger.error(f"Error marking lead {lead.id} as expired: {e}")
-            results["errors"] += 1
+            errors_count += 1
 
     db.commit()
+
+    results = {
+        "checked": len(expired_leads),
+        "expired": expired_count,
+        "skipped": skipped_count,
+        "errors": errors_count,
+        "lead_ids": expired_lead_ids,
+    }
 
     logger.info(
         f"Deposit expiry sweep completed: {results['expired']} expired, "

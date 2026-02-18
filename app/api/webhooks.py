@@ -36,6 +36,7 @@ from app.services.safety import update_lead_status_if_matches
 from app.services.sheets import log_lead_to_sheets
 from app.services.stripe_service import verify_webhook_signature
 from app.services.whatsapp_verification import verify_whatsapp_signature
+from app.utils.datetime_utils import dt_replace_utc, iso_or_none
 
 logger = logging.getLogger(__name__)
 
@@ -216,9 +217,7 @@ async def whatsapp_inbound(
                 ProcessedMessage.message_id == message_id,
             )
             existing = db.execute(stmt).scalar_one_or_none()
-            existing_ts = (
-                existing.processed_at.isoformat() if existing and existing.processed_at else None
-            )
+            existing_ts = iso_or_none(existing.processed_at) if existing else None
             return {
                 "received": True,
                 "type": "duplicate",
@@ -303,11 +302,8 @@ async def whatsapp_inbound(
 
                 message_timestamp = datetime.fromtimestamp(int(messages[0]["timestamp"]), tz=UTC)
 
-                if lead.last_client_message_at:
-                    last_message_time = lead.last_client_message_at
-                    if last_message_time.tzinfo is None:
-                        last_message_time = last_message_time.replace(tzinfo=UTC)
-
+                last_message_time = dt_replace_utc(lead.last_client_message_at)
+                if last_message_time is not None:
                     # If this message is older than last processed message, skip it
                     if message_timestamp < last_message_time:
                         logger.info(
@@ -571,14 +567,19 @@ async def stripe_webhook(
         # CRITICAL FIX: Check idempotency FIRST (read-only check)
         from app.services.safety import check_processed_event, record_processed_event
 
-        is_duplicate, processed = check_processed_event(db, event_id)
+        event_id_str = str(event_id) if event_id else None
+        if not event_id_str:
+            return JSONResponse(
+                status_code=400, content={"error": "Stripe event has no id"}
+            )
+        is_duplicate, processed = check_processed_event(db, event_id_str)
         if is_duplicate:
             return {
                 "received": True,
                 "type": "duplicate",
                 "lead_id": lead_id,
                 "checkout_session_id": checkout_session_id,
-                "event_id": event_id,
+                "event_id": event_id_str,
             }
 
         # Phase 1: Atomic status-locked update (prevents race conditions)
@@ -628,6 +629,10 @@ async def stripe_webhook(
                 if success:
                     db.refresh(lead)
             if not success:
+                if lead is None:
+                    return JSONResponse(
+                        status_code=404, content={"error": f"Lead {lead_id} not found"}
+                    )
                 # Log Stripe webhook failure due to status mismatch
                 from app.services.system_event_service import error
 
@@ -762,7 +767,7 @@ async def stripe_webhook(
         try:
             record_processed_event(
                 db=db,
-                event_id=event_id,
+                event_id=event_id_str,
                 event_type=EVENT_STRIPE_CHECKOUT_SESSION_COMPLETED,
                 lead_id=lead_id,
             )

@@ -7,6 +7,7 @@ This registry ensures every outbound message that might be sent outside the
 
 import logging
 from enum import StrEnum
+from typing import Any
 
 from app.services.whatsapp_templates import (
     TEMPLATE_CONSULTATION_REMINDER_2_FINAL,
@@ -76,7 +77,7 @@ def get_all_required_templates() -> list[str]:
     return sorted(list(templates))
 
 
-def validate_template_registry() -> dict[str, any]:
+def validate_template_registry() -> dict[str, Any]:
     """
     Validate that all templates in registry are configured.
 

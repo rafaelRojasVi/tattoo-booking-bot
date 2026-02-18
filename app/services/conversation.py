@@ -20,6 +20,7 @@ from app.services.questions import (
     is_last_question,
 )
 from app.services.sheets import log_lead_to_sheets
+from app.utils.datetime_utils import dt_replace_utc, iso_or_none
 
 logger = logging.getLogger(__name__)
 
@@ -497,10 +498,8 @@ async def handle_inbound_message(
         # Handover to artist - bot paused (for any other message)
         # Rate-limit holding reply: send at most once per cooldown window
         holding_msg = "I've paused the automated flow. The artist will reply to you directly."
-        last_hold_at = lead.handover_last_hold_reply_at
+        last_hold_at = dt_replace_utc(lead.handover_last_hold_reply_at)
         now_utc = datetime.now(UTC)
-        if last_hold_at is not None and getattr(last_hold_at, "tzinfo", None) is None:
-            last_hold_at = last_hold_at.replace(tzinfo=UTC)
         # >= 6h so exactly 6h ago sends again (intuitive boundary)
         send_hold = last_hold_at is None or (now_utc - last_hold_at) >= timedelta(
             hours=HANDOVER_HOLD_REPLY_COOLDOWN_HOURS
@@ -792,11 +791,11 @@ async def _handle_qualifying_lead(
         await notify_artist_needs_reply(
             db=db,
             lead=lead,
-            reason=handover_reason,
+            reason=handover_reason or "",
             dry_run=dry_run,
         )
 
-        handover_msg = get_handover_message(handover_reason, lead_id=lead.id)
+        handover_msg = get_handover_message(handover_reason or "", lead_id=lead.id)
         await send_whatsapp_message(
             to=lead.wa_from,
             message=handover_msg,
@@ -1089,7 +1088,7 @@ async def _handle_human_request(db: Session, lead: Lead, dry_run: bool) -> dict:
     await notify_artist_needs_reply(
         db=db,
         lead=lead,
-        reason=lead.handover_reason,
+        reason=lead.handover_reason or "",
         dry_run=dry_run,
     )
     handover_msg = compose_message("HUMAN_HANDOVER", {"lead_id": lead.id})
@@ -1108,7 +1107,7 @@ async def _handle_refund_request(db: Session, lead: Lead, dry_run: bool) -> dict
     await notify_artist_needs_reply(
         db=db,
         lead=lead,
-        reason=lead.handover_reason,
+        reason=lead.handover_reason or "",
         dry_run=dry_run,
     )
     ack_msg = compose_message("REFUND_ACK", {"lead_id": lead.id})
@@ -1127,7 +1126,7 @@ async def _handle_delete_data_request(db: Session, lead: Lead, dry_run: bool) ->
     await notify_artist_needs_reply(
         db=db,
         lead=lead,
-        reason=lead.handover_reason,
+        reason=lead.handover_reason or "",
         dry_run=dry_run,
     )
     ack_msg = compose_message("DELETE_DATA_ACK", {"lead_id": lead.id})
@@ -1623,12 +1622,12 @@ def get_lead_summary(db: Session, lead_id: int) -> dict:
         return {"error": "Lead not found"}
 
     # Get all answers (created_at, id so "latest wins" is deterministic when timestamps tie)
-    stmt = (
+    stmt_answers = (
         select(LeadAnswer)
         .where(LeadAnswer.lead_id == lead_id)
         .order_by(LeadAnswer.created_at, LeadAnswer.id)
     )
-    answers_list = db.execute(stmt).scalars().all()
+    answers_list = db.execute(stmt_answers).scalars().all()
 
     answers_dict = {ans.question_key: ans.answer_text for ans in answers_list}
 
@@ -1641,6 +1640,6 @@ def get_lead_summary(db: Session, lead_id: int) -> dict:
         "current_step": lead.current_step,
         "answers": answers_dict,
         "summary_text": summary_text,
-        "created_at": lead.created_at.isoformat() if lead.created_at else None,
-        "updated_at": lead.updated_at.isoformat() if lead.updated_at else None,
+        "created_at": iso_or_none(lead.created_at),
+        "updated_at": iso_or_none(lead.updated_at),
     }

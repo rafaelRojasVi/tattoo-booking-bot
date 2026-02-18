@@ -47,6 +47,7 @@ known-first-party = ["app"]
 
 [tool.mypy]
 python_version = "3.11"
+plugins = ["sqlalchemy.ext.mypy.plugin"]
 warn_return_any = true
 warn_unused_configs = true
 disallow_untyped_defs = false  # Pragmatic: allow untyped for now, fix incrementally
@@ -62,10 +63,35 @@ show_error_codes = true
 [[tool.mypy.overrides]]
 module = [
     "google.*",
+    "googleapiclient.*",
     "stripe.*",
     "alembic.*",
+    "supabase",
+    "yaml",
+    "pytz",
 ]
 ignore_missing_imports = true
+
+# SQLAlchemy ORM: func.now() and datetime assignment to Mapped[DateTime|None] columns
+# triggers assignment errors - the plugin doesn't fully handle these. See:
+# https://github.com/sqlalchemy/sqlalchemy/issues/9111
+[[tool.mypy.overrides]]
+module = [
+    "app.services.conversation",
+    "app.services.state_machine",
+    "app.services.reminders",
+    "app.services.calendar_service",
+    "app.services.time_window_collection",
+    "app.services.parse_repair",
+    "app.services.artist_notifications",
+    "app.api.admin",
+    "app.api.actions",
+    "app.api.webhooks",
+    "app.services.media_upload",
+    "app.services.outbox_service",
+    "app.services.action_tokens",
+]
+disable_error_code = ["assignment"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

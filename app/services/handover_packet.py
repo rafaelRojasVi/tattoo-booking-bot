@@ -17,6 +17,7 @@ from sqlalchemy.orm import Session
 
 from app.db.models import Lead, LeadAnswer
 from app.services.questions import get_question_by_index
+from app.utils.datetime_utils import iso_or_none
 
 logger = logging.getLogger(__name__)
 
@@ -47,7 +48,7 @@ def build_handover_packet(db: Session, lead: Lead) -> dict:
             {
                 "question_key": answer.question_key,
                 "answer_text": answer.answer_text,
-                "created_at": answer.created_at.isoformat() if answer.created_at else None,
+                "created_at": iso_or_none(answer.created_at),
             }
         )
 
@@ -120,9 +121,7 @@ def build_handover_packet(db: Session, lead: Lead) -> dict:
         "category": lead.estimated_category,
         "deposit_amount_pence": lead.estimated_deposit_amount,
         "deposit_locked_amount_pence": lead.deposit_amount_pence,
-        "deposit_amount_locked_at": lead.deposit_amount_locked_at.isoformat()
-        if lead.deposit_amount_locked_at
-        else None,
+        "deposit_amount_locked_at": iso_or_none(lead.deposit_amount_locked_at),
         "price_range_min_pence": lead.estimated_price_min_pence,
         "price_range_max_pence": lead.estimated_price_max_pence,
         "tour_context": tour_context,
@@ -133,16 +132,10 @@ def build_handover_packet(db: Session, lead: Lead) -> dict:
         "call_availability_notes": lead.call_availability_notes,
         "admin_notes": lead.admin_notes,
         "timestamps": {
-            "created_at": lead.created_at.isoformat() if lead.created_at else None,
-            "qualifying_started_at": lead.qualifying_started_at.isoformat()
-            if lead.qualifying_started_at
-            else None,
-            "qualifying_completed_at": lead.qualifying_completed_at.isoformat()
-            if lead.qualifying_completed_at
-            else None,
-            "needs_artist_reply_at": lead.needs_artist_reply_at.isoformat()
-            if lead.needs_artist_reply_at
-            else None,
+            "created_at": iso_or_none(lead.created_at),
+            "qualifying_started_at": iso_or_none(lead.qualifying_started_at),
+            "qualifying_completed_at": iso_or_none(lead.qualifying_completed_at),
+            "needs_artist_reply_at": iso_or_none(lead.needs_artist_reply_at),
         },
     }
 
@@ -156,7 +149,9 @@ def build_handover_packet(db: Session, lead: Lead) -> dict:
             match = re.search(r"\d+\.?\d*", budget_clean)
             if match:
                 budget_gbp = float(match.group())
-                packet["budget"]["budget_amount_pence"] = int(budget_gbp * 100)
+                budget_dict = packet["budget"]
+            if isinstance(budget_dict, dict):
+                budget_dict["budget_amount_pence"] = int(budget_gbp * 100)
         except (ValueError, AttributeError):
             pass
 

@@ -97,4 +97,4 @@ class Settings(BaseSettings):
 
 # Settings will load from environment variables or .env file
 # Required fields will raise ValidationError if missing (fail-fast)
-settings = Settings()
+settings = Settings()  # type: ignore[call-arg]

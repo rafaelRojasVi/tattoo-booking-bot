@@ -40,9 +40,16 @@ def extract_phase1_summary_context(lead: Lead) -> dict:
             pass
 
     # Format complexity
-    complexity_map = {1: "Simple", 2: "Medium", 3: "High detail"}
-    complexity_display = complexity_map.get(
-        lead.complexity_level, lead.complexity_level or "Not specified"
+    complexity_map: dict[int, str] = {1: "Simple", 2: "Medium", 3: "High detail"}
+    complexity_val = (
+        complexity_map.get(lead.complexity_level)
+        if isinstance(lead.complexity_level, int)
+        else None
+    )
+    complexity_display = (
+        complexity_val
+        if complexity_val is not None
+        else (str(lead.complexity_level) if lead.complexity_level is not None else "Not specified")
     )
 
     # Format deposit

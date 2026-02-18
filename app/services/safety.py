@@ -89,6 +89,8 @@ def update_lead_status_if_matches(
 
     # Refresh and return updated lead
     lead = db.get(Lead, lead_id)
+    if not lead:
+        return False, None
     db.refresh(lead)
     return True, lead
 
@@ -244,8 +246,8 @@ def validate_and_mark_token_used_atomic(
 
     if result.rowcount == 0:
         # Token doesn't exist or already used
-        stmt = select(ActionToken).where(ActionToken.token == token)
-        action_token = db.execute(stmt).scalar_one_or_none()
+        stmt_select = select(ActionToken).where(ActionToken.token == token)
+        action_token = db.execute(stmt_select).scalar_one_or_none()
         if not action_token:
             return None, "Invalid token"
         if action_token.used:
@@ -254,18 +256,18 @@ def validate_and_mark_token_used_atomic(
         return None, "Token validation failed"
 
     # Token was successfully marked as used, now validate it
-    stmt = select(ActionToken).where(ActionToken.token == token)
-    action_token = db.execute(stmt).scalar_one_or_none()
+    stmt_select = select(ActionToken).where(ActionToken.token == token)
+    action_token = db.execute(stmt_select).scalar_one_or_none()
 
     if not action_token:
         return None, "Token not found after marking as used"
 
     # Check expiry
+    from app.utils.datetime_utils import dt_replace_utc
+
     now = datetime.now(UTC)
-    expires = action_token.expires_at
-    if expires.tzinfo is None:
-        expires = expires.replace(tzinfo=UTC)
-    if now > expires:
+    expires = dt_replace_utc(action_token.expires_at)
+    if expires is None or now > expires:
         return None, "This action link has expired"
 
     # Check lead status

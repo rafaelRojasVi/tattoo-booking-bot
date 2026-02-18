@@ -49,9 +49,19 @@ async def attempt_upload_attachment(db: Session, attachment_id: int) -> None:
     db.commit()
     db.refresh(attachment)
 
+    media_id = attachment.whatsapp_media_id
+    if not media_id:
+        logger.warning(f"Attachment {attachment_id} has no whatsapp_media_id, marking as failed")
+        db.refresh(attachment)
+        attachment.last_error = "Missing whatsapp_media_id"
+        if attachment.upload_attempts >= 5:
+            attachment.upload_status = "FAILED"
+            attachment.failed_at = datetime.now(UTC)
+        db.commit()
+        return
     try:
         # Download media from WhatsApp
-        media_bytes, content_type = await _download_whatsapp_media(attachment.whatsapp_media_id)
+        media_bytes, content_type = await _download_whatsapp_media(media_id)
 
         # Upload to Supabase Storage
         bucket = settings.supabase_storage_bucket or "reference-images"

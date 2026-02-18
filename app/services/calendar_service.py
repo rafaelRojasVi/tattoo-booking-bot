@@ -189,6 +189,9 @@ def get_available_slots(
     if time_max.tzinfo is None:
         time_max = tz.localize(time_max)
 
+    if time_min is None or time_max is None:
+        return []
+
     if not settings.google_calendar_enabled or not settings.google_calendar_id:
         logger.debug("Google Calendar integration not enabled - returning mock slots")
         # Return mock slots for testing/development (with rules applied)
@@ -245,7 +248,7 @@ def _get_mock_available_slots(
     if is_within_working_hours is None:
         is_within_working_hours = default_is_within
 
-    slots = []
+    slots: list[dict[str, datetime]] = []
     current_date = time_min.replace(hour=0, minute=0, second=0, microsecond=0)
     if current_date <= time_min:
         current_date += timedelta(days=1)  # Start from tomorrow

@@ -366,6 +366,8 @@ def advance_step_if_at(
             )
         return False, None
     lead = db.get(Lead, lead_id)
+    if not lead:
+        return False, None
     db.refresh(lead)
     logger.info(f"Lead {lead_id} step advanced: {expected_step} -> {lead.current_step}")
     return True, lead

@@ -9,7 +9,6 @@ import logging
 import time
 from collections import defaultdict
 from collections.abc import Callable
-
 from typing import cast
 
 from fastapi import Request, Response, status

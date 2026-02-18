@@ -17,6 +17,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.db.models import ActionToken, Lead
+from app.utils.datetime_utils import dt_replace_utc
 
 logger = logging.getLogger(__name__)
 
@@ -99,13 +100,8 @@ def validate_action_token(db: Session, token: str) -> tuple[ActionToken | None, 
 
     # Check expiry (handle both timezone-aware and naive datetimes)
     now = datetime.now(UTC)
-    expires = action_token.expires_at
-    # Ensure both are timezone-aware for comparison
-    # Handle SQLAlchemy DateTime vs Python datetime
-    if hasattr(expires, "tzinfo") and expires.tzinfo is None:
-        # If expires_at is naive, assume it's UTC
-        expires = expires.replace(tzinfo=UTC)
-    if now > expires:
+    expires = dt_replace_utc(action_token.expires_at)
+    if expires is None or now > expires:
         return None, "This action link has expired"
 
     # Get lead and check status (status-locked)

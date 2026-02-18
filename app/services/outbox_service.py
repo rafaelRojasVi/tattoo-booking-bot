@@ -103,6 +103,11 @@ def retry_due_outbox_rows(db: Session, limit: int = 50) -> dict:
         results["retried"] += 1
         payload = row.payload_json
         to = payload.get("to")
+        if not to or not isinstance(to, str):
+            logger.warning(f"Outbox row {row.id} has no valid 'to' in payload - marking failed")
+            mark_outbox_failed(db, row, ValueError("Missing 'to' in payload"))
+            results["failed"] += 1
+            continue
         message = payload.get("message", "")
         template_name = payload.get("template_name")
         template_params = payload.get("template_params") or {}

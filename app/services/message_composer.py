@@ -47,7 +47,7 @@ class MessageComposer:
         """
         self.locale = locale
         self.copy_file = COPY_DIR / f"{locale}.yml"
-        self._copy_data: dict[str, Any] | None = None
+        self._copy_data: dict[str, Any] = {}
         self._load_copy()
 
     def _load_copy(self) -> None:
@@ -215,7 +215,7 @@ def compose_message(
     # Retry-aware variant: retry 1 = gentle (index 0), retry 2 = short+example+boundary (index 1), retry 3 = handover
     retry_count = ctx.get("retry_count", 0)
     ctx_render = {k: v for k, v in ctx.items() if k not in ("lead_id", "retry_count")}
-    if intent.startswith("REPAIR_") and retry_count >= 1 and key in (composer._copy_data or {}):
+    if intent.startswith("REPAIR_") and retry_count >= 1 and key in composer._copy_data:
         variants = composer._copy_data.get(key)
         if isinstance(variants, list) and len(variants) > 1:
             idx = min(max(0, retry_count - 1), len(variants) - 1)

@@ -17,6 +17,7 @@ from app.constants.event_types import (
     whatsapp_template_not_configured_event_type,
 )
 from app.db.models import Lead
+from app.utils.datetime_utils import dt_replace_utc
 
 logger = logging.getLogger(__name__)
 
@@ -40,11 +41,9 @@ def is_within_24h_window(lead: Lead) -> tuple[bool, datetime | None]:
         return True, None
 
     now = datetime.now(UTC)
-    last_message = lead.last_client_message_at
-
-    # Handle timezone-aware/naive comparison
-    if last_message.tzinfo is None:
-        last_message = last_message.replace(tzinfo=UTC)
+    last_message = dt_replace_utc(lead.last_client_message_at)
+    if last_message is None:
+        return False, None
 
     window_expires_at = last_message + timedelta(hours=WHATSAPP_WINDOW_HOURS)
     is_within = now < window_expires_at
@@ -377,7 +376,9 @@ async def send_template_message(
 
         # Remove components if empty
         if not components:
-            payload["template"].pop("components", None)
+            tpl = payload.get("template")
+            if isinstance(tpl, dict):
+                tpl.pop("components", None)
 
         from app.services.http_client import create_httpx_client
 
