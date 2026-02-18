@@ -1,6 +1,7 @@
 """
 Helpers for optional datetime handling (mypy-safe .isoformat() / .replace() on Optional[datetime]).
 """
+
 from __future__ import annotations
 
 from datetime import UTC, datetime

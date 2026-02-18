@@ -700,15 +700,11 @@ def debug_lead(
     if lead.qualifying_started_at:
         ts = iso_or_none(lead.qualifying_started_at)
         if ts:
-            status_history.append(
-                {"status": "QUALIFYING", "timestamp": ts, "type": "started"}
-            )
+            status_history.append({"status": "QUALIFYING", "timestamp": ts, "type": "started"})
     if lead.qualifying_completed_at:
         ts = iso_or_none(lead.qualifying_completed_at)
         if ts:
-            status_history.append(
-                {"status": "QUALIFYING", "timestamp": ts, "type": "completed"}
-            )
+            status_history.append({"status": "QUALIFYING", "timestamp": ts, "type": "completed"})
     if lead.pending_approval_at:
         ts = iso_or_none(lead.pending_approval_at)
         if ts:
@@ -718,9 +714,7 @@ def debug_lead(
     if lead.approved_at:
         ts = iso_or_none(lead.approved_at)
         if ts:
-            status_history.append(
-                {"status": "APPROVED", "timestamp": ts, "type": "action"}
-            )
+            status_history.append({"status": "APPROVED", "timestamp": ts, "type": "action"})
     if lead.deposit_sent_at:
         ts = iso_or_none(lead.deposit_sent_at)
         if ts:
@@ -730,27 +724,19 @@ def debug_lead(
     if lead.deposit_paid_at:
         ts = iso_or_none(lead.deposit_paid_at)
         if ts:
-            status_history.append(
-                {"status": "DEPOSIT_PAID", "timestamp": ts, "type": "entered"}
-            )
+            status_history.append({"status": "DEPOSIT_PAID", "timestamp": ts, "type": "entered"})
     if lead.booking_pending_at:
         ts = iso_or_none(lead.booking_pending_at)
         if ts:
-            status_history.append(
-                {"status": "BOOKING_PENDING", "timestamp": ts, "type": "entered"}
-            )
+            status_history.append({"status": "BOOKING_PENDING", "timestamp": ts, "type": "entered"})
     if lead.booked_at:
         ts = iso_or_none(lead.booked_at)
         if ts:
-            status_history.append(
-                {"status": "BOOKED", "timestamp": ts, "type": "entered"}
-            )
+            status_history.append({"status": "BOOKED", "timestamp": ts, "type": "entered"})
     if lead.rejected_at:
         ts = iso_or_none(lead.rejected_at)
         if ts:
-            status_history.append(
-                {"status": "REJECTED", "timestamp": ts, "type": "entered"}
-            )
+            status_history.append({"status": "REJECTED", "timestamp": ts, "type": "entered"})
     if lead.needs_artist_reply_at:
         ts = iso_or_none(lead.needs_artist_reply_at)
         if ts:
@@ -760,9 +746,7 @@ def debug_lead(
     if lead.needs_follow_up_at:
         ts = iso_or_none(lead.needs_follow_up_at)
         if ts:
-            status_history.append(
-                {"status": "NEEDS_FOLLOW_UP", "timestamp": ts, "type": "entered"}
-            )
+            status_history.append({"status": "NEEDS_FOLLOW_UP", "timestamp": ts, "type": "entered"})
 
     status_history.sort(key=lambda x: x["timestamp"])
 

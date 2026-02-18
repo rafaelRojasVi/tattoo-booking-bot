@@ -569,9 +569,7 @@ async def stripe_webhook(
 
         event_id_str = str(event_id) if event_id else None
         if not event_id_str:
-            return JSONResponse(
-                status_code=400, content={"error": "Stripe event has no id"}
-            )
+            return JSONResponse(status_code=400, content={"error": "Stripe event has no id"})
         is_duplicate, processed = check_processed_event(db, event_id_str)
         if is_duplicate:
             return {
@@ -604,9 +602,7 @@ async def stripe_webhook(
         if not success:
             # Status mismatch - lead may have been updated by another process
             if lead is None:
-                return JSONResponse(
-                    status_code=404, content={"error": f"Lead {lead_id} not found"}
-                )
+                return JSONResponse(status_code=404, content={"error": f"Lead {lead_id} not found"})
             db.refresh(lead)
             if lead.status == STATUS_DEPOSIT_PAID:
                 # Already processed by another request - return success
