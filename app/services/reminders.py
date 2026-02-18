@@ -26,6 +26,7 @@ from app.services.conversation import (
 )
 from app.services.safety import check_and_record_processed_event
 from app.services.whatsapp_window import send_with_window_check
+from app.utils.datetime_utils import dt_replace_utc, iso_or_none
 
 logger = logging.getLogger(__name__)
 
@@ -70,7 +71,7 @@ def check_and_send_qualifying_reminder(
 
     # Check if already sent (track separately for each reminder)
     if reminder_number == 1 and lead.reminder_qualifying_sent_at:
-        return {"status": "already_sent", "sent_at": lead.reminder_qualifying_sent_at.isoformat()}
+        return {"status": "already_sent", "sent_at": iso_or_none(lead.reminder_qualifying_sent_at)}
     # For reminder 2, we'd need a separate field - for now use reminder_booking_sent_24h_at as temp
     # TODO: Add reminder_qualifying_sent_2_at field
 
@@ -79,10 +80,9 @@ def check_and_send_qualifying_reminder(
         return {"status": "skipped", "reason": "No last client message timestamp"}
 
     now = datetime.now(UTC)
-    last_message = lead.last_client_message_at
-    if last_message.tzinfo is None:
-        last_message = last_message.replace(tzinfo=UTC)
-
+    last_message = dt_replace_utc(lead.last_client_message_at)
+    if last_message is None:
+        return {"status": "skipped", "reason": "No last client message timestamp"}
     hours_passed = (now - last_message).total_seconds() / 3600
 
     if hours_passed < hours_threshold:
@@ -170,7 +170,7 @@ def check_and_send_qualifying_reminder(
         "event_id": event_id,
         "result": result,
         "reminder_number": reminder_number,
-        "sent_at": lead.reminder_qualifying_sent_at.isoformat()
+        "sent_at": iso_or_none(lead.reminder_qualifying_sent_at)
         if lead.reminder_qualifying_sent_at
         else None,
     }
@@ -198,16 +198,15 @@ def check_and_mark_abandoned(
         return {"status": "skipped", "reason": f"Lead not in {STATUS_QUALIFYING} status"}
 
     if lead.abandoned_at:
-        return {"status": "already_abandoned", "abandoned_at": lead.abandoned_at.isoformat()}
+        return {"status": "already_abandoned", "abandoned_at": iso_or_none(lead.abandoned_at)}
 
     if not lead.last_client_message_at:
         return {"status": "skipped", "reason": "No last client message timestamp"}
 
     now = datetime.now(UTC)
-    last_message = lead.last_client_message_at
-    if last_message.tzinfo is None:
-        last_message = last_message.replace(tzinfo=UTC)
-
+    last_message = dt_replace_utc(lead.last_client_message_at)
+    if last_message is None:
+        return {"status": "skipped", "reason": "No last client message timestamp"}
     hours_passed = (now - last_message).total_seconds() / 3600
 
     if hours_passed < hours_threshold:
@@ -220,7 +219,7 @@ def check_and_mark_abandoned(
 
     return {
         "status": "abandoned",
-        "abandoned_at": lead.abandoned_at.isoformat(),
+        "abandoned_at": iso_or_none(lead.abandoned_at),
     }
 
 
@@ -246,16 +245,15 @@ def check_and_mark_stale(
         return {"status": "skipped", "reason": f"Lead not in {STATUS_PENDING_APPROVAL} status"}
 
     if lead.stale_at:
-        return {"status": "already_stale", "stale_at": lead.stale_at.isoformat()}
+        return {"status": "already_stale", "stale_at": iso_or_none(lead.stale_at)}
 
     if not lead.pending_approval_at:
         return {"status": "skipped", "reason": "No pending_approval_at timestamp"}
 
     now = datetime.now(UTC)
-    pending_since = lead.pending_approval_at
-    if pending_since.tzinfo is None:
-        pending_since = pending_since.replace(tzinfo=UTC)
-
+    pending_since = dt_replace_utc(lead.pending_approval_at)
+    if pending_since is None:
+        return {"status": "skipped", "reason": "No pending_approval_at timestamp"}
     days_passed = (now - pending_since).total_seconds() / (3600 * 24)
 
     if days_passed < days_threshold:
@@ -268,7 +266,7 @@ def check_and_mark_stale(
 
     return {
         "status": "stale",
-        "stale_at": lead.stale_at.isoformat(),
+        "stale_at": iso_or_none(lead.stale_at),
     }
 
 
@@ -301,19 +299,18 @@ def check_and_send_booking_reminder(
 
     # Check if already sent
     if reminder_type == "24h" and lead.reminder_booking_sent_24h_at:
-        return {"status": "already_sent", "sent_at": lead.reminder_booking_sent_24h_at.isoformat()}
+        return {"status": "already_sent", "sent_at": iso_or_none(lead.reminder_booking_sent_24h_at)}
     if reminder_type == "72h" and lead.reminder_booking_sent_72h_at:
-        return {"status": "already_sent", "sent_at": lead.reminder_booking_sent_72h_at.isoformat()}
+        return {"status": "already_sent", "sent_at": iso_or_none(lead.reminder_booking_sent_72h_at)}
 
     # Check if enough time has passed since booking link was sent
     if not lead.booking_link_sent_at:
         return {"status": "skipped", "reason": "No booking link sent timestamp"}
 
     now = datetime.now(UTC)
-    booking_link_sent = lead.booking_link_sent_at
-    if booking_link_sent.tzinfo is None:
-        booking_link_sent = booking_link_sent.replace(tzinfo=UTC)
-
+    booking_link_sent = dt_replace_utc(lead.booking_link_sent_at)
+    if booking_link_sent is None:
+        return {"status": "skipped", "reason": "No booking link sent timestamp"}
     hours_passed = (now - booking_link_sent).total_seconds() / 3600
 
     if hours_passed < hours_since_booking_link:
@@ -385,17 +382,11 @@ def check_and_send_booking_reminder(
         "status": "sent",
         "event_id": event_id,
         "result": result,
-        "sent_at": (
+        "sent_at": iso_or_none(
             lead.reminder_booking_sent_24h_at
             if reminder_type == "24h"
             else lead.reminder_booking_sent_72h_at
-        ).isoformat()
-        if (
-            lead.reminder_booking_sent_24h_at
-            if reminder_type == "24h"
-            else lead.reminder_booking_sent_72h_at
-        )
-        else None,
+        ),
     }
 
 
@@ -428,10 +419,9 @@ def check_and_mark_deposit_expired(
         return {"status": "skipped", "reason": "No deposit_sent_at timestamp"}
 
     now = datetime.now(UTC)
-    deposit_sent = lead.deposit_sent_at
-    if deposit_sent.tzinfo is None:
-        deposit_sent = deposit_sent.replace(tzinfo=UTC)
-
+    deposit_sent = dt_replace_utc(lead.deposit_sent_at)
+    if deposit_sent is None:
+        return {"status": "skipped", "reason": "No deposit_sent_at timestamp"}
     hours_passed = (now - deposit_sent).total_seconds() / 3600
 
     if hours_passed < hours_threshold:
@@ -478,10 +468,9 @@ def check_and_mark_booking_pending_stale(
         return {"status": "skipped", "reason": "No booking_pending_at timestamp"}
 
     now = datetime.now(UTC)
-    pending_since = lead.booking_pending_at
-    if pending_since.tzinfo is None:
-        pending_since = pending_since.replace(tzinfo=UTC)
-
+    pending_since = dt_replace_utc(lead.booking_pending_at)
+    if pending_since is None:
+        return {"status": "skipped", "reason": "No booking_pending_at timestamp"}
     hours_passed = (now - pending_since).total_seconds() / 3600
 
     if hours_passed < hours_threshold:
@@ -524,5 +513,5 @@ def check_and_mark_booking_pending_stale(
 
     return {
         "status": "needs_follow_up",
-        "needs_follow_up_at": lead.needs_follow_up_at.isoformat(),
+        "needs_follow_up_at": iso_or_none(lead.needs_follow_up_at),
     }

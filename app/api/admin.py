@@ -25,6 +25,7 @@ from app.services.conversation import (
 from app.services.messaging import format_deposit_link_message
 from app.services.safety import update_lead_status_if_matches
 from app.services.sheets import log_lead_to_sheets
+from app.utils.datetime_utils import dt_replace_utc, iso_or_none
 
 logger = logging.getLogger(__name__)
 
@@ -57,8 +58,8 @@ def list_outbox_messages(
             "status": r.status,
             "attempts": r.attempts,
             "last_error": r.last_error,
-            "next_retry_at": r.next_retry_at.isoformat() if r.next_retry_at else None,
-            "created_at": r.created_at.isoformat() if r.created_at else None,
+            "next_retry_at": iso_or_none(r.next_retry_at),
+            "created_at": iso_or_none(r.created_at),
         }
         for r in rows
     ]
@@ -247,6 +248,8 @@ async def approve_lead(
             status_code=400,
             detail=f"Cannot approve lead in status '{lead.status}'. Lead must be in '{STATUS_PENDING_APPROVAL}'.",
         )
+    if lead is None:
+        raise HTTPException(status_code=404, detail="Lead not found")
 
     log_lead_to_sheets(db, lead)
 
@@ -355,12 +358,8 @@ async def send_deposit(
 
     if lead.stripe_checkout_session_id and lead.deposit_checkout_expires_at:
         now = datetime.now(UTC)
-        # Handle timezone-aware/naive comparison
-        expires_at = lead.deposit_checkout_expires_at
-        if expires_at.tzinfo is None:
-            expires_at = expires_at.replace(tzinfo=UTC)
-
-        if now >= expires_at:
+        expires_at = dt_replace_utc(lead.deposit_checkout_expires_at)
+        if expires_at is not None and now >= expires_at:
             # Session expired - clear it and create a new one
             logger.info(
                 f"Existing checkout session {lead.stripe_checkout_session_id} for lead {lead_id} "
@@ -509,6 +508,8 @@ def send_booking_link(
             status_code=400,
             detail=f"Cannot send booking link for lead in status '{lead.status}'. Lead must be in '{STATUS_DEPOSIT_PAID}'.",
         )
+    if lead is None:
+        raise HTTPException(status_code=404, detail="Lead not found")
 
     log_lead_to_sheets(db, lead)
 
@@ -567,6 +568,8 @@ def mark_booked(
                 status_code=400,
                 detail=f"Cannot mark lead as booked in status '{lead.status}'. Lead must be in '{STATUS_BOOKING_PENDING}'.",
             )
+    if lead is None:
+        raise HTTPException(status_code=404, detail="Lead not found")
 
     log_lead_to_sheets(db, lead)
 
@@ -614,7 +617,7 @@ def get_events(
     return [
         {
             "id": event.id,
-            "created_at": event.created_at.isoformat() if event.created_at else None,
+            "created_at": iso_or_none(event.created_at),
             "level": event.level,
             "event_type": event.event_type,
             "lead_id": event.lead_id,
@@ -693,81 +696,71 @@ def debug_lead(
     # Build status history from timestamps
     status_history = []
     if lead.qualifying_started_at:
-        status_history.append(
-            {
-                "status": "QUALIFYING",
-                "timestamp": lead.qualifying_started_at.isoformat(),
-                "type": "started",
-            }
-        )
+        ts = iso_or_none(lead.qualifying_started_at)
+        if ts:
+            status_history.append(
+                {"status": "QUALIFYING", "timestamp": ts, "type": "started"}
+            )
     if lead.qualifying_completed_at:
-        status_history.append(
-            {
-                "status": "QUALIFYING",
-                "timestamp": lead.qualifying_completed_at.isoformat(),
-                "type": "completed",
-            }
-        )
+        ts = iso_or_none(lead.qualifying_completed_at)
+        if ts:
+            status_history.append(
+                {"status": "QUALIFYING", "timestamp": ts, "type": "completed"}
+            )
     if lead.pending_approval_at:
-        status_history.append(
-            {
-                "status": "PENDING_APPROVAL",
-                "timestamp": lead.pending_approval_at.isoformat(),
-                "type": "entered",
-            }
-        )
+        ts = iso_or_none(lead.pending_approval_at)
+        if ts:
+            status_history.append(
+                {"status": "PENDING_APPROVAL", "timestamp": ts, "type": "entered"}
+            )
     if lead.approved_at:
-        status_history.append(
-            {"status": "APPROVED", "timestamp": lead.approved_at.isoformat(), "type": "action"}
-        )
+        ts = iso_or_none(lead.approved_at)
+        if ts:
+            status_history.append(
+                {"status": "APPROVED", "timestamp": ts, "type": "action"}
+            )
     if lead.deposit_sent_at:
-        status_history.append(
-            {
-                "status": "AWAITING_DEPOSIT",
-                "timestamp": lead.deposit_sent_at.isoformat(),
-                "type": "entered",
-            }
-        )
+        ts = iso_or_none(lead.deposit_sent_at)
+        if ts:
+            status_history.append(
+                {"status": "AWAITING_DEPOSIT", "timestamp": ts, "type": "entered"}
+            )
     if lead.deposit_paid_at:
-        status_history.append(
-            {
-                "status": "DEPOSIT_PAID",
-                "timestamp": lead.deposit_paid_at.isoformat(),
-                "type": "entered",
-            }
-        )
+        ts = iso_or_none(lead.deposit_paid_at)
+        if ts:
+            status_history.append(
+                {"status": "DEPOSIT_PAID", "timestamp": ts, "type": "entered"}
+            )
     if lead.booking_pending_at:
-        status_history.append(
-            {
-                "status": "BOOKING_PENDING",
-                "timestamp": lead.booking_pending_at.isoformat(),
-                "type": "entered",
-            }
-        )
+        ts = iso_or_none(lead.booking_pending_at)
+        if ts:
+            status_history.append(
+                {"status": "BOOKING_PENDING", "timestamp": ts, "type": "entered"}
+            )
     if lead.booked_at:
-        status_history.append(
-            {"status": "BOOKED", "timestamp": lead.booked_at.isoformat(), "type": "entered"}
-        )
+        ts = iso_or_none(lead.booked_at)
+        if ts:
+            status_history.append(
+                {"status": "BOOKED", "timestamp": ts, "type": "entered"}
+            )
     if lead.rejected_at:
-        status_history.append(
-            {"status": "REJECTED", "timestamp": lead.rejected_at.isoformat(), "type": "entered"}
-        )
+        ts = iso_or_none(lead.rejected_at)
+        if ts:
+            status_history.append(
+                {"status": "REJECTED", "timestamp": ts, "type": "entered"}
+            )
     if lead.needs_artist_reply_at:
-        status_history.append(
-            {
-                "status": "NEEDS_ARTIST_REPLY",
-                "timestamp": lead.needs_artist_reply_at.isoformat(),
-                "type": "entered",
-            }
-        )
+        ts = iso_or_none(lead.needs_artist_reply_at)
+        if ts:
+            status_history.append(
+                {"status": "NEEDS_ARTIST_REPLY", "timestamp": ts, "type": "entered"}
+            )
     if lead.needs_follow_up_at:
-        status_history.append(
-            {
-                "status": "NEEDS_FOLLOW_UP",
-                "timestamp": lead.needs_follow_up_at.isoformat(),
-                "type": "entered",
-            }
-        )
+        ts = iso_or_none(lead.needs_follow_up_at)
+        if ts:
+            status_history.append(
+                {"status": "NEEDS_FOLLOW_UP", "timestamp": ts, "type": "entered"}
+            )
 
     status_history.sort(key=lambda x: x["timestamp"])
 
@@ -777,8 +770,8 @@ def debug_lead(
             "wa_from": lead.wa_from,
             "status": lead.status,
             "current_step": lead.current_step,
-            "created_at": lead.created_at.isoformat() if lead.created_at else None,
-            "updated_at": lead.updated_at.isoformat() if lead.updated_at else None,
+            "created_at": iso_or_none(lead.created_at),
+            "updated_at": iso_or_none(lead.updated_at),
         },
         "handover_packet": packet,
         "answers": [
@@ -786,14 +779,14 @@ def debug_lead(
                 "id": a.id,
                 "question_key": a.question_key,
                 "answer_text": a.answer_text,
-                "created_at": a.created_at.isoformat() if a.created_at else None,
+                "created_at": iso_or_none(a.created_at),
             }
             for a in answers
         ],
         "system_events": [
             {
                 "id": e.id,
-                "created_at": e.created_at.isoformat() if e.created_at else None,
+                "created_at": iso_or_none(e.created_at),
                 "level": e.level,
                 "event_type": e.event_type,
                 "payload": e.payload,
@@ -805,19 +798,15 @@ def debug_lead(
                 "id": pm.id,
                 "message_id": pm.message_id,
                 "event_type": pm.event_type,
-                "processed_at": pm.processed_at.isoformat() if pm.processed_at else None,
+                "processed_at": iso_or_none(pm.processed_at),
             }
             for pm in processed_messages
         ],
         "status_history": status_history,
         "parse_failures": lead.parse_failure_counts or {},
         "timestamps": {
-            "last_client_message_at": lead.last_client_message_at.isoformat()
-            if lead.last_client_message_at
-            else None,
-            "last_bot_message_at": lead.last_bot_message_at.isoformat()
-            if lead.last_bot_message_at
-            else None,
+            "last_client_message_at": iso_or_none(lead.last_client_message_at),
+            "last_bot_message_at": iso_or_none(lead.last_bot_message_at),
         },
     }
 
@@ -861,7 +850,7 @@ def sweep_expired_deposits(
         .all()
     )
 
-    results = {
+    results: dict[str, int | list[int]] = {
         "checked": len(expired_leads),
         "expired": 0,
         "skipped": 0,
@@ -887,9 +876,7 @@ def sweep_expired_deposits(
                     event_type=EVENT_DEPOSIT_EXPIRED_SWEEP,
                     payload={
                         "lead_id": lead.id,
-                        "deposit_sent_at": lead.deposit_sent_at.isoformat()
-                        if lead.deposit_sent_at
-                        else None,
+                        "deposit_sent_at": iso_or_none(lead.deposit_sent_at),
                         "hours_threshold": hours_threshold,
                     },
                 )
@@ -910,5 +897,5 @@ def sweep_expired_deposits(
         "success": True,
         "summary": results,
         "hours_threshold": hours_threshold,
-        "cutoff_time": cutoff_time.isoformat(),
+        "cutoff_time": iso_or_none(cutoff_time),
     }
