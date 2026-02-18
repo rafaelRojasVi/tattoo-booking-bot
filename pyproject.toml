@@ -78,6 +78,8 @@ ignore_missing_imports = true
 [[tool.mypy.overrides]]
 module = [
     "app.services.conversation",
+    "app.services.conversation_booking",
+    "app.services.conversation_qualifying",
     "app.services.state_machine",
     "app.services.reminders",
     "app.services.calendar_service",

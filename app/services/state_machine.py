@@ -18,8 +18,7 @@ from app.constants.event_types import (
     EVENT_ADVANCE_STEP_PENDING_CHANGES,
     EVENT_ATOMIC_UPDATE_CONFLICT,
 )
-from app.db.models import Lead
-from app.services.conversation import (
+from app.constants.statuses import (
     STATUS_ABANDONED,
     STATUS_AWAITING_DEPOSIT,
     STATUS_BOOKED,
@@ -40,6 +39,7 @@ from app.services.conversation import (
     STATUS_TOUR_CONVERSION_OFFERED,
     STATUS_WAITLISTED,
 )
+from app.db.models import Lead
 
 logger = logging.getLogger(__name__)
 
