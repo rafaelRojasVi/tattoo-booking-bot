@@ -5,6 +5,8 @@ A production-hardened, enterprise-grade WhatsApp automation system for tattoo co
 [![CI](https://github.com/rafaelRojasVi/tattoo-booking-bot/actions/workflows/ci.yml/badge.svg)](https://github.com/rafaelRojasVi/tattoo-booking-bot/actions/workflows/ci.yml)
 [![Quality Checks](https://github.com/rafaelRojasVi/tattoo-booking-bot/actions/workflows/quality.yml/badge.svg)](https://github.com/rafaelRojasVi/tattoo-booking-bot/actions/workflows/quality.yml)
 
+<!-- trigger quality -->
+
 ---
 
 ## 🎯 What This System Does
