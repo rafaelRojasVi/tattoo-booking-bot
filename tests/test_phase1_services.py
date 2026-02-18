@@ -90,7 +90,7 @@ class TestTourService:
     def test_is_city_on_tour_no_schedule(self):
         """Test city check with no schedule loaded."""
         # No schedule loaded, should return False
-        assert is_city_on_tour("London") == False
+        assert not is_city_on_tour("London")
 
     def test_format_tour_offer(self):
         """Test tour offer formatting."""
@@ -241,7 +241,7 @@ class TestHandoverService:
         db.commit()
 
         should, reason = should_handover("I want a realistic portrait", lead)
-        assert should == True
+        assert should
         assert "complexity" in reason.lower() or "realism" in reason.lower()
 
     def test_handover_coverup_keyword(self, db):
@@ -254,7 +254,7 @@ class TestHandoverService:
 
         # Test with exact keyword from service: "cover-up" (with hyphen)
         should, reason = should_handover("I need a cover-up", lead)
-        assert should == True
+        assert should
         assert "cover" in reason.lower()
 
     def test_handover_price_negotiation(self, db):
@@ -267,7 +267,7 @@ class TestHandoverService:
 
         # Use exact keyword from service: "cheaper"
         should, reason = should_handover("Can you do it cheaper?", lead)
-        assert should == True
+        assert should
         assert "price" in reason.lower() or "negotiation" in reason.lower()
 
     def test_handover_hesitation(self, db):
@@ -280,7 +280,7 @@ class TestHandoverService:
 
         # Use exact phrase from service: "i'm ready but"
         should, reason = should_handover("I'm ready but I'm not sure", lead)
-        assert should == True
+        assert should
         assert "hesitation" in reason.lower() or "personal" in reason.lower()
 
     def test_no_handover_normal_message(self, db):
@@ -292,5 +292,5 @@ class TestHandoverService:
         db.commit()
 
         should, reason = should_handover("I want a small dragon on my arm", lead)
-        assert should == False
+        assert not should
         assert reason is None

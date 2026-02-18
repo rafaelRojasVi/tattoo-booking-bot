@@ -50,7 +50,9 @@ STATUS_TOUR_CONVERSION_OFFERED = "TOUR_CONVERSION_OFFERED"
 STATUS_WAITLISTED = "WAITLISTED"
 
 # Booking statuses
-STATUS_COLLECTING_TIME_WINDOWS = "COLLECTING_TIME_WINDOWS"  # Collecting preferred time windows when no slots available
+STATUS_COLLECTING_TIME_WINDOWS = (
+    "COLLECTING_TIME_WINDOWS"  # Collecting preferred time windows when no slots available
+)
 
 # Payment-related statuses (future features)
 STATUS_DEPOSIT_EXPIRED = "DEPOSIT_EXPIRED"  # Deposit link sent but not paid after X days
@@ -323,8 +325,7 @@ async def handle_inbound_message(
                     return await trigger_handover_after_parse_failure(db, lead, "slot", dry_run)
 
                 # Send soft repair message (retry_count for short+boundary variant on retry 2)
-                from app.services.message_composer import compose_message
-                from app.services.message_composer import render_message
+                from app.services.message_composer import compose_message, render_message
                 from app.services.parse_repair import get_failure_count
 
                 repair_msg = compose_message(
@@ -740,19 +741,23 @@ async def _handle_qualifying_lead(
     def _is_valid_single_answer_for_current_question() -> bool:
         if current_question.key == "dimensions":
             from app.services.estimation_service import parse_dimensions
+
             return parse_dimensions(message_text) is not None
         if current_question.key == "budget":
             from app.services.estimation_service import parse_budget_from_text
+
             return parse_budget_from_text(message_text) is not None
         if current_question.key == "location_city":
             from app.services.location_parsing import is_valid_location, parse_location_input
+
             parsed = parse_location_input(message_text.strip())
             return not parsed["is_flexible"] and is_valid_location(message_text.strip())
         return False
 
-    if looks_like_multi_answer_bundle(
-        message_text, current_question_key=current_question.key
-    ) and not _is_valid_single_answer_for_current_question():
+    if (
+        looks_like_multi_answer_bundle(message_text, current_question_key=current_question.key)
+        and not _is_valid_single_answer_for_current_question()
+    ):
         from app.services.message_composer import compose_message
 
         one_at_a_time_msg = compose_message(
@@ -1072,7 +1077,10 @@ async def _handle_human_request(db: Session, lead: Lead, dry_run: bool) -> dict:
     from app.services.message_composer import compose_message
 
     await notify_artist_needs_reply(
-        db=db, lead=lead, reason=lead.handover_reason, dry_run=dry_run,
+        db=db,
+        lead=lead,
+        reason=lead.handover_reason,
+        dry_run=dry_run,
     )
     handover_msg = compose_message("HUMAN_HANDOVER", {"lead_id": lead.id})
     await send_whatsapp_message(to=lead.wa_from, message=handover_msg, dry_run=dry_run)
@@ -1088,7 +1096,10 @@ async def _handle_refund_request(db: Session, lead: Lead, dry_run: bool) -> dict
     from app.services.message_composer import compose_message
 
     await notify_artist_needs_reply(
-        db=db, lead=lead, reason=lead.handover_reason, dry_run=dry_run,
+        db=db,
+        lead=lead,
+        reason=lead.handover_reason,
+        dry_run=dry_run,
     )
     ack_msg = compose_message("REFUND_ACK", {"lead_id": lead.id})
     await send_whatsapp_message(to=lead.wa_from, message=ack_msg, dry_run=dry_run)
@@ -1104,7 +1115,10 @@ async def _handle_delete_data_request(db: Session, lead: Lead, dry_run: bool) ->
     from app.services.message_composer import compose_message
 
     await notify_artist_needs_reply(
-        db=db, lead=lead, reason=lead.handover_reason, dry_run=dry_run,
+        db=db,
+        lead=lead,
+        reason=lead.handover_reason,
+        dry_run=dry_run,
     )
     ack_msg = compose_message("DELETE_DATA_ACK", {"lead_id": lead.id})
     await send_whatsapp_message(to=lead.wa_from, message=ack_msg, dry_run=dry_run)

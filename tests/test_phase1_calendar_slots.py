@@ -130,7 +130,9 @@ async def test_send_slot_suggestions_to_client(db):
     db.commit()
     db.refresh(lead)
 
-    with patch("app.services.whatsapp_window.send_with_window_check", new_callable=AsyncMock) as mock_send:
+    with patch(
+        "app.services.whatsapp_window.send_with_window_check", new_callable=AsyncMock
+    ) as mock_send:
         mock_send.return_value = {"status": "sent"}
 
         result = await send_slot_suggestions_to_client(
@@ -185,7 +187,9 @@ async def test_slot_suggestions_integration_with_webhook(db):
     db.commit()
     db.refresh(lead)
 
-    with patch("app.services.whatsapp_window.send_with_window_check", new_callable=AsyncMock) as mock_send:
+    with patch(
+        "app.services.whatsapp_window.send_with_window_check", new_callable=AsyncMock
+    ) as mock_send:
         mock_send.return_value = {"status": "sent"}
 
         # Simulate what webhook does

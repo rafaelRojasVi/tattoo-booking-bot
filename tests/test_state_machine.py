@@ -4,7 +4,7 @@ Tests for state machine service.
 
 import pytest
 
-from app.db.models import Lead
+from app.db.models import Lead, SystemEvent
 from app.services.conversation import (
     STATUS_AWAITING_DEPOSIT,
     STATUS_BOOKED,
@@ -15,7 +15,6 @@ from app.services.conversation import (
     STATUS_QUALIFYING,
     STATUS_REJECTED,
 )
-from app.db.models import SystemEvent
 from app.services.state_machine import (
     advance_step_if_at,
     get_allowed_transitions,

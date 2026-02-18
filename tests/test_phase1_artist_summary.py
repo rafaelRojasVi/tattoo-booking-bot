@@ -199,9 +199,10 @@ async def test_notify_artist_sends_notification(db):
         # Mock artist WhatsApp number and ensure notifications feature is enabled
         # Use current config (may be replaced by other tests) so patch reaches notify_artist
         _config = importlib.import_module("app.core.config")
-        with patch.object(
-            _config.settings, "artist_whatsapp_number", "447700900123"
-        ), patch.object(_config.settings, "feature_notifications_enabled", True):
+        with (
+            patch.object(_config.settings, "artist_whatsapp_number", "447700900123"),
+            patch.object(_config.settings, "feature_notifications_enabled", True),
+        ):
             result = await notify_artist(
                 db=db,
                 lead=lead,
@@ -234,9 +235,10 @@ async def test_notify_artist_deposit_paid(db):
         mock_send.return_value = {"status": "sent"}
 
         _config = importlib.import_module("app.core.config")
-        with patch.object(
-            _config.settings, "artist_whatsapp_number", "447700900123"
-        ), patch.object(_config.settings, "feature_notifications_enabled", True):
+        with (
+            patch.object(_config.settings, "artist_whatsapp_number", "447700900123"),
+            patch.object(_config.settings, "feature_notifications_enabled", True),
+        ):
             result = await notify_artist(
                 db=db,
                 lead=lead,

@@ -15,7 +15,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.constants.event_types import EVENT_ATOMIC_UPDATE_CONFLICT
-from app.constants.providers import PROVIDER_REMINDER, PROVIDER_STRIPE, PROVIDER_WHATSAPP
+from app.constants.providers import PROVIDER_STRIPE
 from app.db.models import ActionToken, Lead, ProcessedMessage
 
 logger = logging.getLogger(__name__)

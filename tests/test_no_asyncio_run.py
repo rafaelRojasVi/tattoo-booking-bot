@@ -64,4 +64,4 @@ def test_no_asyncio_run_in_async_handlers():
             "These should be replaced with 'await' in async functions:\n\n"
             + "\n".join(f"  - {issue}" for issue in all_issues)
         )
-        assert False, error_msg
+        raise AssertionError(error_msg)

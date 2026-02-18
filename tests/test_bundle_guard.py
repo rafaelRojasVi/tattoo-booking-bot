@@ -209,9 +209,7 @@ async def test_idea_step_rejects_budget_only_and_reprompts_idea(db):
         await handle_inbound_message(db, lead, user_messages[-1], dry_run=True)
         db.refresh(lead)
         transcript = format_transcript(user_messages, bot_messages, max_line=None)
-        assert len(bot_messages) - n_bot_before == 1, (
-            f"Exactly one bot reply.\n\n{transcript}"
-        )
+        assert len(bot_messages) - n_bot_before == 1, f"Exactly one bot reply.\n\n{transcript}"
         assert lead.current_step == 0, (
             f"Budget-only at idea should not advance; got step {lead.current_step}.\n\n{transcript}"
         )
@@ -252,9 +250,7 @@ async def test_idea_step_rejects_dimensions_only_and_reprompts_idea(db):
         await handle_inbound_message(db, lead, user_messages[-1], dry_run=True)
         db.refresh(lead)
         transcript = format_transcript(user_messages, bot_messages, max_line=None)
-        assert len(bot_messages) - n_bot_before == 1, (
-            f"Exactly one bot reply.\n\n{transcript}"
-        )
+        assert len(bot_messages) - n_bot_before == 1, f"Exactly one bot reply.\n\n{transcript}"
         assert lead.current_step == 0, (
             f"Dimensions-only at idea should not advance; got step {lead.current_step}.\n\n{transcript}"
         )
@@ -298,15 +294,14 @@ async def test_placement_step_rejects_dimensions_only_and_reprompts_placement(db
         await handle_inbound_message(db, lead, user_messages[-1], dry_run=True)
         db.refresh(lead)
         transcript = format_transcript(user_messages, bot_messages, max_line=None)
-        assert len(bot_messages) - n_bot_before == 1, (
-            f"Exactly one bot reply.\n\n{transcript}"
-        )
+        assert len(bot_messages) - n_bot_before == 1, f"Exactly one bot reply.\n\n{transcript}"
         assert lead.current_step == 1, (
             f"Dimensions-only at placement should not advance; got step {lead.current_step}.\n\n{transcript}"
         )
-        assert "body" in (bot_messages[-1] or "").lower() or "placement" in (bot_messages[-1] or "").lower(), (
-            f"Should reprompt placement question.\n\n{transcript}"
-        )
+        assert (
+            "body" in (bot_messages[-1] or "").lower()
+            or "placement" in (bot_messages[-1] or "").lower()
+        ), f"Should reprompt placement question.\n\n{transcript}"
 
 
 @pytest.mark.asyncio
@@ -342,9 +337,7 @@ async def test_budget_step_accepts_budget_only(db):
         await handle_inbound_message(db, lead, user_messages[-1], dry_run=True)
         db.refresh(lead)
         transcript = format_transcript(user_messages, bot_messages, max_line=None)
-        assert len(bot_messages) - n_bot_before == 1, (
-            f"Exactly one bot reply.\n\n{transcript}"
-        )
+        assert len(bot_messages) - n_bot_before == 1, f"Exactly one bot reply.\n\n{transcript}"
         assert lead.current_step == 8, (
             f"Budget-only at budget step should advance; got step {lead.current_step}.\n\n{transcript}"
         )
@@ -363,9 +356,7 @@ _VALID_SINGLE_ANSWER_CASES = [
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("question_key,valid_answer,answers_before", _VALID_SINGLE_ANSWER_CASES)
-async def test_valid_single_answers_never_blocked(
-    db, question_key, valid_answer, answers_before
-):
+async def test_valid_single_answers_never_blocked(db, question_key, valid_answer, answers_before):
     """
     Valid single answers for dimensions, budget, location_city, instagram_handle, reference_images
     must advance (never reprompt). Max one outbound per inbound; step advances by <= 1.
@@ -491,9 +482,11 @@ async def test_one_at_a_time_does_not_trigger_for_normal_idea_with_commas(db):
         assert "one question at a time" not in last_bot.lower(), (
             f"One-at-a-time reprompt should NOT appear for normal idea. Got: {last_bot}\n\n{transcript}"
         )
-        assert "body" in last_bot.lower() or "placement" in last_bot.lower() or "arm" in last_bot.lower(), (
-            f"Expected placement question; got: {last_bot}\n\n{transcript}"
-        )
+        assert (
+            "body" in last_bot.lower()
+            or "placement" in last_bot.lower()
+            or "arm" in last_bot.lower()
+        ), f"Expected placement question; got: {last_bot}\n\n{transcript}"
 
     transcript = format_transcript(user_messages, bot_messages, max_line=None)
     assert lead.current_step == 1, f"Final step should be 1.\n\n{transcript}"
@@ -551,9 +544,9 @@ async def test_one_at_a_time_triggers_only_when_message_contains_multiple_step_s
             f"Expected status QUALIFYING, got {lead.status}.\n\n{transcript}"
         )
         last_bot = bot_messages[-1]
-        assert "one" in last_bot.lower() and ("question" in last_bot.lower() or "step" in last_bot.lower()), (
-            f"Expected one-at-a-time reprompt content; got: {last_bot}\n\n{transcript}"
-        )
+        assert "one" in last_bot.lower() and (
+            "question" in last_bot.lower() or "step" in last_bot.lower()
+        ), f"Expected one-at-a-time reprompt content; got: {last_bot}\n\n{transcript}"
         assert "What tattoo do you want" in last_bot or "tattoo" in last_bot, (
             f"Reprompt should include current question; got: {last_bot}\n\n{transcript}"
         )
@@ -612,7 +605,9 @@ async def test_reference_images_step_allows_ig_handle_and_style_text(db):
             )
             previous_step = lead.current_step
 
-        assert lead.current_step == 6, f"Expected step 6 (reference_images), got {lead.current_step}"
+        assert lead.current_step == 6, (
+            f"Expected step 6 (reference_images), got {lead.current_step}"
+        )
 
         # 3) "Realism like @someartist" -> should advance to budget (step 7)
         user_messages.append("Realism like @someartist")

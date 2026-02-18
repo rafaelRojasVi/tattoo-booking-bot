@@ -42,12 +42,12 @@ def format_transcript(
     for i in range(n):
         if i < len(user_messages):
             u = user_messages[i]
-            u_show = (u[: max_line] + "…") if max_line is not None and len(u) > max_line else u
+            u_show = (u[:max_line] + "…") if max_line is not None and len(u) > max_line else u
             u_show = u_show.replace("\n", " ")
             lines.append(f"USER: {u_show}")
         if i < len(bot_messages):
             b = bot_messages[i]
-            b_show = (b[: max_line] + "…") if max_line is not None and len(b) > max_line else b
+            b_show = (b[:max_line] + "…") if max_line is not None and len(b) > max_line else b
             b_show = b_show.replace("\n", " ")
             lines.append(f"BOT:  {b_show}")
     return "\n".join(lines)

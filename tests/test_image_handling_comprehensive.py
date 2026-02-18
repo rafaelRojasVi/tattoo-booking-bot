@@ -8,13 +8,14 @@ Tests cover:
 - Edge cases and error conditions
 """
 
-import pytest
 from datetime import UTC, datetime, timedelta
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import patch
+
+import pytest
 
 from app.db.models import Attachment, Lead
-from app.services.media_upload import attempt_upload_attachment
 from app.jobs.sweep_pending_uploads import run_sweep
+from app.services.media_upload import attempt_upload_attachment
 
 
 @pytest.fixture
@@ -310,7 +311,11 @@ def test_webhook_handles_multiple_images_in_payload(client, db, monkeypatch):
         assert response.status_code == 200
 
         # Should create attachment for most recent image (img_002)
-        attachments = db.query(Attachment).filter(Attachment.whatsapp_media_id.in_(["img_001", "img_002"])).all()
+        attachments = (
+            db.query(Attachment)
+            .filter(Attachment.whatsapp_media_id.in_(["img_001", "img_002"]))
+            .all()
+        )
         # Note: Current implementation only processes first message, so only one attachment
         assert len(attachments) >= 1
 
@@ -323,9 +328,10 @@ def test_webhook_handles_multiple_images_in_payload(client, db, monkeypatch):
 @pytest.mark.asyncio
 async def test_upload_success_with_image_jpeg(db, pending_attachment):
     """Test successful upload of JPEG image."""
-    with patch("app.services.media_upload._download_whatsapp_media") as mock_download, patch(
-        "app.services.media_upload._upload_to_supabase"
-    ) as mock_upload:
+    with (
+        patch("app.services.media_upload._download_whatsapp_media") as mock_download,
+        patch("app.services.media_upload._upload_to_supabase") as mock_upload,
+    ):
         mock_download.return_value = (b"fake_jpeg_data", "image/jpeg")
         mock_upload.return_value = None
 
@@ -341,9 +347,10 @@ async def test_upload_success_with_image_jpeg(db, pending_attachment):
 @pytest.mark.asyncio
 async def test_upload_success_with_pdf_document(db, pending_attachment):
     """Test successful upload of PDF document."""
-    with patch("app.services.media_upload._download_whatsapp_media") as mock_download, patch(
-        "app.services.media_upload._upload_to_supabase"
-    ) as mock_upload:
+    with (
+        patch("app.services.media_upload._download_whatsapp_media") as mock_download,
+        patch("app.services.media_upload._upload_to_supabase") as mock_upload,
+    ):
         mock_download.return_value = (b"fake_pdf_data", "application/pdf")
         mock_upload.return_value = None
 
@@ -357,9 +364,10 @@ async def test_upload_success_with_pdf_document(db, pending_attachment):
 @pytest.mark.asyncio
 async def test_upload_success_with_png_image(db, pending_attachment):
     """Test successful upload of PNG image."""
-    with patch("app.services.media_upload._download_whatsapp_media") as mock_download, patch(
-        "app.services.media_upload._upload_to_supabase"
-    ) as mock_upload:
+    with (
+        patch("app.services.media_upload._download_whatsapp_media") as mock_download,
+        patch("app.services.media_upload._upload_to_supabase") as mock_upload,
+    ):
         mock_download.return_value = (b"fake_png_data", "image/png")
         mock_upload.return_value = None
 
@@ -375,9 +383,10 @@ async def test_upload_success_large_file(db, pending_attachment):
     """Test successful upload of large file (10MB)."""
     large_data = b"x" * (10 * 1024 * 1024)  # 10MB
 
-    with patch("app.services.media_upload._download_whatsapp_media") as mock_download, patch(
-        "app.services.media_upload._upload_to_supabase"
-    ) as mock_upload:
+    with (
+        patch("app.services.media_upload._download_whatsapp_media") as mock_download,
+        patch("app.services.media_upload._upload_to_supabase") as mock_upload,
+    ):
         mock_download.return_value = (large_data, "image/jpeg")
         mock_upload.return_value = None
 
@@ -396,9 +405,10 @@ async def test_upload_success_large_file(db, pending_attachment):
 @pytest.mark.asyncio
 async def test_upload_failure_whatsapp_download_error(db, pending_attachment):
     """Test upload failure when WhatsApp download fails."""
-    with patch("app.services.media_upload._download_whatsapp_media") as mock_download, patch(
-        "app.services.system_event_service.error"
-    ) as mock_error:
+    with (
+        patch("app.services.media_upload._download_whatsapp_media") as mock_download,
+        patch("app.services.system_event_service.error") as mock_error,
+    ):
         mock_download.side_effect = Exception("WhatsApp API error: 404 Not Found")
 
         await attempt_upload_attachment(db, pending_attachment.id)
@@ -414,9 +424,11 @@ async def test_upload_failure_whatsapp_download_error(db, pending_attachment):
 @pytest.mark.asyncio
 async def test_upload_failure_supabase_upload_error(db, pending_attachment):
     """Test upload failure when Supabase upload fails."""
-    with patch("app.services.media_upload._download_whatsapp_media") as mock_download, patch(
-        "app.services.media_upload._upload_to_supabase"
-    ) as mock_upload, patch("app.services.system_event_service.error") as mock_error:
+    with (
+        patch("app.services.media_upload._download_whatsapp_media") as mock_download,
+        patch("app.services.media_upload._upload_to_supabase") as mock_upload,
+        patch("app.services.system_event_service.error") as mock_error,
+    ):
         mock_download.return_value = (b"fake_data", "image/jpeg")
         mock_upload.side_effect = Exception("Supabase upload failed: Connection timeout")
 
@@ -432,9 +444,11 @@ async def test_upload_failure_supabase_upload_error(db, pending_attachment):
 @pytest.mark.asyncio
 async def test_upload_failure_supabase_not_configured(db, pending_attachment):
     """Test upload failure when Supabase is not configured."""
-    with patch("app.services.media_upload._download_whatsapp_media") as mock_download, patch(
-        "app.services.media_upload._upload_to_supabase"
-    ) as mock_upload, patch("app.core.config.settings") as mock_settings:
+    with (
+        patch("app.services.media_upload._download_whatsapp_media") as mock_download,
+        patch("app.services.media_upload._upload_to_supabase") as mock_upload,
+        patch("app.core.config.settings") as mock_settings,
+    ):
         mock_download.return_value = (b"fake_data", "image/jpeg")
         mock_settings.supabase_url = None
         mock_settings.supabase_service_role_key = None
@@ -450,12 +464,12 @@ async def test_upload_failure_supabase_not_configured(db, pending_attachment):
 @pytest.mark.asyncio
 async def test_upload_failure_network_timeout(db, pending_attachment):
     """Test upload failure due to network timeout."""
-    import asyncio
 
-    with patch("app.services.media_upload._download_whatsapp_media") as mock_download, patch(
-        "app.services.system_event_service.error"
-    ) as mock_error:
-        mock_download.side_effect = asyncio.TimeoutError("Request timeout")
+    with (
+        patch("app.services.media_upload._download_whatsapp_media") as mock_download,
+        patch("app.services.system_event_service.error") as mock_error,
+    ):
+        mock_download.side_effect = TimeoutError("Request timeout")
 
         await attempt_upload_attachment(db, pending_attachment.id)
 
@@ -468,9 +482,10 @@ async def test_upload_failure_network_timeout(db, pending_attachment):
 @pytest.mark.asyncio
 async def test_upload_failure_invalid_media_id(db, pending_attachment):
     """Test upload failure when WhatsApp media ID is invalid."""
-    with patch("app.services.media_upload._download_whatsapp_media") as mock_download, patch(
-        "app.services.system_event_service.error"
-    ) as mock_error:
+    with (
+        patch("app.services.media_upload._download_whatsapp_media") as mock_download,
+        patch("app.services.system_event_service.error") as mock_error,
+    ):
         mock_download.side_effect = Exception("Media not found: 404")
 
         await attempt_upload_attachment(db, pending_attachment.id)
@@ -483,9 +498,10 @@ async def test_upload_failure_invalid_media_id(db, pending_attachment):
 @pytest.mark.asyncio
 async def test_upload_failure_empty_file(db, pending_attachment):
     """Test upload failure when downloaded file is empty."""
-    with patch("app.services.media_upload._download_whatsapp_media") as mock_download, patch(
-        "app.services.media_upload._upload_to_supabase"
-    ) as mock_upload:
+    with (
+        patch("app.services.media_upload._download_whatsapp_media") as mock_download,
+        patch("app.services.media_upload._upload_to_supabase") as mock_upload,
+    ):
         mock_download.return_value = (b"", "image/jpeg")  # Empty file
         mock_upload.return_value = None
 
@@ -505,9 +521,10 @@ async def test_upload_failure_empty_file(db, pending_attachment):
 @pytest.mark.asyncio
 async def test_retry_after_first_failure(db, pending_attachment):
     """Test that attachment can be retried after first failure."""
-    with patch("app.services.media_upload._download_whatsapp_media") as mock_download, patch(
-        "app.services.media_upload._upload_to_supabase"
-    ) as mock_upload:
+    with (
+        patch("app.services.media_upload._download_whatsapp_media") as mock_download,
+        patch("app.services.media_upload._upload_to_supabase") as mock_upload,
+    ):
         # First attempt fails
         mock_download.side_effect = [Exception("Temporary error"), (b"fake_data", "image/jpeg")]
         mock_upload.return_value = None
@@ -539,9 +556,10 @@ async def test_max_retries_reached(db, lead):
     db.commit()
     db.refresh(attachment)
 
-    with patch("app.services.media_upload._download_whatsapp_media") as mock_download, patch(
-        "app.services.system_event_service.error"
-    ) as mock_error:
+    with (
+        patch("app.services.media_upload._download_whatsapp_media") as mock_download,
+        patch("app.services.system_event_service.error") as mock_error,
+    ):
         mock_download.side_effect = Exception("Persistent error")
 
         # 5th attempt - should mark as FAILED
@@ -626,6 +644,7 @@ def test_sweeper_processes_pending_attachments(db, lead):
     db.commit()
 
     with patch("app.jobs.sweep_pending_uploads.attempt_upload_attachment") as mock_upload:
+
         async def mock_upload_func(db_arg, att_id):
             att = db_arg.query(Attachment).filter(Attachment.id == att_id).first()
             if att:
@@ -679,6 +698,7 @@ def test_sweeper_processes_stale_attempts(db, lead):
     db.commit()
 
     with patch("app.jobs.sweep_pending_uploads.attempt_upload_attachment") as mock_upload:
+
         async def mock_upload_func(db_arg, att_id):
             att = db_arg.query(Attachment).filter(Attachment.id == att_id).first()
             if att:
@@ -729,6 +749,7 @@ def test_sweeper_respects_limit(db, lead):
     db.commit()
 
     with patch("app.jobs.sweep_pending_uploads.attempt_upload_attachment") as mock_upload:
+
         async def mock_upload_func(db_arg, att_id):
             att = db_arg.query(Attachment).filter(Attachment.id == att_id).first()
             if att:
@@ -774,6 +795,7 @@ def test_sweeper_handles_mixed_statuses(db, lead):
     db.commit()
 
     with patch("app.jobs.sweep_pending_uploads.attempt_upload_attachment") as mock_upload:
+
         async def mock_upload_func(db_arg, att_id):
             att = db_arg.query(Attachment).filter(Attachment.id == att_id).first()
             if att:
@@ -817,9 +839,10 @@ async def test_upload_with_missing_whatsapp_media_id(db, lead):
     db.commit()
     db.refresh(attachment)
 
-    with patch("app.services.media_upload._download_whatsapp_media") as mock_download, patch(
-        "app.services.system_event_service.error"
-    ) as mock_error:
+    with (
+        patch("app.services.media_upload._download_whatsapp_media") as mock_download,
+        patch("app.services.system_event_service.error") as mock_error,
+    ):
         await attempt_upload_attachment(db, attachment.id)
 
         # Should fail when trying to download
@@ -867,9 +890,10 @@ async def test_upload_with_custom_bucket_name(db, pending_attachment, monkeypatc
     original_bucket = settings.supabase_storage_bucket
     monkeypatch.setattr(settings, "supabase_storage_bucket", "custom-bucket")
 
-    with patch("app.services.media_upload._download_whatsapp_media") as mock_download, patch(
-        "app.services.media_upload._upload_to_supabase"
-    ) as mock_upload:
+    with (
+        patch("app.services.media_upload._download_whatsapp_media") as mock_download,
+        patch("app.services.media_upload._upload_to_supabase") as mock_upload,
+    ):
         mock_download.return_value = (b"fake_data", "image/jpeg")
         mock_upload.return_value = None
 
@@ -886,9 +910,10 @@ async def test_upload_error_truncation(db, pending_attachment):
     """Test that error messages are truncated to 500 characters."""
     long_error = "A" * 1000  # Very long error message
 
-    with patch("app.services.media_upload._download_whatsapp_media") as mock_download, patch(
-        "app.services.system_event_service.error"
-    ) as mock_error:
+    with (
+        patch("app.services.media_upload._download_whatsapp_media") as mock_download,
+        patch("app.services.system_event_service.error") as mock_error,
+    ):
         mock_download.side_effect = Exception(long_error)
 
         await attempt_upload_attachment(db, pending_attachment.id)

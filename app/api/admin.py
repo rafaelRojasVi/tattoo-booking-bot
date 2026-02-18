@@ -22,7 +22,7 @@ from app.services.conversation import (
     STATUS_REJECTED,
     get_lead_summary,
 )
-from app.services.messaging import format_deposit_link_message, send_whatsapp_message
+from app.services.messaging import format_deposit_link_message
 from app.services.safety import update_lead_status_if_matches
 from app.services.sheets import log_lead_to_sheets
 
@@ -90,8 +90,8 @@ def test_webhook_exception_simulation(
     Returns HTTP 200 and logs SystemEvent with correlation_id, mimicking WhatsApp webhook behavior.
     Disabled in production (APP_ENV=production).
     """
-    from app.core.config import settings
     from app.constants.event_types import EVENT_WHATSAPP_WEBHOOK_FAILURE
+    from app.core.config import settings
     from app.services.system_event_service import error
 
     if settings.app_env == "production":
@@ -844,7 +844,7 @@ def sweep_expired_deposits(
     """
     from datetime import UTC, datetime, timedelta
 
-    from app.services.conversation import STATUS_AWAITING_DEPOSIT, STATUS_DEPOSIT_EXPIRED
+    from app.services.conversation import STATUS_AWAITING_DEPOSIT
     from app.services.system_event_service import info
 
     # Find leads in AWAITING_DEPOSIT status with deposit_sent_at older than threshold

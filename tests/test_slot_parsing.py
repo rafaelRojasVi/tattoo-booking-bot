@@ -268,9 +268,7 @@ def test_slot_parse_reject_ambiguous_logs_system_event(db, sample_slots):
     db.commit()
     db.refresh(lead)
 
-    result = parse_slot_selection_logged(
-        "I have 3 questions", sample_slots, db=db, lead_id=lead.id
-    )
+    result = parse_slot_selection_logged("I have 3 questions", sample_slots, db=db, lead_id=lead.id)
     assert result is None
 
     event = (

@@ -91,9 +91,7 @@ def retry_due_outbox_rows(db: Session, limit: int = 50) -> dict:
     stmt = (
         select(OutboxMessage)
         .where(OutboxMessage.status.in_(["PENDING", "FAILED"]))
-        .where(
-            (OutboxMessage.next_retry_at.is_(None)) | (OutboxMessage.next_retry_at <= now)
-        )
+        .where((OutboxMessage.next_retry_at.is_(None)) | (OutboxMessage.next_retry_at <= now))
         .order_by(OutboxMessage.created_at)
         .limit(limit)
     )
@@ -109,10 +107,10 @@ def retry_due_outbox_rows(db: Session, limit: int = 50) -> dict:
         template_params = payload.get("template_params") or {}
 
         try:
+            import asyncio
+
             from app.services.messaging import send_whatsapp_message
             from app.services.whatsapp_window import send_template_message
-
-            import asyncio
 
             loop = asyncio.get_event_loop()
             if template_name:

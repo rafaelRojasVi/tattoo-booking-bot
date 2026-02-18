@@ -346,9 +346,10 @@ async def test_deposit_locking_preserves_amount(client, db):
     db.commit()
 
     # Send deposit (should lock amount)
-    from app.core.config import settings
     from datetime import UTC as _UTC
     from datetime import datetime as _dt
+
+    from app.core.config import settings
 
     checkout_return = {
         "checkout_session_id": "cs_test_123",
@@ -712,9 +713,10 @@ async def test_payment_expired_session_resend(client, db):
     db.commit()
 
     # Send deposit again (should create new session)
-    from app.core.config import settings
     from datetime import UTC as _UTC
     from datetime import datetime as _dt
+
+    from app.core.config import settings
 
     checkout_return = {
         "checkout_session_id": "cs_test_new",

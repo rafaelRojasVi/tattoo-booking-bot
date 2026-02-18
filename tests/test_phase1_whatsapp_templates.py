@@ -100,12 +100,15 @@ async def test_send_with_window_check_outside_window_uses_template(db):
     db.refresh(lead)
 
     # Template must be in "required" list or code returns "closed" (not configured)
-    with patch(
-        "app.services.template_registry.get_all_required_templates",
-        return_value=["test_template", "other_template"],
-    ), patch(
-        "app.services.whatsapp_window.send_template_message", new_callable=AsyncMock
-    ) as mock_template:
+    with (
+        patch(
+            "app.services.template_registry.get_all_required_templates",
+            return_value=["test_template", "other_template"],
+        ),
+        patch(
+            "app.services.whatsapp_window.send_template_message", new_callable=AsyncMock
+        ) as mock_template,
+    ):
         mock_template.return_value = {
             "status": "sent_template",
             "message_id": "test_id",

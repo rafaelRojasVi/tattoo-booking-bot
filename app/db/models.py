@@ -1,4 +1,15 @@
-from sqlalchemy import JSON, Boolean, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint, func
+from sqlalchemy import (
+    JSON,
+    Boolean,
+    DateTime,
+    Float,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+    func,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.constants.providers import PROVIDER_WHATSAPP
@@ -219,7 +230,11 @@ class ProcessedMessage(Base):
     """Idempotency table - stores processed WhatsApp message IDs, Stripe event IDs, and other events to prevent duplicates."""
 
     __tablename__ = "processed_messages"
-    __table_args__ = (UniqueConstraint("provider", "message_id", name="ix_processed_messages_provider_message_id"),)
+    __table_args__ = (
+        UniqueConstraint(
+            "provider", "message_id", name="ix_processed_messages_provider_message_id"
+        ),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     provider: Mapped[str] = mapped_column(
@@ -298,7 +313,9 @@ class OutboxMessage(Base):
         Integer, ForeignKey("leads.id"), nullable=True, index=True
     )
     channel: Mapped[str] = mapped_column(String(20), default="whatsapp")
-    payload_json: Mapped[dict] = mapped_column(JSON)  # {to, message, template_name?, template_params?}
+    payload_json: Mapped[dict] = mapped_column(
+        JSON
+    )  # {to, message, template_name?, template_params?}
     status: Mapped[str] = mapped_column(
         String(20), default="PENDING", index=True
     )  # PENDING, SENT, FAILED
@@ -317,7 +334,9 @@ class Attachment(Base):
     __tablename__ = "attachments"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    lead_id: Mapped[int] = mapped_column(Integer, ForeignKey("leads.id"), nullable=False, index=True)
+    lead_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("leads.id"), nullable=False, index=True
+    )
     lead_answer_id: Mapped[int | None] = mapped_column(
         Integer, ForeignKey("lead_answers.id"), nullable=True, index=True
     )

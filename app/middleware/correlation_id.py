@@ -7,8 +7,8 @@ Stores in request.state and contextvar for use throughout the request lifecycle.
 
 import logging
 import uuid
+from collections.abc import Callable
 from contextvars import ContextVar
-from typing import Callable
 
 from fastapi import Request
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -26,7 +26,11 @@ def get_correlation_id(request: Request | None = None) -> str | None:
     Get correlation ID for the current request.
     Prefers request.state, then contextvar. Returns None if neither set.
     """
-    if request is not None and hasattr(request.state, "correlation_id") and request.state.correlation_id:
+    if (
+        request is not None
+        and hasattr(request.state, "correlation_id")
+        and request.state.correlation_id
+    ):
         return request.state.correlation_id
     return _correlation_id_var.get()
 

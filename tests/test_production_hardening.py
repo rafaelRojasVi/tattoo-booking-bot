@@ -12,8 +12,8 @@ P1 (high-value):
 - Webhook returns 200 on duplicate (no retry storm)
 """
 
-import json
 import asyncio
+import json
 from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -37,11 +37,9 @@ from app.services.handover_packet import build_handover_packet
 from app.services.leads import get_or_create_lead
 from app.services.state_machine import (
     ALLOWED_TRANSITIONS,
-    is_transition_allowed,
     transition,
 )
 from tests.conftest import TestingSessionLocal, is_sqlite
-
 
 # ---- P0: Concurrency and races ----
 
@@ -105,7 +103,7 @@ async def test_concurrent_inbound_does_not_double_advance_step(db):
     # Desired: step advanced once (2 -> 3), not twice (2 -> 4)
     assert lead.current_step == 3, (
         "Concurrent inbounds must not double-advance step; "
-        "expected current_step=3 (one advance from 2), got %s" % lead.current_step
+        f"expected current_step=3 (one advance from 2), got {lead.current_step}"
     )
 
 
@@ -179,7 +177,7 @@ async def test_duplicate_message_id_race_only_one_processes(db):
     count = len(db.execute(stmt).scalars().all())
     assert count == 1, (
         "Duplicate message_id must be processed only once; "
-        "expected 1 ProcessedMessage, got %s" % count
+        f"expected 1 ProcessedMessage, got {count}"
     )
 
 
@@ -205,23 +203,18 @@ async def test_confirmation_summary_uses_latest_per_key(db):
     db.commit()
 
     # _maybe_send_confirmation_summary imports send_whatsapp_message from messaging inside the function
-    with patch(
-        "app.services.messaging.send_whatsapp_message", new_callable=AsyncMock
-    ) as mock_send:
+    with patch("app.services.messaging.send_whatsapp_message", new_callable=AsyncMock) as mock_send:
         sent = await _maybe_send_confirmation_summary(db, lead, "dimensions", dry_run=True)
 
     assert sent is True
     assert mock_send.await_count == 1
     call_msg = mock_send.await_args.kwargs.get("message", "")
-    assert "15" in call_msg, (
-        "Confirmation summary must use latest dimensions (15x15), not 10x12"
-    )
+    assert "15" in call_msg, "Confirmation summary must use latest dimensions (15x15), not 10x12"
 
 
 @pytest.mark.asyncio
 async def test_complete_qualification_uses_latest_per_key(db):
     """_complete_qualification must use latest answer per key for budget (and thus below_min_budget)."""
-    from app.services.region_service import region_min_budget
 
     lead = Lead(
         wa_from="1234567890",
@@ -381,9 +374,7 @@ async def test_webhook_returns_200_on_duplicate_message_id(db):
     }
 
     with (
-        patch(
-            "app.services.conversation.send_whatsapp_message", new_callable=AsyncMock
-        ),
+        patch("app.services.conversation.send_whatsapp_message", new_callable=AsyncMock),
         patch("app.services.tour_service.is_city_on_tour", return_value=True),
         patch("app.services.handover_service.should_handover", return_value=(False, None)),
     ):

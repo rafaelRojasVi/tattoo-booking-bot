@@ -358,26 +358,30 @@ def get_slot_parse_stats(db, *, last_days: int = 7) -> dict:
     last_days = max(1, min(last_days, 3650))  # Clamp to avoid OverflowError
     cutoff = datetime.now(UTC) - timedelta(days=last_days)
 
-    success_events = db.execute(
-        select(SystemEvent.payload).where(
-            SystemEvent.event_type == "slot.parse_success",
-            SystemEvent.created_at >= cutoff,
+    success_events = (
+        db.execute(
+            select(SystemEvent.payload).where(
+                SystemEvent.event_type == "slot.parse_success",
+                SystemEvent.created_at >= cutoff,
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
 
-    reject_events = db.execute(
-        select(SystemEvent.payload).where(
-            SystemEvent.event_type == "slot.parse_reject_ambiguous",
-            SystemEvent.created_at >= cutoff,
+    reject_events = (
+        db.execute(
+            select(SystemEvent.payload).where(
+                SystemEvent.event_type == "slot.parse_reject_ambiguous",
+                SystemEvent.created_at >= cutoff,
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
 
-    matched_by = dict(
-        Counter((p or {}).get("matched_by") or "unknown" for p in success_events)
-    )
-    reject_reason = dict(
-        Counter((p or {}).get("reason") or "unknown" for p in reject_events)
-    )
+    matched_by = dict(Counter((p or {}).get("matched_by") or "unknown" for p in success_events))
+    reject_reason = dict(Counter((p or {}).get("reason") or "unknown" for p in reject_events))
 
     return {
         "success": matched_by,

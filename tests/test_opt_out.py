@@ -17,6 +17,7 @@ from app.services.conversation import (
 def _reset_message_composer_cache():
     """Reset global composer so real app/copy is loaded (other tests may have cached temp copy)."""
     import app.services.message_composer as mc
+
     mc._composer = None
 
 

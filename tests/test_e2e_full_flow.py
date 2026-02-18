@@ -160,8 +160,11 @@ async def test_complete_flow_start_to_finish(client, db):
     assert len(all_answers) <= len(answers) + 1
     # Set of keys must match; no runaway duplication (max 2 rows per key)
     keys_from_db = {a.question_key for a in all_answers}
-    assert keys_from_db == set(answers.keys()), f"Key set mismatch: {keys_from_db} vs {set(answers.keys())}"
+    assert keys_from_db == set(answers.keys()), (
+        f"Key set mismatch: {keys_from_db} vs {set(answers.keys())}"
+    )
     from collections import Counter
+
     counts = Counter(a.question_key for a in all_answers)
     assert max(counts.values()) <= 2, f"Expected at most 2 rows per key, got {dict(counts)}"
 
@@ -269,8 +272,11 @@ async def test_complete_flow_start_to_finish(client, db):
     assert len(final_answers) >= len(answers)
     assert len(final_answers) <= len(answers) + 5  # duplicates + slot etc.
     keys_from_db = {a.question_key for a in final_answers}
-    assert set(answers.keys()) <= keys_from_db, f"Missing expected keys: {set(answers.keys()) - keys_from_db}"
+    assert set(answers.keys()) <= keys_from_db, (
+        f"Missing expected keys: {set(answers.keys()) - keys_from_db}"
+    )
     from collections import Counter
+
     counts = Counter(a.question_key for a in final_answers)
     assert max(counts.values()) <= 2, f"Expected at most 2 rows per key, got {dict(counts)}"
 
@@ -445,7 +451,7 @@ async def test_artist_handover_and_resume(client, db):
             "timing": "In 2 months",  # Phase 1: timing preference
         }
 
-        for key, answer in remaining_answers.items():
+        for _key, answer in remaining_answers.items():
             result = await handle_inbound_message(
                 db=db,
                 lead=lead,
@@ -534,15 +540,14 @@ async def test_data_persistence_throughout_flow(client, db):
             ("timing", "flexible"),
         ]
 
-        for key, answer in answers_in_order:
+        for _key, answer in answers_in_order:
             await handle_inbound_message(db=db, lead=lead, message_text=answer, dry_run=True)
             db.refresh(lead)
-        # Verify timestamps are updated after first answer
-        if key == "idea":
-            assert lead.last_client_message_at is not None
-            assert lead.last_bot_message_at is not None
-            assert lead.last_client_message_at >= initial_created_at
-            assert lead.last_bot_message_at >= initial_created_at
+        # Verify timestamps are updated (idea is first in list)
+        assert lead.last_client_message_at is not None
+        assert lead.last_bot_message_at is not None
+        assert lead.last_client_message_at >= initial_created_at
+        assert lead.last_bot_message_at >= initial_created_at
 
     # Verify all answers stored
     stored_answers = (

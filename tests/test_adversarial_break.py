@@ -6,14 +6,12 @@ If they fail (assertion fails), they may have exposed a bug that should be fixed
 """
 
 import json
-from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from app.db.models import ActionToken, Lead, OutboxMessage
+from app.db.models import Lead, OutboxMessage
 from app.services.conversation import (
     STATUS_AWAITING_DEPOSIT,
-    STATUS_BOOKING_PENDING,
     STATUS_DEPOSIT_PAID,
     STATUS_PENDING_APPROVAL,
 )
@@ -398,9 +396,7 @@ def test_whatsapp_webhook_message_from_as_integer(client):
 
 def test_whatsapp_webhook_empty_messages_array(client):
     """BREAK: messages is empty array -> no message to process."""
-    payload = {
-        "entry": [{"changes": [{"value": {"messages": []}}]}]
-    }
+    payload = {"entry": [{"changes": [{"value": {"messages": []}}]}]}
     response = client.post("/webhooks/whatsapp", json=payload)
     assert response.status_code == 200
     assert response.json().get("type") == "non-message-event" or "received" in response.json()
@@ -421,9 +417,7 @@ def test_whatsapp_verify_wrong_mode(client):
 
 def test_whatsapp_verify_missing_challenge(client):
     """BREAK: hub_challenge is None/empty -> should not crash."""
-    response = client.get(
-        "/webhooks/whatsapp?hub_mode=subscribe&hub_verify_token=test_token"
-    )
+    response = client.get("/webhooks/whatsapp?hub_mode=subscribe&hub_verify_token=test_token")
     assert response.status_code == 200
     assert response.text == "" or response.text == ""
 

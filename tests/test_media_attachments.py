@@ -10,13 +10,14 @@ Tests cover:
 - Edge cases
 """
 
-import pytest
 from datetime import UTC, datetime, timedelta
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import patch
+
+import pytest
 
 from app.db.models import Attachment, Lead
-from app.services.media_upload import attempt_upload_attachment
 from app.jobs.sweep_pending_uploads import run_sweep
+from app.services.media_upload import attempt_upload_attachment
 
 
 @pytest.fixture
@@ -148,7 +149,9 @@ def whatsapp_multiple_media_payload():
     }
 
 
-def test_webhook_creates_attachment_for_image(client, db, lead, whatsapp_image_payload, monkeypatch):
+def test_webhook_creates_attachment_for_image(
+    client, db, lead, whatsapp_image_payload, monkeypatch
+):
     """Test that webhook creates Attachment record for image messages."""
     # Mock signature verification
     with patch("app.api.webhooks.verify_whatsapp_signature", return_value=True):
@@ -163,7 +166,9 @@ def test_webhook_creates_attachment_for_image(client, db, lead, whatsapp_image_p
             assert response.status_code == 200
 
             # Verify attachment was created
-            attachment = db.query(Attachment).filter(Attachment.whatsapp_media_id == "media_123").first()
+            attachment = (
+                db.query(Attachment).filter(Attachment.whatsapp_media_id == "media_123").first()
+            )
             assert attachment is not None
             assert attachment.lead_id == lead.id
             assert attachment.upload_status == "PENDING"
@@ -190,12 +195,16 @@ def test_webhook_creates_attachment_for_image_with_caption(
             assert response.status_code == 200
 
             # Verify attachment was created
-            attachment = db.query(Attachment).filter(Attachment.whatsapp_media_id == "media_124").first()
+            attachment = (
+                db.query(Attachment).filter(Attachment.whatsapp_media_id == "media_124").first()
+            )
             assert attachment is not None
             assert attachment.upload_status == "PENDING"
 
 
-def test_webhook_creates_attachment_for_document(client, db, lead, whatsapp_document_payload, monkeypatch):
+def test_webhook_creates_attachment_for_document(
+    client, db, lead, whatsapp_document_payload, monkeypatch
+):
     """Test attachment creation for document messages."""
     with patch("app.api.webhooks.verify_whatsapp_signature", return_value=True):
         with patch("app.services.media_upload.attempt_upload_attachment_job"):
@@ -208,12 +217,16 @@ def test_webhook_creates_attachment_for_document(client, db, lead, whatsapp_docu
             assert response.status_code == 200
 
             # Verify attachment was created
-            attachment = db.query(Attachment).filter(Attachment.whatsapp_media_id == "media_125").first()
+            attachment = (
+                db.query(Attachment).filter(Attachment.whatsapp_media_id == "media_125").first()
+            )
             assert attachment is not None
             assert attachment.upload_status == "PENDING"
 
 
-def test_webhook_handles_multiple_media_messages(client, db, lead, whatsapp_multiple_media_payload, monkeypatch):
+def test_webhook_handles_multiple_media_messages(
+    client, db, lead, whatsapp_multiple_media_payload, monkeypatch
+):
     """Test that webhook processes most recent media when multiple messages arrive."""
     with patch("app.api.webhooks.verify_whatsapp_signature", return_value=True):
         with patch("app.services.media_upload.attempt_upload_attachment_job"):
@@ -226,11 +239,15 @@ def test_webhook_handles_multiple_media_messages(client, db, lead, whatsapp_mult
             assert response.status_code == 200
 
             # Should create attachment for most recent message (media_127, timestamp 1234567894)
-            attachment = db.query(Attachment).filter(Attachment.whatsapp_media_id == "media_127").first()
+            attachment = (
+                db.query(Attachment).filter(Attachment.whatsapp_media_id == "media_127").first()
+            )
             assert attachment is not None
 
             # Should NOT create attachment for older message
-            old_attachment = db.query(Attachment).filter(Attachment.whatsapp_media_id == "media_126").first()
+            old_attachment = (
+                db.query(Attachment).filter(Attachment.whatsapp_media_id == "media_126").first()
+            )
             assert old_attachment is None
 
 
@@ -323,9 +340,10 @@ async def test_upload_success_transitions_to_uploaded(db, lead):
     db.commit()
     db.refresh(attachment)
 
-    with patch("app.services.media_upload._download_whatsapp_media") as mock_download, patch(
-        "app.services.media_upload._upload_to_supabase"
-    ) as mock_upload:
+    with (
+        patch("app.services.media_upload._download_whatsapp_media") as mock_download,
+        patch("app.services.media_upload._upload_to_supabase") as mock_upload,
+    ):
         mock_download.return_value = (b"fake_image_data", "image/jpeg")
         mock_upload.return_value = None
 
@@ -355,9 +373,10 @@ async def test_upload_failure_increments_attempts(db, lead):
     db.commit()
     db.refresh(attachment)
 
-    with patch("app.services.media_upload._download_whatsapp_media") as mock_download, patch(
-        "app.services.system_event_service.error"
-    ) as mock_error:
+    with (
+        patch("app.services.media_upload._download_whatsapp_media") as mock_download,
+        patch("app.services.system_event_service.error") as mock_error,
+    ):
         mock_download.side_effect = Exception("WhatsApp API error: Media not found")
 
         await attempt_upload_attachment(db, attachment.id)
@@ -385,9 +404,10 @@ async def test_upload_fails_after_5_attempts(db, lead):
     db.commit()
     db.refresh(attachment)
 
-    with patch("app.services.media_upload._download_whatsapp_media") as mock_download, patch(
-        "app.services.system_event_service.error"
-    ) as mock_error:
+    with (
+        patch("app.services.media_upload._download_whatsapp_media") as mock_download,
+        patch("app.services.system_event_service.error") as mock_error,
+    ):
         mock_download.side_effect = Exception("Persistent error")
 
         await attempt_upload_attachment(db, attachment.id)
@@ -440,9 +460,10 @@ async def test_upload_handles_whatsapp_download_failure(db, lead):
     db.commit()
     db.refresh(attachment)
 
-    with patch("app.services.media_upload._download_whatsapp_media") as mock_download, patch(
-        "app.services.system_event_service.error"
-    ) as mock_error:
+    with (
+        patch("app.services.media_upload._download_whatsapp_media") as mock_download,
+        patch("app.services.system_event_service.error") as mock_error,
+    ):
         # Simulate WhatsApp API failure
         mock_download.side_effect = Exception("WhatsApp API: Media expired or not found")
 
@@ -469,9 +490,11 @@ async def test_upload_handles_supabase_upload_failure(db, lead):
     db.commit()
     db.refresh(attachment)
 
-    with patch("app.services.media_upload._download_whatsapp_media") as mock_download, patch(
-        "app.services.media_upload._upload_to_supabase"
-    ) as mock_upload, patch("app.services.system_event_service.error") as mock_error:
+    with (
+        patch("app.services.media_upload._download_whatsapp_media") as mock_download,
+        patch("app.services.media_upload._upload_to_supabase") as mock_upload,
+        patch("app.services.system_event_service.error") as mock_error,
+    ):
         mock_download.return_value = (b"fake_data", "image/jpeg")
         mock_upload.side_effect = Exception("Supabase: Bucket not found")
 
@@ -498,9 +521,11 @@ async def test_upload_handles_missing_supabase_config(db, lead):
     db.refresh(attachment)
 
     # Patch settings where media_upload reads it so _upload_to_supabase sees None
-    with patch("app.services.media_upload._download_whatsapp_media") as mock_download, patch(
-        "app.services.media_upload.settings"
-    ) as mock_settings, patch("app.services.system_event_service.error") as mock_error:
+    with (
+        patch("app.services.media_upload._download_whatsapp_media") as mock_download,
+        patch("app.services.media_upload.settings") as mock_settings,
+        patch("app.services.system_event_service.error") as mock_error,
+    ):
         mock_download.return_value = (b"fake_data", "image/jpeg")
         mock_settings.supabase_url = None
         mock_settings.supabase_service_role_key = None
@@ -529,6 +554,7 @@ def test_sweeper_finds_pending_attachments(db, lead):
 
     # Patch where the job imports it so the job uses the mock
     with patch("app.jobs.sweep_pending_uploads.attempt_upload_attachment") as mock_upload:
+
         async def mock_upload_func(db_arg, att_id):
             att = db_arg.query(Attachment).filter(Attachment.id == att_id).first()
             if att:
@@ -586,6 +612,7 @@ def test_sweeper_processes_stale_attempts(db, lead):
     db.commit()
 
     with patch("app.jobs.sweep_pending_uploads.attempt_upload_attachment") as mock_upload:
+
         async def _noop(_db, _att_id):
             pass
 
@@ -651,6 +678,7 @@ def test_sweeper_handles_mixed_statuses(db, lead):
     db.commit()
 
     with patch("app.jobs.sweep_pending_uploads.attempt_upload_attachment") as mock_upload:
+
         async def mock_upload_func(db_arg, att_id):
             att = db_arg.query(Attachment).filter(Attachment.id == att_id).first()
             if att and att.upload_status == "PENDING":
@@ -716,12 +744,11 @@ async def test_upload_handles_network_timeout(db, lead):
     db.commit()
     db.refresh(attachment)
 
-    with patch("app.services.media_upload._download_whatsapp_media") as mock_download, patch(
-        "app.services.system_event_service.error"
-    ) as mock_error:
-        import asyncio
-
-        mock_download.side_effect = asyncio.TimeoutError("Request timeout")
+    with (
+        patch("app.services.media_upload._download_whatsapp_media") as mock_download,
+        patch("app.services.system_event_service.error") as mock_error,
+    ):
+        mock_download.side_effect = TimeoutError("Request timeout")
 
         await attempt_upload_attachment(db, attachment.id)
 
@@ -745,9 +772,10 @@ async def test_upload_handles_invalid_media_response(db, lead):
     db.commit()
     db.refresh(attachment)
 
-    with patch("app.services.media_upload._download_whatsapp_media") as mock_download, patch(
-        "app.services.system_event_service.error"
-    ) as mock_error:
+    with (
+        patch("app.services.media_upload._download_whatsapp_media") as mock_download,
+        patch("app.services.system_event_service.error") as mock_error,
+    ):
         # Simulate invalid response (no URL in media info)
         mock_download.side_effect = ValueError("No URL in WhatsApp media response")
 
@@ -777,6 +805,7 @@ def test_sweeper_limit_respected(db, lead):
 
     # Patch where the job imports it so the job uses the mock
     with patch("app.jobs.sweep_pending_uploads.attempt_upload_attachment") as mock_upload:
+
         async def _noop(_db, _att_id):
             pass
 
@@ -822,7 +851,9 @@ def test_attachment_created_for_video_message(client, db, lead, monkeypatch):
         assert response.status_code == 200
 
         # Video messages should NOT create attachments (only image/document)
-        attachment = db.query(Attachment).filter(Attachment.whatsapp_media_id == "media_video").first()
+        attachment = (
+            db.query(Attachment).filter(Attachment.whatsapp_media_id == "media_video").first()
+        )
         assert attachment is None
 
 
@@ -859,5 +890,7 @@ def test_attachment_created_for_audio_message(client, db, lead, monkeypatch):
         assert response.status_code == 200
 
         # Audio messages should NOT create attachments
-        attachment = db.query(Attachment).filter(Attachment.whatsapp_media_id == "media_audio").first()
+        attachment = (
+            db.query(Attachment).filter(Attachment.whatsapp_media_id == "media_audio").first()
+        )
         assert attachment is None

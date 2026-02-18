@@ -117,4 +117,4 @@ def test_no_direct_httpx_client_creation_in_app():
             "Use create_httpx_client() from app.services.http_client instead:\n\n"
             + "\n".join(f"  - {issue}" for issue in issues)
         )
-        assert False, error_msg
+        raise AssertionError(error_msg)

@@ -8,7 +8,7 @@ For production at scale, consider Redis-based rate limiting.
 import logging
 import time
 from collections import defaultdict
-from typing import Callable
+from collections.abc import Callable
 
 from fastapi import Request, Response, status
 from fastapi.responses import JSONResponse
@@ -27,9 +27,7 @@ def _clean_old_entries(client_ip: str, window_seconds: int) -> None:
     """Remove entries older than the time window."""
     now = time.time()
     cutoff = now - window_seconds
-    _rate_limit_store[client_ip] = [
-        ts for ts in _rate_limit_store[client_ip] if ts > cutoff
-    ]
+    _rate_limit_store[client_ip] = [ts for ts in _rate_limit_store[client_ip] if ts > cutoff]
 
 
 def _is_rate_limited(client_ip: str) -> bool:

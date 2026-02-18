@@ -23,11 +23,18 @@ os.environ.setdefault("WHATSAPP_DRY_RUN", "true")
 os.environ.setdefault("DEMO_MODE", "false")  # Ensure demo mode is off in tests
 os.environ.setdefault("RATE_LIMIT_ENABLED", "false")  # Disable rate limiting in tests
 
-from app.db.base import Base
-from app.db.deps import get_db
 # Import all models so Base.metadata includes every table (e.g. attachments)
 import app.db.models as _models  # noqa: F401
-from app.db.models import Attachment, Lead, LeadAnswer, ProcessedMessage, ActionToken, SystemEvent  # noqa: F401
+from app.db.base import Base
+from app.db.deps import get_db
+from app.db.models import (  # noqa: F401
+    ActionToken,
+    Attachment,
+    Lead,
+    LeadAnswer,
+    ProcessedMessage,
+    SystemEvent,
+)
 from app.main import app
 
 # Test database URL (in-memory SQLite for fast tests)

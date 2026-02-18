@@ -217,9 +217,7 @@ async def whatsapp_inbound(
             )
             existing = db.execute(stmt).scalar_one_or_none()
             existing_ts = (
-                existing.processed_at.isoformat()
-                if existing and existing.processed_at
-                else None
+                existing.processed_at.isoformat() if existing and existing.processed_at else None
             )
             return {
                 "received": True,

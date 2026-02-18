@@ -9,7 +9,7 @@ import logging
 import sys
 from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import and_, or_
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.db.models import Attachment

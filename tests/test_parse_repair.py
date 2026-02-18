@@ -212,9 +212,7 @@ async def test_soft_repair_location(db: Session, sample_lead: Lead, monkeypatch)
 
     mock_send = AsyncMock(return_value={"status": "sent"})
     monkeypatch.setattr("app.services.conversation.send_whatsapp_message", mock_send)
-    mock_render = MagicMock(
-        return_value="Just to make sure — what city are you currently in?"
-    )
+    mock_render = MagicMock(return_value="Just to make sure — what city are you currently in?")
     monkeypatch.setattr("app.services.message_composer.render_message", mock_render)
 
     result = await _handle_qualifying_lead(db, sample_lead, "a", dry_run=True)  # Too short

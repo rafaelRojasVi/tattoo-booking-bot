@@ -99,8 +99,13 @@ def info(
         Created SystemEvent object
     """
     return log_event(
-        db, level="INFO", event_type=event_type, lead_id=lead_id,
-        payload=payload, exc=exc, correlation_id=correlation_id,
+        db,
+        level="INFO",
+        event_type=event_type,
+        lead_id=lead_id,
+        payload=payload,
+        exc=exc,
+        correlation_id=correlation_id,
     )
 
 
@@ -125,8 +130,13 @@ def warn(
         Created SystemEvent object
     """
     return log_event(
-        db, level="WARN", event_type=event_type, lead_id=lead_id,
-        payload=payload, exc=exc, correlation_id=correlation_id,
+        db,
+        level="WARN",
+        event_type=event_type,
+        lead_id=lead_id,
+        payload=payload,
+        exc=exc,
+        correlation_id=correlation_id,
     )
 
 
@@ -151,8 +161,13 @@ def error(
         Created SystemEvent object
     """
     return log_event(
-        db, level="ERROR", event_type=event_type, lead_id=lead_id,
-        payload=payload, exc=exc, correlation_id=correlation_id,
+        db,
+        level="ERROR",
+        event_type=event_type,
+        lead_id=lead_id,
+        payload=payload,
+        exc=exc,
+        correlation_id=correlation_id,
     )
 
 

@@ -185,7 +185,7 @@ def test_deposit_link_message_timestamp_updated(client, db):
 
     initial_timestamp = lead.last_bot_message_at
 
-    with patch("app.api.admin.send_whatsapp_message", new_callable=AsyncMock):
+    with patch("app.services.messaging.send_whatsapp_message", new_callable=AsyncMock):
         response = client.post(f"/admin/leads/{lead.id}/send-deposit", json={"amount_pence": 5000})
 
         assert response.status_code == 200

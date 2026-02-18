@@ -232,6 +232,7 @@ def compose_message(
     if apply_voice_to_result and result:
         try:
             from app.services.tone import apply_voice
+
             result = apply_voice(result, is_template=False)
         except Exception as e:
             logger.debug(f"Voice pack not applied: {e}")

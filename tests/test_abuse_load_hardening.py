@@ -6,7 +6,6 @@ Abuse/load hardening tests.
 - WhatsApp webhook retry storm: same message_id 20x concurrent → only 1 advances step
 """
 
-import json
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import UTC, datetime, timedelta
 from unittest.mock import patch
@@ -15,7 +14,6 @@ import pytest
 
 from app.db.models import Lead, OutboxMessage
 from app.services.conversation import STATUS_QUALIFYING
-
 
 # =============================================================================
 # Rate limiting
@@ -51,7 +49,7 @@ def test_rate_limit_10_requests_ok_11th_returns_429(
     # First 10 requests succeed
     for i in range(10):
         resp = client.get("/admin/outbox", headers=headers)
-        assert resp.status_code == 200, f"Request {i+1} should succeed"
+        assert resp.status_code == 200, f"Request {i + 1} should succeed"
 
     # 11th returns 429
     resp = client.get("/admin/outbox", headers=headers)
@@ -85,7 +83,7 @@ def test_rate_limit_window_reset_after_time_passes(
     with patch("app.middleware.rate_limit.time.time", side_effect=mock_time):
         for i in range(10):
             resp = client.get("/admin/outbox", headers=headers)
-            assert resp.status_code == 200, f"Request {i+1} should succeed"
+            assert resp.status_code == 200, f"Request {i + 1} should succeed"
 
         # 11th: time=70, entries at 0 expire (cutoff=10), so under limit
         resp = client.get("/admin/outbox", headers=headers)
@@ -143,17 +141,17 @@ def test_outbox_retry_limit_50_only_50_attempted(
     from sqlalchemy import func, select
 
     retried = db.execute(
-        select(func.count()).select_from(OutboxMessage).where(
-            OutboxMessage.status == "FAILED", OutboxMessage.attempts == 2
-        )
+        select(func.count())
+        .select_from(OutboxMessage)
+        .where(OutboxMessage.status == "FAILED", OutboxMessage.attempts == 2)
     ).scalar()
     assert retried == 50
 
     # 50 should be untouched (still attempts=1)
     untouched = db.execute(
-        select(func.count()).select_from(OutboxMessage).where(
-            OutboxMessage.status == "FAILED", OutboxMessage.attempts == 1
-        )
+        select(func.count())
+        .select_from(OutboxMessage)
+        .where(OutboxMessage.status == "FAILED", OutboxMessage.attempts == 1)
     ).scalar()
     assert untouched == 50
 
@@ -229,9 +227,7 @@ def _make_whatsapp_payload(wa_from: str, text: str, message_id: str):
     }
 
 
-def test_whatsapp_retry_storm_same_message_id_20_concurrent_only_one_advances(
-    client, db
-):
+def test_whatsapp_retry_storm_same_message_id_20_concurrent_only_one_advances(client, db):
     """Send same message_id 20 times concurrently; only 1 advances step, others are duplicates."""
     # Create lead in QUALIFYING at step 0 (idea question)
     lead = Lead(
@@ -306,8 +302,6 @@ def test_whatsapp_retry_storm_outbox_at_most_once(client, db, monkeypatch):
     from sqlalchemy import func, select
 
     outbox_count = db.execute(
-        select(func.count()).select_from(OutboxMessage).where(
-            OutboxMessage.lead_id == lead.id
-        )
+        select(func.count()).select_from(OutboxMessage).where(OutboxMessage.lead_id == lead.id)
     ).scalar()
     assert outbox_count <= 1, f"Outbox should have at most 1 row, got {outbox_count}"

@@ -13,6 +13,8 @@ from datetime import UTC, datetime
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
+from app.constants.event_types import reminder_booking_event_type, reminder_qualifying_event_type
+from app.constants.providers import PROVIDER_REMINDER
 from app.db.models import Lead
 from app.services.conversation import (
     STATUS_BOOKING_LINK_SENT,
@@ -22,10 +24,6 @@ from app.services.conversation import (
     STATUS_OPTOUT,
     STATUS_QUALIFYING,
 )
-from app.constants.event_types import reminder_booking_event_type, reminder_qualifying_event_type
-from app.constants.providers import PROVIDER_REMINDER
-from app.constants.event_types import reminder_booking_event_type, reminder_qualifying_event_type
-from app.constants.providers import PROVIDER_REMINDER
 from app.services.safety import check_and_record_processed_event
 from app.services.whatsapp_window import send_with_window_check
 

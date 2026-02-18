@@ -98,7 +98,7 @@ async def test_complete_qualification_flow(client, db):
         "travel_city",
         "budget",
     ]
-    for i, q_key in enumerate(previous_questions):
+    for _i, q_key in enumerate(previous_questions):
         answer = LeadAnswer(
             lead_id=lead.id,
             question_key=q_key,

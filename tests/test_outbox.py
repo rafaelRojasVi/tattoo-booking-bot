@@ -2,8 +2,6 @@
 Tests for Outbox-lite (feature-flagged).
 """
 
-import pytest
-
 from app.core.config import settings
 from app.db.models import Lead
 from app.services.outbox_service import mark_outbox_failed, mark_outbox_sent, write_outbox

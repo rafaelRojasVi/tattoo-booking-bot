@@ -3,9 +3,6 @@ Tests for SystemEvent retention cleanup.
 """
 
 from datetime import UTC, datetime, timedelta
-from unittest.mock import patch
-
-import pytest
 
 from app.db.models import Lead, SystemEvent
 from app.services.system_event_service import cleanup_old_events, info
@@ -30,7 +27,10 @@ def test_cleanup_old_events_deletes_older_than_cutoff(db):
     # Set first two events to 100 days ago
     old_date = datetime.now(UTC) - timedelta(days=100)
     for e in events[:2]:
-        db.execute(text("UPDATE system_events SET created_at = :t WHERE id = :id"), {"t": old_date, "id": e.id})
+        db.execute(
+            text("UPDATE system_events SET created_at = :t WHERE id = :id"),
+            {"t": old_date, "id": e.id},
+        )
     db.commit()
 
     cutoff = datetime.now(UTC) - timedelta(days=90)

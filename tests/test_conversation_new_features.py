@@ -228,7 +228,7 @@ async def test_completion_sets_pending_approval(client, db):
     # Add previous answers
     from app.services.questions import CONSULTATION_QUESTIONS
 
-    for i, question in enumerate(CONSULTATION_QUESTIONS[:-1]):  # All except last
+    for _i, question in enumerate(CONSULTATION_QUESTIONS[:-1]):  # All except last
         answer = LeadAnswer(
             lead_id=lead.id,
             question_key=question.key,

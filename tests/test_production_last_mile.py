@@ -19,13 +19,11 @@ from app.api.webhooks import stripe_webhook, whatsapp_inbound
 from app.db.models import Lead, LeadAnswer, ProcessedMessage
 from app.services.conversation import (
     STATUS_AWAITING_DEPOSIT,
-    STATUS_NEEDS_ARTIST_REPLY,
     STATUS_OPTOUT,
     STATUS_QUALIFYING,
     handle_inbound_message,
 )
 from app.services.leads import get_or_create_lead
-from tests.conftest import TestingSessionLocal
 from tests.helpers.stripe_webhook import (
     build_stripe_webhook_request,
     create_checkout_completed_event,
@@ -220,9 +218,9 @@ async def test_duplicate_message_id_different_text_is_ignored(db):
         db.commit()  # Commit first request so duplicate check in r2 sees committed row
 
         mock_request.body = AsyncMock(
-            return_value=json.dumps(make_payload("15x15 cm", int(datetime.now(UTC).timestamp()) + 1)).encode(
-                "utf-8"
-            )
+            return_value=json.dumps(
+                make_payload("15x15 cm", int(datetime.now(UTC).timestamp()) + 1)
+            ).encode("utf-8")
         )
         r2 = await whatsapp_inbound(mock_request, BackgroundTasks(), db=db)
 
@@ -240,7 +238,9 @@ async def test_duplicate_message_id_different_text_is_ignored(db):
 
     stmt = select(LeadAnswer).where(LeadAnswer.lead_id == lead_id)
     all_answers = db.execute(stmt).scalars().all()
-    assert len(all_answers) == 1, "Only first message should create an answer (second was duplicate)"
+    assert len(all_answers) == 1, (
+        "Only first message should create an answer (second was duplicate)"
+    )
     assert all_answers[0].answer_text.strip() == "10x12 cm"
 
 

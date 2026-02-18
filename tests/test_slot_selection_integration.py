@@ -172,7 +172,9 @@ async def test_slot_selection_repair_on_invalid(
 
     assert len(mock_send_calls) == 1
     # Repair message comes from compose_message (REPAIR_SLOT)
-    sent_msg = mock_send_calls[0][1].get("message") or (mock_send_calls[0][0][1] if len(mock_send_calls[0][0]) >= 2 else "")
+    sent_msg = mock_send_calls[0][1].get("message") or (
+        mock_send_calls[0][0][1] if len(mock_send_calls[0][0]) >= 2 else ""
+    )
     assert sent_msg and ("slot" in sent_msg.lower() or "1" in sent_msg or "8" in sent_msg)
 
 

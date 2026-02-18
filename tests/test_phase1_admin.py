@@ -316,9 +316,9 @@ def test_test_webhook_exception_returns_200_and_logs_system_event(
     assert data.get("error_logged") is True
 
     # Verify SystemEvent was logged with correlation_id
-    events = db.query(SystemEvent).filter(
-        SystemEvent.event_type == EVENT_WHATSAPP_WEBHOOK_FAILURE
-    ).all()
+    events = (
+        db.query(SystemEvent).filter(SystemEvent.event_type == EVENT_WHATSAPP_WEBHOOK_FAILURE).all()
+    )
     assert len(events) >= 1
     ev = events[-1]
     assert ev.payload is not None
@@ -326,9 +326,7 @@ def test_test_webhook_exception_returns_200_and_logs_system_event(
     assert ev.payload.get("simulated") is True
 
 
-def test_test_webhook_exception_returns_404_in_production(
-    db, monkeypatch
-):
+def test_test_webhook_exception_returns_404_in_production(db, monkeypatch):
     """Test POST /admin/test-webhook-exception returns 404 when APP_ENV=production."""
     monkeypatch.setenv("ADMIN_API_KEY", "test_admin_key")
     monkeypatch.setenv("APP_ENV", "production")
@@ -342,10 +340,10 @@ def test_test_webhook_exception_returns_404_in_production(
     if "app.main" in sys.modules:
         del sys.modules["app.main"]
 
-    from app.main import app
     from fastapi.testclient import TestClient
 
     from app.db.deps import get_db
+    from app.main import app
 
     def override_get_db():
         try:

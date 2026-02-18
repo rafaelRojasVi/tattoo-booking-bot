@@ -361,7 +361,7 @@ async def test_duplicate_whatsapp_exactly_one_state_transition(db):
         mock_request.headers = {"X-Hub-Signature-256": "test_signature"}
 
         # Process message 3 times (simulating retries/duplicates)
-        for i in range(3):
+        for _i in range(3):
             await whatsapp_inbound(mock_request, BackgroundTasks(), db=db)
             db.refresh(lead)
 
@@ -432,7 +432,7 @@ async def test_duplicate_stripe_exactly_one_transition(db):
             "app.services.stripe_service.verify_webhook_signature", return_value=webhook_event
         ):
             # Process webhook 3 times (simulating retries/duplicates)
-            for i in range(3):
+            for _i in range(3):
                 await stripe_webhook(mock_request, BackgroundTasks(), db=db)
                 db.refresh(lead)
 

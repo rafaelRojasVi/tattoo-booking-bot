@@ -125,7 +125,7 @@ app.add_middleware(CorrelationIdMiddleware)
 def health():
     """
     Health check endpoint with template and feature flag visibility.
-    
+
     Returns 200 immediately - used for basic health checks.
     """
     from app.services.template_check import REQUIRED_TEMPLATES
@@ -151,7 +151,7 @@ def health():
 def ready(db: Session = Depends(get_db)):
     """
     Readiness check endpoint - verifies database connectivity.
-    
+
     Returns 200 if database is accessible, 503 if not.
     Used by load balancers and orchestration systems.
     """

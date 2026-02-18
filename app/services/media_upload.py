@@ -156,7 +156,9 @@ async def _download_whatsapp_media(media_id: str) -> tuple[bytes, str]:
         return media_response.content, content_type
 
 
-async def _upload_to_supabase(bucket: str, object_key: str, media_bytes: bytes, content_type: str) -> None:
+async def _upload_to_supabase(
+    bucket: str, object_key: str, media_bytes: bytes, content_type: str
+) -> None:
     """
     Upload media to Supabase Storage.
 
@@ -172,7 +174,7 @@ async def _upload_to_supabase(bucket: str, object_key: str, media_bytes: bytes, 
         )
 
     try:
-        from supabase import create_client, Client
+        from supabase import Client, create_client
 
         supabase: Client = create_client(settings.supabase_url, settings.supabase_service_role_key)
 
@@ -188,7 +190,7 @@ async def _upload_to_supabase(bucket: str, object_key: str, media_bytes: bytes, 
     except ImportError:
         raise ValueError(
             "supabase package not installed. Install with: pip install supabase"
-        )
+        ) from None
     except Exception as e:
         logger.error(f"Supabase upload failed: {e}", exc_info=True)
         raise

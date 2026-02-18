@@ -50,7 +50,7 @@ def looks_like_multi_answer_bundle(
     signals = 0
 
     # (a) dimension: use parse_dimensions when possible; else dimension pattern with word-boundary cm/inch
-    from app.services.estimation_service import parse_dimensions, parse_budget_from_text
+    from app.services.estimation_service import parse_budget_from_text, parse_dimensions
 
     has_dimension = parse_dimensions(text) is not None
     if not has_dimension:

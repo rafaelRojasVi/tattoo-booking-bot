@@ -30,7 +30,6 @@ from tests.helpers.golden_transcript import (
     make_capturing_send,
 )
 
-
 # Last question index (0-based); total questions = 13, so last index = 12
 PHASE1_LAST_STEP = get_total_questions() - 1
 
@@ -72,15 +71,11 @@ async def test_golden_transcript_phase1_happy_path(db):
         # 1) Initial message -> welcome + first question
         user_messages.append("Hi, I'd like to book a tattoo")
         n_bot_before = len(bot_messages)
-        await handle_inbound_message(
-            db, lead, user_messages[-1], dry_run=True
-        )
+        await handle_inbound_message(db, lead, user_messages[-1], dry_run=True)
         db.refresh(lead)
         assert lead.status == STATUS_QUALIFYING
         assert lead.current_step == 0
-        assert len(bot_messages) - n_bot_before <= 1, (
-            "Happy path: at most one bot send per inbound"
-        )
+        assert len(bot_messages) - n_bot_before <= 1, "Happy path: at most one bot send per inbound"
         previous_step = 0
 
         # 2) Answer each question in order
@@ -278,9 +273,7 @@ async def test_golden_transcript_handover_cooldown_and_continue_flow(db):
         assert len(bot_messages) - n_bot_before <= 1, (
             f"handover_cooldown: at most one bot send per inbound.\n\n{transcript}"
         )
-        assert lead.current_step == 0, (
-            f"Expected step 0, got {lead.current_step}.\n\n{transcript}"
-        )
+        assert lead.current_step == 0, f"Expected step 0, got {lead.current_step}.\n\n{transcript}"
 
         # 2) "human" -> handover (1 send)
         user_messages.append("human")
@@ -327,7 +320,10 @@ async def test_golden_transcript_handover_cooldown_and_continue_flow(db):
     transcript = format_transcript(user_messages, bot_messages)
     if os.environ.get("GOLDEN_TRANSCRIPT_PRINT"):
         print(
-            "\n" + "=" * 60 + "\nGOLDEN TRANSCRIPT (handover_cooldown_and_continue_flow)\n" + "=" * 60
+            "\n"
+            + "=" * 60
+            + "\nGOLDEN TRANSCRIPT (handover_cooldown_and_continue_flow)\n"
+            + "=" * 60
         )
         print(transcript)
         print("=" * 60)
@@ -378,16 +374,12 @@ async def test_golden_transcript_media_wrong_step_ack_and_reprompt_flow(db):
         assert len(bot_messages) - n_bot_before <= 1, (
             f"media_wrong_step: at most one bot send per inbound.\n\n{transcript}"
         )
-        assert lead.current_step == 0, (
-            f"Expected step 0, got {lead.current_step}.\n\n{transcript}"
-        )
+        assert lead.current_step == 0, f"Expected step 0, got {lead.current_step}.\n\n{transcript}"
 
         # 2) Image at wrong step (no caption) -> ack + reprompt (1 send), step stays 0
         user_messages.append("[image no caption]")  # transcript label; we pass "" with has_media
         n_bot_before = len(bot_messages)
-        await handle_inbound_message(
-            db, lead, "", dry_run=True, has_media=True
-        )
+        await handle_inbound_message(db, lead, "", dry_run=True, has_media=True)
         db.refresh(lead)
         transcript = format_transcript(user_messages, bot_messages)
         assert len(bot_messages) - n_bot_before <= 1, (
@@ -472,9 +464,7 @@ async def test_golden_transcript_multi_answer_bundle_reprompts_and_no_advance(db
         assert len(bot_messages) - n_bot_before <= 1, (
             f"multi_answer_bundle: at most one bot send per inbound.\n\n{transcript}"
         )
-        assert lead.current_step == 0, (
-            f"Expected step 0, got {lead.current_step}.\n\n{transcript}"
-        )
+        assert lead.current_step == 0, f"Expected step 0, got {lead.current_step}.\n\n{transcript}"
 
         # 2) idea answer -> Q1 (placement)
         user_messages.append("A dragon on my arm")
@@ -559,10 +549,17 @@ async def test_golden_transcript_outside_24h_template_then_resume(db):
     capturing_send = make_capturing_send(bot_messages, wa_from)
 
     # Track template send: when send_template_message is called, append marker to bot_messages
-    async def capturing_template_send(to: str, template_name: str, template_params: dict, dry_run: bool = True):
+    async def capturing_template_send(
+        to: str, template_name: str, template_params: dict, dry_run: bool = True
+    ):
         if to == wa_from:
             bot_messages.append(f"[TEMPLATE: {template_name}]")
-        return {"status": "dry_run_template", "message_id": None, "to": to, "template_name": template_name}
+        return {
+            "status": "dry_run_template",
+            "message_id": None,
+            "to": to,
+            "template_name": template_name,
+        }
 
     lead = get_or_create_lead(db, wa_from=wa_from)
     db.commit()
@@ -641,10 +638,7 @@ async def test_golden_transcript_outside_24h_template_then_resume(db):
     transcript = format_transcript(user_messages, bot_messages)
     if os.environ.get("GOLDEN_TRANSCRIPT_PRINT"):
         print(
-            "\n"
-            + "=" * 60
-            + "\nGOLDEN TRANSCRIPT (outside_24h_template_then_resume)\n"
-            + "=" * 60
+            "\n" + "=" * 60 + "\nGOLDEN TRANSCRIPT (outside_24h_template_then_resume)\n" + "=" * 60
         )
         print(transcript)
         print("=" * 60)
@@ -713,9 +707,7 @@ async def test_golden_transcript_multi_answer_single_message_one_at_a_time(db):
         db.refresh(lead)
         transcript = format_transcript(user_messages, bot_messages, max_line=None)
         n_sent = len(bot_messages) - n_bot_before
-        assert n_sent == 1, (
-            f"Exactly one outbound send per inbound (got {n_sent}).\n\n{transcript}"
-        )
+        assert n_sent == 1, f"Exactly one outbound send per inbound (got {n_sent}).\n\n{transcript}"
         assert lead.status == STATUS_QUALIFYING, (
             f"After Hi: expected status QUALIFYING, got {lead.status}.\n\n{transcript}"
         )
@@ -742,7 +734,10 @@ async def test_golden_transcript_multi_answer_single_message_one_at_a_time(db):
         )
         # Reprompt must include current question text
         one_at_a_time_msg = bot_messages[-1] if bot_messages else ""
-        assert _IDEA_QUESTION_TEXT in one_at_a_time_msg or "What tattoo do you want" in one_at_a_time_msg, (
+        assert (
+            _IDEA_QUESTION_TEXT in one_at_a_time_msg
+            or "What tattoo do you want" in one_at_a_time_msg
+        ), (
             f"Reprompt must include current question text 'What tattoo do you want?'.\n\n{transcript}"
         )
         # Snapshot: message must come from copy/YAML key (one_at_a_time_reprompt)
@@ -765,9 +760,7 @@ async def test_golden_transcript_multi_answer_single_message_one_at_a_time(db):
         db.refresh(lead)
         transcript = format_transcript(user_messages, bot_messages, max_line=None)
         n_sent = len(bot_messages) - n_bot_before
-        assert n_sent == 1, (
-            f"Exactly one outbound send per inbound (got {n_sent}).\n\n{transcript}"
-        )
+        assert n_sent == 1, f"Exactly one outbound send per inbound (got {n_sent}).\n\n{transcript}"
         assert lead.current_step == 1, (
             f"Step advanced after single answer: expected 1, got {lead.current_step}.\n\n{transcript}"
         )
@@ -1056,7 +1049,9 @@ async def test_golden_transcript_reference_images_accepts_realism_at_advances_to
 
     transcript = format_transcript(user_messages, bot_messages, max_line=None)
     if os.environ.get("GOLDEN_TRANSCRIPT_PRINT"):
-        _print_transcript_audit("reference_images_accepts_realism_at_advances_to_budget", transcript)
+        _print_transcript_audit(
+            "reference_images_accepts_realism_at_advances_to_budget", transcript
+        )
     assert lead.current_step == 7, f"Final step 7.\n\n{transcript}"
 
 
@@ -1127,7 +1122,7 @@ async def test_restart_then_new_answers_override_old_answers_in_summary(db):
             f"'sleeve tattoo flowers' must be processed normally (24h window open); got step {lead.current_step}"
         )
         assert len(bot_messages) - n_bot_before_sleeve == 1, (
-            f"Exactly one outbound for sleeve message (no template-only path)"
+            "Exactly one outbound for sleeve message (no template-only path)"
         )
 
         user_messages.append("forearm")
@@ -1137,9 +1132,7 @@ async def test_restart_then_new_answers_override_old_answers_in_summary(db):
     summary = get_lead_summary(db, lead.id)
     transcript = format_transcript(user_messages, bot_messages, max_line=None)
 
-    assert "idea" in summary.get("answers", {}), (
-        f"Summary should have idea.\n\n{transcript}"
-    )
+    assert "idea" in summary.get("answers", {}), f"Summary should have idea.\n\n{transcript}"
     assert "placement" in summary.get("answers", {}), (
         f"Summary should have placement.\n\n{transcript}"
     )

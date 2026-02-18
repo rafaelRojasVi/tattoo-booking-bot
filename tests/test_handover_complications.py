@@ -21,7 +21,6 @@ from app.api.webhooks import stripe_webhook, whatsapp_inbound
 from app.db.models import Lead, LeadAnswer
 from app.services.conversation import (
     HANDOVER_HOLD_REPLY_COOLDOWN_HOURS,
-    STATUS_DEPOSIT_PAID,
     STATUS_NEEDS_ARTIST_REPLY,
     STATUS_OPTOUT,
     STATUS_QUALIFYING,
@@ -424,9 +423,8 @@ def test_handover_packet_includes_name_and_contact(db):
 @pytest.mark.asyncio
 async def test_notify_artist_needs_reply_includes_name_and_contact(db):
     """Artist notification message includes Contact (wa_from) and Name (from answers or —)."""
-    from app.services.artist_notifications import notify_artist_needs_reply
-
     from app.core.config import settings
+    from app.services.artist_notifications import notify_artist_needs_reply
 
     lead = Lead(
         id=1,

@@ -9,11 +9,11 @@ import re
 import unicodedata
 
 # Common unicode replacements
-NBSP = "\u00A0"
-ZWSP = "\u200B"
-ZWNBSP = "\uFEFF"
+NBSP = "\u00a0"
+ZWSP = "\u200b"
+ZWNBSP = "\ufeff"
 # Multiplication sign (× U+00D7) → ASCII x for dimension parsing
-MULT_SIGN = "\u00D7"
+MULT_SIGN = "\u00d7"
 
 
 def normalize_text(text: str | None) -> str:

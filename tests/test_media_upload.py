@@ -2,9 +2,10 @@
 Tests for media upload functionality.
 """
 
-import pytest
 from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
 
 from app.db.models import Attachment, Lead
 from app.services.media_upload import attempt_upload_attachment
@@ -42,9 +43,10 @@ def pending_attachment(db, lead):
 @pytest.mark.asyncio
 async def test_attempt_upload_success(db, pending_attachment):
     """Test successful upload flow."""
-    with patch("app.services.media_upload._download_whatsapp_media") as mock_download, patch(
-        "app.services.media_upload._upload_to_supabase"
-    ) as mock_upload:
+    with (
+        patch("app.services.media_upload._download_whatsapp_media") as mock_download,
+        patch("app.services.media_upload._upload_to_supabase") as mock_upload,
+    ):
         # Mock successful download
         mock_download.return_value = (b"fake_image_data", "image/jpeg")
 
@@ -60,7 +62,10 @@ async def test_attempt_upload_success(db, pending_attachment):
         assert pending_attachment.uploaded_at is not None
         assert pending_attachment.upload_attempts == 1
         assert pending_attachment.bucket == "reference-images"
-        assert pending_attachment.object_key == f"leads/{pending_attachment.lead_id}/{pending_attachment.id}"
+        assert (
+            pending_attachment.object_key
+            == f"leads/{pending_attachment.lead_id}/{pending_attachment.id}"
+        )
         assert pending_attachment.content_type == "image/jpeg"
         assert pending_attachment.size_bytes == len(b"fake_image_data")
         assert pending_attachment.last_error is None
@@ -73,9 +78,10 @@ async def test_attempt_upload_success(db, pending_attachment):
 @pytest.mark.asyncio
 async def test_attempt_upload_failure_retry(db, pending_attachment):
     """Test upload failure with retry capability."""
-    with patch("app.services.media_upload._download_whatsapp_media") as mock_download, patch(
-        "app.services.system_event_service.error"
-    ) as mock_error:
+    with (
+        patch("app.services.media_upload._download_whatsapp_media") as mock_download,
+        patch("app.services.system_event_service.error") as mock_error,
+    ):
         # Mock download failure
         mock_download.side_effect = Exception("WhatsApp API error")
 
@@ -108,9 +114,10 @@ async def test_attempt_upload_fails_after_5_attempts(db, lead):
     db.commit()
     db.refresh(attachment)
 
-    with patch("app.services.media_upload._download_whatsapp_media") as mock_download, patch(
-        "app.services.system_event_service.error"
-    ) as mock_error:
+    with (
+        patch("app.services.media_upload._download_whatsapp_media") as mock_download,
+        patch("app.services.system_event_service.error") as mock_error,
+    ):
         # Mock download failure
         mock_download.side_effect = Exception("Persistent error")
 
@@ -166,6 +173,7 @@ def test_sweep_pending_uploads_creates_pending(db, lead):
 
     # Patch where the job imports it so the job uses the mock
     with patch("app.jobs.sweep_pending_uploads.attempt_upload_attachment") as mock_upload:
+
         async def mock_upload_func(db_arg, att_id):
             att = db_arg.query(Attachment).filter(Attachment.id == att_id).first()
             if att:
@@ -271,13 +279,15 @@ async def test_download_whatsapp_media_success():
 async def test_upload_to_supabase_success():
     """Test successful Supabase upload."""
     pytest.importorskip("supabase")
-    from app.services.media_upload import _upload_to_supabase
     from app.core.config import settings
+    from app.services.media_upload import _upload_to_supabase
 
     # Mock settings; patch supabase.create_client (used inside _upload_to_supabase)
-    with patch.object(settings, "supabase_url", "https://test.supabase.co"), patch.object(
-        settings, "supabase_service_role_key", "test_key"
-    ), patch("supabase.create_client") as mock_create_client:
+    with (
+        patch.object(settings, "supabase_url", "https://test.supabase.co"),
+        patch.object(settings, "supabase_service_role_key", "test_key"),
+        patch("supabase.create_client") as mock_create_client,
+    ):
         # Mock Supabase client
         mock_storage = MagicMock()
         mock_storage.from_.return_value.upload = MagicMock()
@@ -297,12 +307,13 @@ async def test_upload_to_supabase_success():
 @pytest.mark.asyncio
 async def test_upload_to_supabase_not_configured():
     """Test that upload fails if Supabase is not configured."""
-    from app.services.media_upload import _upload_to_supabase
     from app.core.config import settings
+    from app.services.media_upload import _upload_to_supabase
 
     # Mock settings without Supabase config
-    with patch.object(settings, "supabase_url", None), patch.object(
-        settings, "supabase_service_role_key", None
+    with (
+        patch.object(settings, "supabase_url", None),
+        patch.object(settings, "supabase_service_role_key", None),
     ):
         # Run upload (should raise ValueError)
         with pytest.raises(ValueError, match="Supabase not configured"):

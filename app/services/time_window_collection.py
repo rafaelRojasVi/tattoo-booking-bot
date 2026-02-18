@@ -96,9 +96,7 @@ async def collect_time_window(
         from app.services.artist_notifications import notify_artist_needs_reply
         from app.services.state_machine import transition
 
-        reason = (
-            f"Collected {window_count} preferred time windows - no calendar slots available"
-        )
+        reason = f"Collected {window_count} preferred time windows - no calendar slots available"
         transition(db, lead, STATUS_NEEDS_ARTIST_REPLY, reason=reason)
 
         # Notify artist with summary

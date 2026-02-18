@@ -18,7 +18,6 @@ from app.services.estimation_service import parse_budget_from_text, parse_dimens
 from app.services.location_parsing import is_valid_location, parse_location_input
 from app.services.slot_parsing import parse_slot_selection_logged
 
-
 # ---------------------------------------------------------------------------
 # Budget parsing (parse_budget_from_text)
 # ---------------------------------------------------------------------------
@@ -100,20 +99,21 @@ class TestBudgetMinimumInConversation:
 
     def test_budget_under_50_triggers_repair_in_flow(self, db):
         """At budget step, '4' or '£10' should trigger repair (not advance)."""
+        from app.db.models import Lead, LeadAnswer
         from app.services.conversation import handle_inbound_message
         from app.services.questions import CONSULTATION_QUESTIONS
-        from app.db.models import Lead, LeadAnswer
 
         lead = Lead(wa_from="1234567890", status="QUALIFYING", current_step=7)  # budget step
         db.add(lead)
         db.commit()
         db.refresh(lead)
-        for i, q in enumerate(CONSULTATION_QUESTIONS[:7]):
+        for _i, q in enumerate(CONSULTATION_QUESTIONS[:7]):
             if q.key != "budget":
                 db.add(LeadAnswer(lead_id=lead.id, question_key=q.key, answer_text="x"))
         db.commit()
 
         import asyncio
+
         result = asyncio.get_event_loop().run_until_complete(
             handle_inbound_message(db, lead, "4", dry_run=True)
         )
@@ -262,9 +262,12 @@ class TestOptOutWholeWordOnly:
 
     async def test_opt_out_stop_whole_word_only_not_stop_by(self, db):
         """Best ROI: STOP alone opts out; 'stop by' / 'I'll stop by' does NOT."""
-        from app.services.conversation import handle_inbound_message
         from app.db.models import Lead
-        from app.services.conversation import STATUS_OPTOUT, STATUS_QUALIFYING
+        from app.services.conversation import (
+            STATUS_OPTOUT,
+            STATUS_QUALIFYING,
+            handle_inbound_message,
+        )
 
         lead = Lead(wa_from="1234567890", status=STATUS_QUALIFYING, current_step=1)
         db.add(lead)
@@ -281,12 +284,16 @@ class TestOptOutWholeWordOnly:
         db.add(lead2)
         db.commit()
         db.refresh(lead2)
-        result_stop_by = await handle_inbound_message(db, lead2, "I'll stop by the shop", dry_run=True)
+        result_stop_by = await handle_inbound_message(
+            db, lead2, "I'll stop by the shop", dry_run=True
+        )
         db.refresh(lead2)
         assert lead2.status == STATUS_QUALIFYING
         assert result_stop_by["status"] != "opted_out"
 
-        result_dont_stop = await handle_inbound_message(db, lead2, "don't stop the convo", dry_run=True)
+        result_dont_stop = await handle_inbound_message(
+            db, lead2, "don't stop the convo", dry_run=True
+        )
         db.refresh(lead2)
         assert lead2.status == STATUS_QUALIFYING
         assert result_dont_stop["status"] != "opted_out"
@@ -298,9 +305,12 @@ class TestHumanRefundDeleteIntercepts:
 
     async def test_human_question_are_you_human_behavior_defined(self, db):
         """Best ROI: 'are you human?' — current: exact match only, so does NOT trigger."""
-        from app.services.conversation import handle_inbound_message
         from app.db.models import Lead
-        from app.services.conversation import STATUS_QUALIFYING, STATUS_NEEDS_ARTIST_REPLY
+        from app.services.conversation import (
+            STATUS_NEEDS_ARTIST_REPLY,
+            STATUS_QUALIFYING,
+            handle_inbound_message,
+        )
 
         lead = Lead(wa_from="1234567892", status=STATUS_QUALIFYING, current_step=1)
         db.add(lead)
@@ -326,9 +336,12 @@ class TestHumanRefundDeleteIntercepts:
 
     async def test_refund_substring_triggers(self, db):
         """'can I get a refund please' → handover (REFUND is substring)."""
-        from app.services.conversation import handle_inbound_message
         from app.db.models import Lead
-        from app.services.conversation import STATUS_NEEDS_ARTIST_REPLY, STATUS_QUALIFYING
+        from app.services.conversation import (
+            STATUS_NEEDS_ARTIST_REPLY,
+            STATUS_QUALIFYING,
+            handle_inbound_message,
+        )
 
         lead = Lead(wa_from="1234567894", status=STATUS_QUALIFYING, current_step=1)
         db.add(lead)
@@ -341,9 +354,12 @@ class TestHumanRefundDeleteIntercepts:
 
     async def test_delete_data_phrase_triggers(self, db):
         """'DELETE MY DATA' → handover. 'delete that tattoo idea from the sheet' has no 'DELETE DATA' substring → no delete handover."""
-        from app.services.conversation import handle_inbound_message
         from app.db.models import Lead
-        from app.services.conversation import STATUS_NEEDS_ARTIST_REPLY, STATUS_QUALIFYING
+        from app.services.conversation import (
+            STATUS_NEEDS_ARTIST_REPLY,
+            STATUS_QUALIFYING,
+            handle_inbound_message,
+        )
 
         lead = Lead(wa_from="1234567895", status=STATUS_QUALIFYING, current_step=1)
         db.add(lead)
@@ -358,10 +374,16 @@ class TestHumanRefundDeleteIntercepts:
         db.add(lead2)
         db.commit()
         db.refresh(lead2)
-        result2 = await handle_inbound_message(db, lead2, "delete that tattoo idea from the sheet", dry_run=True)
+        result2 = await handle_inbound_message(
+            db, lead2, "delete that tattoo idea from the sheet", dry_run=True
+        )
         db.refresh(lead2)
         # "DELETE THAT TATTOO IDEA FROM THE SHEET" does not contain "DELETE DATA" → no delete handler
-        assert lead2.handover_reason != "Client requested data deletion / GDPR" if lead2.handover_reason else True
+        assert (
+            lead2.handover_reason != "Client requested data deletion / GDPR"
+            if lead2.handover_reason
+            else True
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -375,9 +397,8 @@ class TestMediaEdgeCases:
 
     async def test_media_only_reprompts_and_does_not_advance(self, db):
         """Best ROI: media-only at dimensions step → ack + reprompt, no advance."""
-        from app.services.conversation import handle_inbound_message
         from app.db.models import Lead
-        from app.services.conversation import STATUS_QUALIFYING
+        from app.services.conversation import STATUS_QUALIFYING, handle_inbound_message
 
         lead = Lead(wa_from="1234567897", status=STATUS_QUALIFYING, current_step=2)  # dimensions
         db.add(lead)
@@ -393,9 +414,8 @@ class TestMediaEdgeCases:
 
     async def test_captioned_media_stores_media_and_parses_caption(self, db):
         """Best ROI: caption + has_media at dimensions step → parse caption, advance (no ack reprompt)."""
-        from app.services.conversation import handle_inbound_message
         from app.db.models import Lead
-        from app.services.conversation import STATUS_QUALIFYING
+        from app.services.conversation import STATUS_QUALIFYING, handle_inbound_message
 
         lead = Lead(wa_from="1234567898", status=STATUS_QUALIFYING, current_step=2)
         db.add(lead)
@@ -411,12 +431,13 @@ class TestMediaEdgeCases:
 
     async def test_media_at_reference_images_step_accepts(self, db):
         """Media at reference_images step → no reprompt, accept."""
-        from app.services.conversation import handle_inbound_message
         from app.db.models import Lead
-        from app.services.conversation import STATUS_QUALIFYING
+        from app.services.conversation import STATUS_QUALIFYING, handle_inbound_message
         from app.services.questions import CONSULTATION_QUESTIONS
 
-        ref_idx = next(i for i, q in enumerate(CONSULTATION_QUESTIONS) if q.key == "reference_images")
+        ref_idx = next(
+            i for i, q in enumerate(CONSULTATION_QUESTIONS) if q.key == "reference_images"
+        )
         lead = Lead(wa_from="1234567899", status=STATUS_QUALIFYING, current_step=ref_idx)
         db.add(lead)
         db.commit()
@@ -438,7 +459,7 @@ class TestFormattingEdgeCases:
     """Leading/trailing whitespace, newlines, mixed language."""
 
     def test_budget_leading_trailing_whitespace(self):
-        """  £400  → 40000."""
+        """£400  → 40000."""
         assert parse_budget_from_text("  £400  ") == 40000
 
     def test_budget_mixed_language(self):
@@ -488,17 +509,15 @@ class TestSlotParsingMultipleNumbers:
     @pytest.mark.asyncio
     async def test_slot_parsing_multiple_numbers_triggers_pick_one_repair(self, db, sample_slots):
         """Integration: '1 or 2' at slot step → repair_needed (REPAIR_SLOT)."""
-        from app.services.conversation import handle_inbound_message
         from app.db.models import Lead
-        from app.services.conversation import STATUS_BOOKING_PENDING
+        from app.services.conversation import STATUS_BOOKING_PENDING, handle_inbound_message
 
         lead = Lead(
             wa_from="1234567890",
             status=STATUS_BOOKING_PENDING,
             current_step=0,
             suggested_slots_json=[
-                {"start": s["start"].isoformat(), "end": s["end"].isoformat()}
-                for s in sample_slots
+                {"start": s["start"].isoformat(), "end": s["end"].isoformat()} for s in sample_slots
             ],
         )
         db.add(lead)
@@ -517,7 +536,7 @@ class TestDimensionsNormalization:
     def test_dimensions_normalizes_unicode_multiplication_sign(self):
         """10×12cm behaves like 10x12cm → (10, 12)."""
         assert parse_dimensions("10×12cm") == (10.0, 12.0)
-        assert parse_dimensions("10\u00D7 12 cm") == (10.0, 12.0)
+        assert parse_dimensions("10\u00d7 12 cm") == (10.0, 12.0)
 
     def test_dimensions_parses_no_spaces_no_unit_policy(self):
         """10cmx12cm → parse (may be single 10cm). '10 x 12' no unit — current: None (unit required)."""
@@ -536,12 +555,13 @@ class TestKeywordHumanCommandOnly:
 
     async def test_keyword_human_command_only_not_in_sentence(self, db):
         """'human?', 'are you human' do NOT trigger human handover (exact match only)."""
-        from app.services.conversation import handle_inbound_message
         from app.db.models import Lead
-        from app.services.conversation import STATUS_QUALIFYING
+        from app.services.conversation import STATUS_QUALIFYING, handle_inbound_message
 
         for msg in ("human?", "are you human", "are you human?"):
-            lead = Lead(wa_from=f"12345_{hash(msg) % 10**6}", status=STATUS_QUALIFYING, current_step=1)
+            lead = Lead(
+                wa_from=f"12345_{hash(msg) % 10**6}", status=STATUS_QUALIFYING, current_step=1
+            )
             db.add(lead)
             db.commit()
             db.refresh(lead)
@@ -556,7 +576,7 @@ class TestUnicodeWhitespaceNormalization:
 
     def test_unicode_whitespace_normalization(self):
         """Budget/dimensions with NBSP, ZWSP still parse."""
-        nbsp = "\u00A0"
+        nbsp = "\u00a0"
         assert parse_budget_from_text(f"£400{nbsp}") == 40000
         assert parse_budget_from_text(f"  {nbsp} £ 400 {nbsp}  ") == 40000
         assert parse_dimensions(f"10{nbsp}x{nbsp}12cm") == (10.0, 12.0)

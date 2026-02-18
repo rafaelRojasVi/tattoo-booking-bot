@@ -8,11 +8,9 @@ SystemEvent(...) must only appear in:
 All other code must use log_event, info, warn, or error from system_event_service.
 """
 
-import os
 from pathlib import Path
 
 import pytest
-
 
 # Files allowed to contain SystemEvent( instantiation
 ALLOWED_FILES = {

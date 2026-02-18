@@ -222,7 +222,9 @@ async def test_artist_notification_includes_time_windows(db, lead_booking_pendin
 
     with (
         patch("app.services.artist_notifications.settings", mock_settings),
-        patch("app.services.artist_notifications.send_whatsapp_message", new_callable=AsyncMock) as mock_send,
+        patch(
+            "app.services.artist_notifications.send_whatsapp_message", new_callable=AsyncMock
+        ) as mock_send,
     ):
         mock_send.return_value = {"status": "sent"}
 

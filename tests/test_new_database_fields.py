@@ -125,7 +125,9 @@ def test_processed_message_unique_constraint(db):
     db.add(processed2)
 
     # Should raise integrity error
-    with pytest.raises(Exception):  # SQLAlchemy IntegrityError
+    from sqlalchemy.exc import IntegrityError
+
+    with pytest.raises(IntegrityError):
         db.commit()
 
     db.rollback()

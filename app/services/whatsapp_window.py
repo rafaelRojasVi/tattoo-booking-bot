@@ -203,7 +203,10 @@ async def send_with_window_check(
             from app.services.outbox_service import write_outbox
 
             outbox = write_outbox(
-                db, lead.id, lead.wa_from, message,
+                db,
+                lead.id,
+                lead.wa_from,
+                message,
                 template_name=template_name,
                 template_params=template_params or {},
             )

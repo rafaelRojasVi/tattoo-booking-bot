@@ -158,7 +158,7 @@ async def test_phase1_below_min_budget_sets_needs_follow_up(client, db):
     assert lead.status == STATUS_NEEDS_FOLLOW_UP, (
         f"Expected NEEDS_FOLLOW_UP, got {lead.status}. Budget: {lead.below_min_budget}, Min: {lead.min_budget_amount}, Budget amount: {getattr(lead, 'budget_amount', 'N/A')}"
     )
-    assert lead.below_min_budget == True
+    assert lead.below_min_budget
     assert lead.min_budget_amount == 40000  # £400 for UK
 
 
@@ -256,7 +256,7 @@ async def test_phase1_tour_offer_accepted(client, db):
 
     db.refresh(lead)
     assert lead.status == STATUS_PENDING_APPROVAL
-    assert lead.tour_offer_accepted == True
+    assert lead.tour_offer_accepted
     assert lead.location_city == "London"  # Updated to tour city
 
 
@@ -283,8 +283,8 @@ async def test_phase1_tour_offer_declined_waitlisted(client, db):
 
     db.refresh(lead)
     assert lead.status == STATUS_WAITLISTED
-    assert lead.waitlisted == True
-    assert lead.tour_offer_accepted == False
+    assert lead.waitlisted
+    assert not lead.tour_offer_accepted
 
 
 @pytest.mark.asyncio
