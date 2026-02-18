@@ -264,6 +264,8 @@ async def demo_stripe_pay(
     )
 
     if not success:
+        if lead is None:
+            raise HTTPException(status_code=404, detail="Lead not found")
         db.refresh(lead)
         if lead.status == "BOOKING_PENDING":
             return {
@@ -276,6 +278,9 @@ async def demo_stripe_pay(
             status_code=400,
             detail=f"Lead {lead.id} is in status '{lead.status}', expected '{STATUS_AWAITING_DEPOSIT}'",
         )
+
+    if lead is None:
+        raise HTTPException(status_code=404, detail="Lead not found")
 
     db.commit()
     db.refresh(lead)

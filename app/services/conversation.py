@@ -1002,6 +1002,11 @@ async def _handle_qualifying_lead(
                     "lead_status": refreshed.status if refreshed else None,
                     "message": "Another message was processed first",
                 }
+            if lead is None:
+                return {
+                    "status": "error",
+                    "message": "Lead not found after step advance",
+                }
             from app.services.message_composer import compose_message
 
             next_msg = compose_message(
@@ -1040,6 +1045,11 @@ async def _handle_qualifying_lead(
             "status": "step_already_advanced",
             "lead_status": refreshed.status if refreshed else None,
             "message": "Another message was processed first",
+        }
+    if lead is None:
+        return {
+            "status": "error",
+            "message": "Lead not found after step advance",
         }
 
     from app.services.message_composer import compose_message

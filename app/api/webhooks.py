@@ -602,6 +602,10 @@ async def stripe_webhook(
 
         if not success:
             # Status mismatch - lead may have been updated by another process
+            if lead is None:
+                return JSONResponse(
+                    status_code=404, content={"error": f"Lead {lead_id} not found"}
+                )
             db.refresh(lead)
             if lead.status == STATUS_DEPOSIT_PAID:
                 # Already processed by another request - return success
@@ -661,6 +665,9 @@ async def stripe_webhook(
                         "error": f"Lead {lead_id} is in status '{lead.status}', expected '{STATUS_AWAITING_DEPOSIT}'"
                     },
                 )
+
+        if lead is None:
+            return JSONResponse(status_code=404, content={"error": f"Lead {lead_id} not found"})
 
         # Phase 1: After deposit paid, set to BOOKING_PENDING (not BOOKING_LINK_SENT)
         from app.services.conversation import STATUS_BOOKING_PENDING
