@@ -6,7 +6,7 @@ This registry ensures every outbound message that might be sent outside the
 """
 
 import logging
-from enum import Enum
+from enum import StrEnum
 
 from app.services.whatsapp_templates import (
     TEMPLATE_CONSULTATION_REMINDER_2_FINAL,
@@ -17,7 +17,7 @@ from app.services.whatsapp_templates import (
 logger = logging.getLogger(__name__)
 
 
-class MessageType(str, Enum):
+class MessageType(StrEnum):
     """Enumeration of all outbound message types that may require templates."""
 
     # Reminders
