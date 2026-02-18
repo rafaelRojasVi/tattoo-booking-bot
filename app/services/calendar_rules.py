@@ -6,7 +6,7 @@ import logging
 from datetime import datetime, time, timedelta
 from functools import lru_cache
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import pytz
 import yaml
@@ -135,34 +135,34 @@ def get_session_duration(category: str | None = None) -> int:
 
     if category and "by_category" in durations:
         category_duration = durations["by_category"].get(category)
-        if category_duration:
-            return category_duration
+        if category_duration is not None:
+            return cast(int, category_duration)
 
-    return durations.get("default", 180)
+    return cast(int, durations.get("default", 180))
 
 
 def get_buffer_minutes() -> int:
     """Get buffer time in minutes between sessions."""
     rules = load_calendar_rules()
-    return rules.get("buffer_minutes", 30)
+    return cast(int, rules.get("buffer_minutes", 30))
 
 
 def get_lookahead_days() -> int:
     """Get lookahead window in days for slot suggestions."""
     rules = load_calendar_rules()
-    return rules.get("lookahead_days", 21)
+    return cast(int, rules.get("lookahead_days", 21))
 
 
 def get_minimum_advance_hours() -> int:
     """Get minimum advance booking time in hours."""
     rules = load_calendar_rules()
-    return rules.get("minimum_advance_hours", 24)
+    return cast(int, rules.get("minimum_advance_hours", 24))
 
 
 def should_block_all_day_events() -> bool:
     """Check if all-day events should block entire days."""
     rules = load_calendar_rules()
-    return rules.get("block_all_day_events", True)
+    return cast(bool, rules.get("block_all_day_events", True))
 
 
 def is_within_working_hours(dt: datetime, tz: Any | None = None) -> bool:

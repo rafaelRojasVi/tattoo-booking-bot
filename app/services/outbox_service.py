@@ -11,6 +11,7 @@ Retry via admin endpoint or scheduled job.
 
 import logging
 from datetime import UTC, datetime, timedelta
+from typing import cast
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -23,7 +24,7 @@ logger = logging.getLogger(__name__)
 
 def _exponential_backoff_minutes(attempts: int) -> int:
     """Minutes until next retry: 5, 15, 45, ..."""
-    return min(5 * (3**attempts), 1440)  # Cap at 24h
+    return cast(int, min(5 * (3**attempts), 1440))  # Cap at 24h
 
 
 def write_outbox(

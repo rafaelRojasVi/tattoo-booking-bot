@@ -218,11 +218,11 @@ def log_lead_to_sheets(db: Session, lead: Lead) -> bool:
         }
 
         # Helper to safely convert SQLAlchemy DateTime to ISO string
-        def to_iso(dt) -> str:
+        def to_iso(dt: object) -> str:
             if not dt:
                 return ""
             if hasattr(dt, "isoformat"):
-                return dt.isoformat()
+                return str(dt.isoformat())
             return str(dt)
 
         # Add timestamp fields using helper

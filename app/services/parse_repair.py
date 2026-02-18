@@ -3,7 +3,7 @@ Parse repair service - handles soft repair messages and two-strikes handover log
 """
 
 import logging
-from typing import Literal
+from typing import Literal, cast
 
 from sqlalchemy.orm import Session
 
@@ -45,7 +45,7 @@ def increment_parse_failure(db: Session, lead: Lead, field: ParseableField) -> i
     db.refresh(lead)  # Refresh to ensure consistency
 
     logger.info(f"Lead {lead.id}: Parse failure for '{field}' (count: {new_count})")
-    return new_count
+    return cast(int, new_count)
 
 
 def reset_parse_failures(db: Session, lead: Lead, field: ParseableField) -> None:
@@ -75,7 +75,7 @@ def get_failure_count(lead: Lead, field: ParseableField) -> int:
     """Get current failure count for a field."""
     if lead.parse_failure_counts is None:
         return 0
-    return lead.parse_failure_counts.get(field, 0)
+    return cast(int, lead.parse_failure_counts.get(field, 0))
 
 
 def should_handover_after_failure(lead: Lead, field: ParseableField) -> bool:

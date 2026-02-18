@@ -9,6 +9,7 @@ import logging
 import uuid
 from collections.abc import Callable
 from contextvars import ContextVar
+from typing import cast
 
 from fastapi import Request
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -31,7 +32,7 @@ def get_correlation_id(request: Request | None = None) -> str | None:
         and hasattr(request.state, "correlation_id")
         and request.state.correlation_id
     ):
-        return request.state.correlation_id
+        return cast(str, request.state.correlation_id)
     return _correlation_id_var.get()
 
 

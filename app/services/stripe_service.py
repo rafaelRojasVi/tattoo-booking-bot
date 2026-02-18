@@ -3,6 +3,7 @@ Stripe service - handles checkout session creation and payment processing.
 """
 
 import logging
+from typing import Any, cast
 
 import stripe
 
@@ -135,7 +136,7 @@ def verify_webhook_signature(payload: bytes, signature: str) -> dict:
         try:
             event = json.loads(payload.decode("utf-8"))
             logger.info(f"[TEST MODE] Accepting test Stripe webhook event: {event.get('type')}")
-            return event
+            return cast(dict[str, Any], event)
         except Exception as e:
             raise ValueError(f"Invalid test webhook payload: {e}") from e
 
@@ -145,7 +146,7 @@ def verify_webhook_signature(payload: bytes, signature: str) -> dict:
             signature,
             settings.stripe_webhook_secret,
         )
-        return event
+        return cast(dict[str, Any], event)
     except ValueError as e:
         logger.error(f"Invalid Stripe webhook signature: {e}")
         raise

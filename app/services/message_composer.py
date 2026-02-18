@@ -8,7 +8,7 @@ Supports intent-based compose_message(intent, ctx) with optional apply_voice and
 import hashlib
 import logging
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import yaml
 
@@ -100,7 +100,7 @@ class MessageComposer:
             # No lead_id - use first variant as default
             variant_index = 0
 
-        return variants[variant_index]
+        return cast(str, variants[variant_index])
 
     def render(
         self,
@@ -237,4 +237,4 @@ def compose_message(
         except Exception as e:
             logger.debug(f"Voice pack not applied: {e}")
 
-    return result
+    return cast(str, result)

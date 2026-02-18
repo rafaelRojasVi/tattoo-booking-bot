@@ -10,6 +10,8 @@ import time
 from collections import defaultdict
 from collections.abc import Callable
 
+from typing import cast
+
 from fastapi import Request, Response, status
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -99,4 +101,4 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
                 )
 
         response = await call_next(request)
-        return response
+        return cast(Response, response)

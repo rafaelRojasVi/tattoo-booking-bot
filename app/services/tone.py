@@ -8,7 +8,7 @@ import logging
 import re
 from functools import lru_cache
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import yaml
 
@@ -137,7 +137,7 @@ def get_call_preference_text() -> str:
     """
     pack = load_voice_pack()
     if "call_preference" in pack and "preferred" in pack["call_preference"]:
-        return pack["call_preference"]["preferred"]
+        return cast(str, pack["call_preference"]["preferred"])
     return "quick call"
 
 
