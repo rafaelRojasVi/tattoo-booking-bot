@@ -77,6 +77,7 @@ __all__ = [
     "STATUS_TOUR_CONVERSION_OFFERED",
     "STATUS_WAITLISTED",
     "_complete_qualification",
+    "_handle_new_lead",
     "_handle_qualifying_lead",
     "_maybe_send_confirmation_summary",
 ]

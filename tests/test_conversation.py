@@ -3,6 +3,7 @@ import pytest
 from app.db.models import Lead, LeadAnswer
 from app.services.conversation import (
     STATUS_AWAITING_DEPOSIT,
+    STATUS_BOOKED,
     STATUS_NEW,
     STATUS_PENDING_APPROVAL,
     STATUS_QUALIFYING,
@@ -212,6 +213,49 @@ def test_get_lead_summary_not_found(client, db):
     summary = get_lead_summary(db, 99999)
     assert "error" in summary
     assert summary["error"] == "Lead not found"
+
+
+@pytest.mark.asyncio
+async def test_conversation_dispatch_pending_approval_returns_ack_only(db):
+    """Dispatch by status: PENDING_APPROVAL returns pending_approval and does not change status."""
+    lead = Lead(wa_from="1234567890", status=STATUS_PENDING_APPROVAL, current_step=10)
+    db.add(lead)
+    db.commit()
+    db.refresh(lead)
+    result = await handle_inbound_message(
+        db=db,
+        lead=lead,
+        message_text="When will I hear back?",
+        dry_run=True,
+    )
+    assert result["status"] == "pending_approval"
+    assert result["lead_status"] == STATUS_PENDING_APPROVAL
+    db.refresh(lead)
+    assert lead.status == STATUS_PENDING_APPROVAL
+
+
+@pytest.mark.asyncio
+async def test_conversation_dispatch_booked_returns_booked_no_send(db):
+    """Dispatch by status: BOOKED returns booked and does not send WhatsApp (no duplicate)."""
+    from unittest.mock import AsyncMock, patch
+
+    lead = Lead(wa_from="1234567890", status=STATUS_BOOKED, current_step=12)
+    db.add(lead)
+    db.commit()
+    db.refresh(lead)
+    with patch(
+        "app.services.conversation.send_whatsapp_message",
+        new_callable=AsyncMock,
+    ) as mock_send:
+        result = await handle_inbound_message(
+            db=db,
+            lead=lead,
+            message_text="See you then!",
+            dry_run=True,
+        )
+    assert result["status"] == "booked"
+    assert result["lead_status"] == STATUS_BOOKED
+    mock_send.assert_not_called()
 
 
 @pytest.mark.asyncio
