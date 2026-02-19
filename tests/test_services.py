@@ -36,10 +36,10 @@ def test_get_or_create_lead_invalid_input(db):
         get_or_create_lead(db, wa_from="")
 
     with pytest.raises(ValueError, match="wa_from must be a non-empty string"):
-        get_or_create_lead(db, wa_from=None)
+        get_or_create_lead(db, wa_from=None)  # type: ignore[arg-type]
 
     with pytest.raises(ValueError, match="wa_from must be a non-empty string"):
-        get_or_create_lead(db, wa_from=123)  # Not a string
+        get_or_create_lead(db, wa_from=123)  # type: ignore[arg-type]  # Not a string
 
 
 def test_get_or_create_lead_database_rollback_on_error(db):

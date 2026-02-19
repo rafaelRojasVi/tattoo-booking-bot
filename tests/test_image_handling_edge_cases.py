@@ -338,6 +338,7 @@ async def test_whatsapp_media_invalid_response_no_url(db, lead):
         db.refresh(attachment)
         assert attachment.upload_status == "PENDING"
         assert attachment.upload_attempts == 1
+        assert attachment.last_error is not None
         assert "No URL" in attachment.last_error
 
 
@@ -518,6 +519,7 @@ async def test_network_timeout_during_download(db, lead):
         db.refresh(attachment)
         assert attachment.upload_status == "PENDING"
         assert attachment.upload_attempts == 1
+        assert attachment.last_error is not None
         assert "timeout" in attachment.last_error.lower() or "Timeout" in attachment.last_error
 
 
@@ -548,6 +550,7 @@ async def test_network_timeout_during_upload(db, lead):
         db.refresh(attachment)
         assert attachment.upload_status == "PENDING"
         assert attachment.upload_attempts == 1
+        assert attachment.last_error is not None
         assert "timeout" in attachment.last_error.lower() or "Timeout" in attachment.last_error
 
 
@@ -641,6 +644,7 @@ async def test_supabase_bucket_not_found(db, lead):
         db.refresh(attachment)
         assert attachment.upload_status == "PENDING"
         assert attachment.upload_attempts == 1
+        assert attachment.last_error is not None
         assert "Bucket" in attachment.last_error or "bucket" in attachment.last_error.lower()
 
 
@@ -1411,6 +1415,7 @@ async def test_error_message_truncation_long_error(db, lead):
 
         db.refresh(attachment)
         # Error should be truncated to 500 chars (as per code)
+        assert attachment.last_error is not None
         assert len(attachment.last_error) <= 500
         assert attachment.last_error.startswith("Error:")
 

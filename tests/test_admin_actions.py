@@ -75,6 +75,7 @@ def test_reject_lead_success(client, db):
     assert lead.rejected_at is not None
     assert lead.last_admin_action == "reject"
     assert lead.last_admin_action_at is not None
+    assert lead.admin_notes is not None
     assert "Budget too low" in lead.admin_notes
 
 

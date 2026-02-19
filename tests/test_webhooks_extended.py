@@ -264,7 +264,7 @@ def test_whatsapp_inbound_empty_phone_number(client):
 
 def test_whatsapp_inbound_empty_entry(client):
     """Test handling of payload with empty entry array."""
-    payload = {"entry": []}
+    payload: dict[str, list] = {"entry": []}
 
     response = client.post("/webhooks/whatsapp", json=payload)
     assert response.status_code == 200
@@ -274,7 +274,7 @@ def test_whatsapp_inbound_empty_entry(client):
 
 def test_whatsapp_inbound_empty_changes(client):
     """Test handling of payload with empty changes array."""
-    payload = {"entry": [{"changes": []}]}
+    payload: dict[str, list] = {"entry": [{"changes": []}]}
 
     response = client.post("/webhooks/whatsapp", json=payload)
     assert response.status_code == 200

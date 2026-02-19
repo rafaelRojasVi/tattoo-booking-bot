@@ -49,7 +49,7 @@ def lead_with_suggested_slots(db: Session):
             }
         )
 
-    lead.suggested_slots_json = slots
+    lead.suggested_slots_json = slots  # type: ignore[assignment]
     db.commit()
     db.refresh(lead)
     return lead

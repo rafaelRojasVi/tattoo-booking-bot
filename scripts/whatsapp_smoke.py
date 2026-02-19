@@ -23,40 +23,40 @@ async def send_test_message(to: str | None = None, use_template: bool = False):
     """Send a test WhatsApp message."""
     # Default to a test number (you should replace this with your test number)
     recipient = to or "1234567890"  # Replace with your test WhatsApp number
-    
+
     if use_template:
         # Use hello_world template (requires template to be approved in Meta dashboard)
         print("⚠️  Template messages require approval in Meta dashboard.")
         print("   For initial testing, use plain text messages instead.")
         print("   Run without --template flag to send plain text.")
         return
-    
+
     message = "Hello! This is a test message from your tattoo booking bot. 🎨"
-    
-    print(f"📤 Sending WhatsApp message...")
+
+    print("📤 Sending WhatsApp message...")
     print(f"   To: {recipient}")
     print(f"   Message: {message}")
     print(f"   Dry Run: {settings.whatsapp_dry_run}")
     print()
-    
+
     try:
         result = await send_whatsapp_message(
             to=recipient,
             message=message,
             dry_run=settings.whatsapp_dry_run,
         )
-        
+
         print("✅ Result:")
         print(f"   Status: {result.get('status')}")
-        if result.get('message_id'):
+        if result.get("message_id"):
             print(f"   Message ID: {result.get('message_id')}")
-        if result.get('status') == 'dry_run':
+        if result.get("status") == "dry_run":
             print()
             print("💡 This was a dry run. To send real messages:")
             print("   1. Set WHATSAPP_DRY_RUN=false in .env")
             print("   2. Ensure WHATSAPP_ACCESS_TOKEN and WHATSAPP_PHONE_NUMBER_ID are set")
             print("   3. Run this script again")
-        
+
     except Exception as e:
         print(f"❌ Error sending message: {e}")
         print()
@@ -71,7 +71,7 @@ async def send_test_message(to: str | None = None, use_template: bool = False):
 def main():
     """CLI entrypoint."""
     import argparse
-    
+
     parser = argparse.ArgumentParser(description="Send a test WhatsApp message")
     parser.add_argument(
         "--to",
@@ -83,18 +83,24 @@ def main():
         action="store_true",
         help="Use hello_world template (requires approval)",
     )
-    
+
     args = parser.parse_args()
-    
+
     print("=" * 60)
     print("WhatsApp Cloud API Smoke Test")
     print("=" * 60)
     print()
-    print(f"Access Token: {'✅ Set' if settings.whatsapp_access_token and settings.whatsapp_access_token not in ['test_token', ''] else '❌ Missing'}")
-    print(f"Phone Number ID: {'✅ Set' if settings.whatsapp_phone_number_id and settings.whatsapp_phone_number_id not in ['test_id', ''] else '❌ Missing'}")
-    print(f"Dry Run Mode: {'✅ Enabled' if settings.whatsapp_dry_run else '❌ Disabled (will send real messages!)'}")
+    print(
+        f"Access Token: {'✅ Set' if settings.whatsapp_access_token and settings.whatsapp_access_token not in ['test_token', ''] else '❌ Missing'}"
+    )
+    print(
+        f"Phone Number ID: {'✅ Set' if settings.whatsapp_phone_number_id and settings.whatsapp_phone_number_id not in ['test_id', ''] else '❌ Missing'}"
+    )
+    print(
+        f"Dry Run Mode: {'✅ Enabled' if settings.whatsapp_dry_run else '❌ Disabled (will send real messages!)'}"
+    )
     print()
-    
+
     asyncio.run(send_test_message(to=args.to, use_template=args.template))
 
 

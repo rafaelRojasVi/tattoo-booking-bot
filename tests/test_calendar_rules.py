@@ -163,6 +163,7 @@ def test_calendar_rules_custom_config():
         assert "New_York" in str(tz)
 
         hours = get_working_hours("monday")
+        assert hours is not None
         assert hours["start"] == time(9, 0)
         assert hours["end"] == time(17, 0)
 

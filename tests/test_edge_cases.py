@@ -32,6 +32,7 @@ def test_reject_with_unicode_characters(client, db):
     response = client.post(f"/admin/leads/{lead.id}/reject", json={"reason": reason})
     assert response.status_code == 200
     db.refresh(lead)
+    assert lead.admin_notes is not None
     assert reason in lead.admin_notes
 
 
@@ -47,6 +48,7 @@ def test_reject_with_very_long_reason(client, db):
     response = client.post(f"/admin/leads/{lead.id}/reject", json={"reason": long_reason})
     assert response.status_code == 200
     db.refresh(lead)
+    assert lead.admin_notes is not None
     assert long_reason in lead.admin_notes
 
 
@@ -190,6 +192,7 @@ def test_token_for_deleted_lead(db):
     # Token validation should fail
     action_token, error = validate_action_token(db, token)
     assert action_token is None
+    assert error is not None
     assert "not found" in error.lower()
 
 
@@ -241,6 +244,7 @@ def test_token_expiry_boundary(db):
     # Should be expired (now > expires_at)
     result, error = validate_action_token(db, token)
     assert result is None
+    assert error is not None
     assert "expired" in error
 
 
@@ -320,6 +324,7 @@ def test_token_after_status_change_via_admin(db, client):
     # Token should now be invalid (status mismatch)
     action_token, error = validate_action_token(db, token)
     assert action_token is None
+    assert error is not None
     assert "status" in error.lower()
 
 

@@ -74,7 +74,9 @@ def test_migration_applies_cleanly(fresh_db_engine):
     import importlib.util
 
     spec = importlib.util.spec_from_file_location("migration", migration_file)
+    assert spec is not None, "Failed to create module spec"
     migration_module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None, "Module spec has no loader"
     spec.loader.exec_module(migration_module)
 
     # Verify upgrade and downgrade functions exist

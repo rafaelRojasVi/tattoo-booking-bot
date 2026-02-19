@@ -396,7 +396,7 @@ def test_whatsapp_webhook_message_from_as_integer(client):
 
 def test_whatsapp_webhook_empty_messages_array(client):
     """BREAK: messages is empty array -> no message to process."""
-    payload = {"entry": [{"changes": [{"value": {"messages": []}}]}]}
+    payload: dict[str, list] = {"entry": [{"changes": [{"value": {"messages": []}}]}]}
     response = client.post("/webhooks/whatsapp", json=payload)
     assert response.status_code == 200
     assert response.json().get("type") == "non-message-event" or "received" in response.json()

@@ -75,7 +75,7 @@ async def test_golden_transcript_phase1_happy_path(db):
         db.refresh(lead)
         assert lead.status == STATUS_QUALIFYING
         assert lead.current_step == 0
-        assert len(bot_messages) - n_bot_before <= 1, "Happy path: at most one bot send per inbound"
+        assert len(bot_messages) - n_bot_before <= 2, "Happy path: at most two bot sends per inbound (2 = confirmation+next)"
         previous_step = 0
 
         # 2) Answer each question in order
@@ -85,10 +85,10 @@ async def test_golden_transcript_phase1_happy_path(db):
             await handle_inbound_message(db, lead, user_messages[-1], dry_run=True)
             db.refresh(lead)
 
-            # Max one bot send per inbound
+            # At most 2 bot sends per inbound (2 = confirmation_summary + next question when completing dims/budget/location)
             n_after = len(bot_messages)
-            assert n_after - n_bot_before <= 1, (
-                f"Happy path: at most one bot send per inbound (answer {i + 1})"
+            assert n_after - n_bot_before <= 2, (
+                f"Happy path: at most 2 bot sends per inbound (answer {i + 1})"
             )
 
             # Step monotonicity: never skip (current_step == previous_step + 1, or we completed)
@@ -112,8 +112,9 @@ async def test_golden_transcript_phase1_happy_path(db):
     assert lead.current_step == PHASE1_LAST_STEP, (
         f"Expected current_step {PHASE1_LAST_STEP} (last question index), got {lead.current_step}.\n\n{transcript}"
     )
-    assert len(bot_messages) == len(user_messages), (
-        f"Expected one bot reply per user message ({len(user_messages)} each), "
+    # May have more bot messages than user (e.g. confirmation_summary + next question in one step)
+    assert len(bot_messages) >= len(user_messages), (
+        f"Expected at least one bot reply per user message ({len(user_messages)} user), "
         f"got {len(bot_messages)} bot messages.\n\n{transcript}"
     )
 

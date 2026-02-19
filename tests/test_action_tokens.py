@@ -81,6 +81,7 @@ def test_validate_action_token_already_used(db):
     # Try to validate again
     action_token, error = validate_action_token(db, token)
     assert action_token is None
+    assert error is not None
     assert "already been used" in error
 
 
@@ -105,6 +106,7 @@ def test_validate_action_token_expired(db):
     # Try to validate
     result, error = validate_action_token(db, token)
     assert result is None
+    assert error is not None
     assert "expired" in error
 
 
@@ -120,6 +122,7 @@ def test_validate_action_token_wrong_status(db):
     # Try to validate (lead is in wrong status)
     action_token, error = validate_action_token(db, token)
     assert action_token is None
+    assert error is not None
     assert "status" in error.lower()
 
 

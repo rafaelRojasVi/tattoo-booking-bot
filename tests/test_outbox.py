@@ -40,6 +40,7 @@ def test_mark_outbox_sent(db, monkeypatch):
     db.refresh(lead)
 
     outbox = write_outbox(db, lead.id, lead.wa_from, "Hi")
+    assert outbox is not None
     assert outbox.status == "PENDING"
     mark_outbox_sent(db, outbox)
     db.refresh(outbox)
@@ -57,6 +58,7 @@ def test_mark_outbox_failed_schedules_retry(db, monkeypatch):
     db.refresh(lead)
 
     outbox = write_outbox(db, lead.id, lead.wa_from, "Hi")
+    assert outbox is not None
     mark_outbox_failed(db, outbox, ValueError("Send failed"))
     db.refresh(outbox)
     assert outbox.status == "FAILED"

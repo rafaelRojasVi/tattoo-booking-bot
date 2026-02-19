@@ -202,12 +202,16 @@ async def test_confirmation_summary_uses_latest_per_key(db):
     db.add(a4)
     db.commit()
 
-    # _maybe_send_confirmation_summary imports send_whatsapp_message from messaging inside the function
-    with patch("app.services.messaging.send_whatsapp_message", new_callable=AsyncMock) as mock_send:
+    # _maybe_send_confirmation_summary lives in conversation_qualifying and uses _get_send_whatsapp()
+    mock_send = AsyncMock()
+    with patch(
+        "app.services.conversation_qualifying._get_send_whatsapp", return_value=mock_send
+    ):
         sent = await _maybe_send_confirmation_summary(db, lead, "dimensions", dry_run=True)
 
     assert sent is True
     assert mock_send.await_count == 1
+    assert mock_send.await_args is not None
     call_msg = mock_send.await_args.kwargs.get("message", "")
     assert "15" in call_msg, "Confirmation summary must use latest dimensions (15x15), not 10x12"
 
@@ -244,7 +248,7 @@ async def test_complete_qualification_uses_latest_per_key(db):
 
     with (
         patch("app.services.conversation.send_whatsapp_message", new_callable=AsyncMock),
-        patch("app.services.conversation.log_lead_to_sheets"),
+        patch("app.services.sheets.log_lead_to_sheets"),
         patch("app.services.tour_service.is_city_on_tour", return_value=True),
     ):
         await _complete_qualification(db, lead, dry_run=True)

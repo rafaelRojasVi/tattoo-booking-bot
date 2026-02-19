@@ -91,6 +91,7 @@ async def test_handover_stop_does_not_send_holding_reply(db):
     # Exactly one send: the opt-out ack, not the holding "I've paused..." message
     assert mock_send.await_count == 1
     call_args = mock_send.await_args
+    assert call_args is not None
     msg = call_args.kwargs.get("message", call_args[0][1] if call_args[0] else "")
     assert "paused" not in msg.lower(), "Holding reply must not be sent when client sends STOP"
 
@@ -149,6 +150,7 @@ async def test_handover_state_does_not_send_questions(db):
     # With rate-limit: first message sends holding reply (1 call)
     assert mock_send.await_count == 1
     call_args = mock_send.await_args
+    assert call_args is not None
     msg = call_args.kwargs.get("message", call_args[0][1] if call_args[0] else "")
     assert "paused" in msg.lower() or "artist" in msg.lower()
 
@@ -347,6 +349,7 @@ async def test_handover_resume_returns_to_correct_question(db):
     assert mock_send.await_count == 1
     # Message should be the next question (step 2), not step 0
     call_args = mock_send.await_args
+    assert call_args is not None
     msg = call_args.kwargs.get("message", "")
     assert msg  # resumed with question text
 
@@ -454,6 +457,7 @@ async def test_notify_artist_needs_reply_includes_name_and_contact(db):
 
     assert mock_send.await_count == 1
     call_args = mock_send.await_args
+    assert call_args is not None
     msg = call_args.kwargs.get("message", "")
     assert "447700900999" in msg
     assert "Jordan" in msg

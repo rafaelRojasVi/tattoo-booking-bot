@@ -393,8 +393,9 @@ async def test_valid_single_answers_never_blocked(db, question_key, valid_answer
             await handle_inbound_message(db, lead, user_messages[-1], dry_run=True)
             db.refresh(lead)
             transcript = format_transcript(user_messages, bot_messages, max_line=None)
-            assert len(bot_messages) - n_bot_before <= 1, (
-                f"Max one outbound per inbound.\n\n{transcript}"
+            # May be 2 when confirmation_summary + next question (dims/budget/location complete)
+            assert len(bot_messages) - n_bot_before <= 2, (
+                f"Max two outbound per inbound.\n\n{transcript}"
             )
             if lead.current_step != previous_step:
                 assert lead.current_step == previous_step + 1, (
@@ -411,8 +412,9 @@ async def test_valid_single_answers_never_blocked(db, question_key, valid_answer
         await handle_inbound_message(db, lead, user_messages[-1], dry_run=True)
         db.refresh(lead)
         transcript = format_transcript(user_messages, bot_messages, max_line=None)
-        assert len(bot_messages) - n_bot_before == 1, (
-            f"Exactly one outbound for valid answer.\n\n{transcript}"
+        # May be 2 when confirmation_summary + next question sent (e.g. location_city completes dims+budget+location)
+        assert 1 <= len(bot_messages) - n_bot_before <= 2, (
+            f"One or two outbound for valid answer (confirmation+next counts as 2).\n\n{transcript}"
         )
         assert lead.current_step == expected_step_after, (
             f"Valid {question_key} answer should advance to step {expected_step_after}; "
@@ -793,8 +795,9 @@ async def test_instagram_handle_step_accepts_handle_even_with_style_word(db):
             await handle_inbound_message(db, lead, user_messages[-1], dry_run=True)
             db.refresh(lead)
             transcript = format_transcript(user_messages, bot_messages, max_line=None)
-            assert len(bot_messages) - n_bot_before == 1, (
-                f"Exactly one bot reply per inbound.\n\n{transcript}"
+            # May be 2 when confirmation_summary + next question (e.g. London completes dims+budget+location)
+            assert 1 <= len(bot_messages) - n_bot_before <= 2, (
+                f"One or two bot replies per inbound.\n\n{transcript}"
             )
             assert lead.current_step == previous_step + 1, (
                 f"Step monotonicity: expected {previous_step + 1}, got {lead.current_step}.\n\n{transcript}"
@@ -811,8 +814,8 @@ async def test_instagram_handle_step_accepts_handle_even_with_style_word(db):
         await handle_inbound_message(db, lead, user_messages[-1], dry_run=True)
         db.refresh(lead)
         transcript = format_transcript(user_messages, bot_messages, max_line=None)
-        assert len(bot_messages) - n_bot_before == 1, (
-            f"Exactly one bot reply expected.\n\n{transcript}"
+        assert 1 <= len(bot_messages) - n_bot_before <= 2, (
+            f"One or two bot replies expected (allow 2 if previous step sent confirmation+next).\n\n{transcript}"
         )
         assert lead.current_step == 11, (
             f"Expected step 11 (travel_city) after instagram_handle; got {lead.current_step}. "

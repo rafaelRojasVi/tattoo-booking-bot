@@ -122,6 +122,7 @@ class TestEstimationService:
     def test_parse_dimensions_inches(self):
         """Test parsing dimensions in inches."""
         dims = parse_dimensions("3x5 inches")
+        assert dims is not None
         # Should convert to cm: 3*2.54 = 7.62, 5*2.54 = 12.7
         assert dims[0] == pytest.approx(7.62, rel=0.01)
         assert dims[1] == pytest.approx(12.7, rel=0.01)
@@ -242,6 +243,7 @@ class TestHandoverService:
 
         should, reason = should_handover("I want a realistic portrait", lead)
         assert should
+        assert reason is not None
         assert "complexity" in reason.lower() or "realism" in reason.lower()
 
     def test_handover_coverup_keyword(self, db):
@@ -255,6 +257,7 @@ class TestHandoverService:
         # Test with exact keyword from service: "cover-up" (with hyphen)
         should, reason = should_handover("I need a cover-up", lead)
         assert should
+        assert reason is not None
         assert "cover" in reason.lower()
 
     def test_handover_price_negotiation(self, db):
@@ -268,6 +271,7 @@ class TestHandoverService:
         # Use exact keyword from service: "cheaper"
         should, reason = should_handover("Can you do it cheaper?", lead)
         assert should
+        assert reason is not None
         assert "price" in reason.lower() or "negotiation" in reason.lower()
 
     def test_handover_hesitation(self, db):
@@ -281,6 +285,7 @@ class TestHandoverService:
         # Use exact phrase from service: "i'm ready but"
         should, reason = should_handover("I'm ready but I'm not sure", lead)
         assert should
+        assert reason is not None
         assert "hesitation" in reason.lower() or "personal" in reason.lower()
 
     def test_no_handover_normal_message(self, db):

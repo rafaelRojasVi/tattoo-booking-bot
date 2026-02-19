@@ -88,6 +88,7 @@ def test_system_event_exc_nested_under_payload_error(db):
         payload={"context": "extra"},
         exc=exc,
     )
+    assert event.payload is not None
     assert event.payload["error"] == {"type": "ValueError", "message": "Something went wrong"}
     assert event.payload["context"] == "extra"
 
@@ -102,6 +103,7 @@ def test_system_event_with_lead(db, sample_lead):
     )
 
     assert event.lead_id == sample_lead.id
+    assert event.payload is not None
     assert event.payload["lead_status"] == sample_lead.status
 
 

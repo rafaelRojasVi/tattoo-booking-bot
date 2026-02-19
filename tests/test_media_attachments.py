@@ -472,6 +472,7 @@ async def test_upload_handles_whatsapp_download_failure(db, lead):
         db.refresh(attachment)
         assert attachment.upload_status == "PENDING"
         assert attachment.upload_attempts == 1
+        assert attachment.last_error is not None
         assert "WhatsApp API" in attachment.last_error
         mock_error.assert_called_once()
 
@@ -503,6 +504,7 @@ async def test_upload_handles_supabase_upload_failure(db, lead):
         db.refresh(attachment)
         assert attachment.upload_status == "PENDING"
         assert attachment.upload_attempts == 1
+        assert attachment.last_error is not None
         assert "Supabase" in attachment.last_error
 
 
@@ -536,6 +538,7 @@ async def test_upload_handles_missing_supabase_config(db, lead):
         assert attachment.upload_status == "PENDING"
         assert attachment.upload_attempts == 1
         # Either "Supabase not configured" (settings None) or "supabase package not installed" (ImportError in Docker)
+        assert attachment.last_error is not None
         assert "Supabase" in attachment.last_error or "supabase" in attachment.last_error.lower()
 
 
@@ -725,6 +728,7 @@ def test_attachment_object_key_format(db, lead):
     db.add(attachment)
     db.commit()
 
+    assert attachment.object_key is not None
     assert attachment.object_key.startswith("leads/")
     assert str(lead.id) in attachment.object_key
     assert attachment.bucket == "reference-images"
@@ -755,6 +759,7 @@ async def test_upload_handles_network_timeout(db, lead):
         db.refresh(attachment)
         assert attachment.upload_status == "PENDING"
         assert attachment.upload_attempts == 1
+        assert attachment.last_error is not None
         assert "timeout" in attachment.last_error.lower() or "Timeout" in attachment.last_error
 
 
@@ -784,6 +789,7 @@ async def test_upload_handles_invalid_media_response(db, lead):
         db.refresh(attachment)
         assert attachment.upload_status == "PENDING"
         assert attachment.upload_attempts == 1
+        assert attachment.last_error is not None
         assert "No URL" in attachment.last_error
 
 

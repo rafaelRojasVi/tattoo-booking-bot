@@ -63,6 +63,7 @@ Thumbs.db
 .DS_Store
 
 # Tool output / findings (generated files, don't commit)
+test-results.xml
 bandit-findings.json
 bandit-report.json
 mypy-findings.txt

@@ -484,7 +484,7 @@ def test_pricing_range_all_regions():
 
     for region in regions:
         for category in categories:
-            price_range = calculate_price_range(region=region, category=category)
+            price_range = calculate_price_range(region=region, category=category)  # type: ignore[arg-type]
 
             assert price_range.min_pence > 0
             assert price_range.max_pence > price_range.min_pence
@@ -704,7 +704,7 @@ def lead_with_suggested_slots(db):
             }
         )
 
-    lead.suggested_slots_json = slots
+    lead.suggested_slots_json = slots  # type: ignore[assignment]
     db.commit()
     db.refresh(lead)
     return lead

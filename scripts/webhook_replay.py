@@ -17,8 +17,9 @@ from pathlib import Path
 # Add app directory to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from app.core.config import settings
 import httpx
+
+from app.core.config import settings
 
 
 def create_text_message_payload(wa_from: str, text: str, message_id: str = "wamid.test123"):
@@ -60,7 +61,9 @@ def create_text_message_payload(wa_from: str, text: str, message_id: str = "wami
     }
 
 
-def create_image_message_payload(wa_from: str, media_id: str = "media_test123", message_id: str = "wamid.test456"):
+def create_image_message_payload(
+    wa_from: str, media_id: str = "media_test123", message_id: str = "wamid.test456"
+):
     """Create a sample image message webhook payload."""
     return {
         "object": "whatsapp_business_account",
@@ -103,55 +106,55 @@ def create_image_message_payload(wa_from: str, media_id: str = "media_test123", 
     }
 
 
-def calculate_signature(payload_bytes: bytes) -> str:
+def calculate_signature(payload_bytes: bytes) -> str | None:
     """Calculate webhook signature for testing."""
     if not settings.whatsapp_app_secret:
         return None
-    
-    import hmac
+
     import hashlib
-    
+    import hmac
+
     signature = hmac.new(
         settings.whatsapp_app_secret.encode("utf-8"),
         payload_bytes,
         hashlib.sha256,
     ).hexdigest()
-    
+
     return f"sha256={signature}"
 
 
 def send_webhook_payload(payload: dict, base_url: str = "http://localhost:8000"):
     """Send webhook payload to the webhook endpoint."""
     webhook_url = f"{base_url}/webhooks/whatsapp"
-    
+
     # Convert to JSON bytes for signature calculation
     payload_json = json.dumps(payload)
     payload_bytes = payload_json.encode("utf-8")
-    
+
     # Calculate signature if app secret is configured
     signature = calculate_signature(payload_bytes)
-    
+
     headers = {
         "Content-Type": "application/json",
     }
     if signature:
         headers["X-Hub-Signature-256"] = signature
-    
+
     print(f"📤 Sending webhook payload to: {webhook_url}")
     print(f"   Payload: {json.dumps(payload, indent=2)}")
     if signature:
         print(f"   Signature: {signature[:20]}...")
     print()
-    
+
     try:
         with httpx.Client(timeout=10.0) as client:
             response = client.post(webhook_url, json=payload, headers=headers)
-            
-            print(f"📥 Response:")
+
+            print("📥 Response:")
             print(f"   Status: {response.status_code}")
             print(f"   Body: {response.text}")
             print()
-            
+
             if response.status_code == 200:
                 print("✅ Webhook processed successfully!")
                 try:
@@ -160,23 +163,23 @@ def send_webhook_payload(payload: dict, base_url: str = "http://localhost:8000")
                         print(f"   Lead ID: {result.get('lead_id')}")
                     if result.get("type"):
                         print(f"   Type: {result.get('type')}")
-                except:
+                except Exception:
                     pass
             else:
                 print("❌ Webhook returned error status")
                 return False
-                
+
     except Exception as e:
         print(f"❌ Error sending webhook: {e}")
         return False
-    
+
     return True
 
 
 def main():
     """CLI entrypoint."""
     import argparse
-    
+
     parser = argparse.ArgumentParser(description="Replay WhatsApp webhook payload")
     parser.add_argument(
         "--text",
@@ -202,28 +205,32 @@ def main():
         default="http://localhost:8000",
         help="Base URL of the API (default: http://localhost:8000)",
     )
-    
+
     args = parser.parse_args()
-    
+
     print("=" * 60)
     print("WhatsApp Webhook Replay Test")
     print("=" * 60)
     print()
-    print(f"Verify Token: {'✅ Set' if settings.whatsapp_verify_token and settings.whatsapp_verify_token != 'your_whatsapp_verify_token_here' else '❌ Missing'}")
-    print(f"App Secret: {'✅ Set' if settings.whatsapp_app_secret else '⚠️  Not set (signature verification disabled)'}")
+    print(
+        f"Verify Token: {'✅ Set' if settings.whatsapp_verify_token and settings.whatsapp_verify_token != 'your_whatsapp_verify_token_here' else '❌ Missing'}"
+    )
+    print(
+        f"App Secret: {'✅ Set' if settings.whatsapp_app_secret else '⚠️  Not set (signature verification disabled)'}"
+    )
     print()
-    
+
     if args.image:
         payload = create_image_message_payload(args.wa_from)
         print("📷 Creating image message payload...")
     else:
         payload = create_text_message_payload(args.wa_from, args.text)
         print("💬 Creating text message payload...")
-    
+
     print()
-    
+
     success = send_webhook_payload(payload, base_url=args.url)
-    
+
     if success:
         print("💡 Next steps:")
         print("   1. Check the database for new Lead record")

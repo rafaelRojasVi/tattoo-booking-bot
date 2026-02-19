@@ -70,7 +70,7 @@ def test_format_artist_summary_shows_below_min_budget(db):
     )
 
     answers_dict = {"idea": "Test tattoo"}
-    action_tokens = {}
+    action_tokens: dict[str, str] = {}
 
     message = format_artist_summary(lead, answers_dict, action_tokens)
 
@@ -87,7 +87,7 @@ def test_format_artist_summary_shows_handover_reason(db):
     )
 
     answers_dict = {"idea": "Test tattoo"}
-    action_tokens = {}
+    action_tokens: dict[str, str] = {}
 
     message = format_artist_summary(lead, answers_dict, action_tokens)
 
@@ -104,7 +104,7 @@ def test_format_artist_summary_without_action_tokens(db):
     )
 
     answers_dict = {"idea": "Test tattoo"}
-    action_tokens = {}
+    action_tokens: dict[str, str] = {}
 
     message = format_artist_summary(lead, answers_dict, action_tokens)
 
@@ -164,7 +164,7 @@ async def test_send_artist_summary_skips_if_no_number(db):
     db.refresh(lead)
 
     answers_dict = {"idea": "Test tattoo"}
-    action_tokens = {}
+    action_tokens: dict[str, str] = {}
 
     # No artist number configured
     with patch.object(settings, "artist_whatsapp_number", None):
