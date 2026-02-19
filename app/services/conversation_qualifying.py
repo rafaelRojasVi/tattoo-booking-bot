@@ -18,6 +18,12 @@ from app.constants.statuses import (
 )
 from app.db.models import Lead, LeadAnswer
 from app.services.action_tokens import generate_action_tokens_for_lead
+from app.services.conversation_policy import (
+    is_delete_data_request_message,
+    is_human_request_message,
+    is_opt_out_message,
+    is_refund_request_message,
+)
 from app.services.questions import get_question_by_index, is_last_question
 from app.services.sheets import log_lead_to_sheets
 from app.services.state_machine import advance_step_if_at, transition
@@ -149,19 +155,15 @@ async def _handle_qualifying_lead(
         # Caption present: fall through and parse message_text (attachment already stored in webhook)
 
     # Check for STOP/UNSUBSCRIBE opt-out
-    message_upper = message_text.strip().upper()
-    if message_upper in ["STOP", "UNSUBSCRIBE", "OPT OUT", "OPTOUT"]:
+    if is_opt_out_message(message_text):
         return await _handle_opt_out(db, lead, dry_run)
 
     # HUMAN / REFUND / DELETE DATA: ack and handover (no LLM)
-    if message_upper in ("HUMAN", "PERSON", "TALK TO SOMEONE", "REAL PERSON", "AGENT"):
+    if is_human_request_message(message_text):
         return await _handle_human_request(db, lead, dry_run)
-    if "REFUND" in message_upper:
+    if is_refund_request_message(message_text):
         return await _handle_refund_request(db, lead, dry_run)
-    if any(
-        phrase in message_upper
-        for phrase in ("DELETE MY DATA", "DELETE DATA", "REMOVE MY DATA", "GDPR")
-    ):
+    if is_delete_data_request_message(message_text):
         return await _handle_delete_data_request(db, lead, dry_run)
 
     # Wrong-field guard: at idea/placement, reject budget-only or dimensions-only
@@ -430,58 +432,53 @@ async def _handle_qualifying_lead(
     # Commit answer before checking for confirmation (so _maybe_send_confirmation_summary can find it)
     db.commit()
 
-    # Send micro-confirmation after successful parsing of key fields
-    # Only send once when we have all three: dimensions, budget, location_city
-    confirmation_sent = False
-    if parse_success:
-        confirmation_sent = await _maybe_send_confirmation_summary(
-            db, lead, current_question.key, dry_run
-        )
+    # Build confirmation message if we have dimensions, budget, location_city (single combined send)
+    confirmation_msg = (
+        _get_confirmation_summary_message(db, lead, current_question.key) if parse_success else None
+    )
 
     # Check if this was the last question
     if is_last_question(current_step):
         # All questions answered - generate summary and move to PENDING_APPROVAL
         return await _complete_qualification(db, lead, dry_run)
 
-    # If confirmation was sent but not the last question, still advance to next question
-    # (confirmation is just informational, doesn't block flow)
-    # Order: advance FIRST, then send (only winner sends; loser exits without messaging)
-    if confirmation_sent:
+    # If we have a confirmation to send, combine it with the next question in one message
+    next_question = get_question_by_index(current_step + 1)
+    if confirmation_msg and next_question:
         lead_id_for_step = lead.id
-        next_question = get_question_by_index(current_step + 1)
-        if next_question:
-            success, lead = advance_step_if_at(db, lead_id_for_step, current_step)
-            if not success:
-                refreshed = db.get(Lead, lead_id_for_step)
-                return {
-                    "status": "step_already_advanced",
-                    "lead_status": refreshed.status if refreshed else None,
-                    "message": "Another message was processed first",
-                }
-            if lead is None:
-                return {
-                    "status": "error",
-                    "message": "Lead not found after step advance",
-                }
-            from app.services.message_composer import compose_message
-
-            next_msg = compose_message(
-                "ASK_QUESTION",
-                {"lead_id": lead.id, "question_text": next_question.text},
-            )
-            await _get_send_whatsapp()(
-                to=lead.wa_from,
-                message=next_msg,
-                dry_run=dry_run,
-            )
-            lead.last_bot_message_at = func.now()
-            db.commit()
+        success, lead = advance_step_if_at(db, lead_id_for_step, current_step)
+        if not success:
+            refreshed = db.get(Lead, lead_id_for_step)
             return {
-                "status": "confirmation_sent",
-                "lead_status": lead.status,
-                "current_step": lead.current_step,
-                "question_key": next_question.key,
+                "status": "step_already_advanced",
+                "lead_status": refreshed.status if refreshed else None,
+                "message": "Another message was processed first",
             }
+        if lead is None:
+            return {
+                "status": "error",
+                "message": "Lead not found after step advance",
+            }
+        from app.services.message_composer import compose_message
+
+        next_msg = compose_message(
+            "ASK_QUESTION",
+            {"lead_id": lead.id, "question_text": next_question.text},
+        )
+        combined = f"{confirmation_msg}\n\n{next_msg}"
+        await _get_send_whatsapp()(
+            to=lead.wa_from,
+            message=combined,
+            dry_run=dry_run,
+        )
+        lead.last_bot_message_at = func.now()
+        db.commit()
+        return {
+            "status": "confirmation_sent",
+            "lead_status": lead.status,
+            "current_step": lead.current_step,
+            "question_key": next_question.key,
+        }
 
     # Move to next question: advance FIRST, then send (only winner sends)
     lead_id = lead.id
@@ -627,30 +624,18 @@ async def _handle_opt_out(
     }
 
 
-async def _maybe_send_confirmation_summary(
+def _get_confirmation_summary_message(
     db: Session,
     lead: Lead,
     just_answered_key: str,
-    dry_run: bool,
-) -> bool:
+) -> str | None:
     """
-    Send micro-confirmation summary if we just completed dimensions, budget, and location_city.
-    Only sends once (tracks via a flag in lead).
-
-    Args:
-        db: Database session
-        lead: Lead object
-        just_answered_key: Question key that was just answered
-        dry_run: Whether to actually send
-
-    Returns:
-        True if confirmation was sent, False otherwise
+    Build micro-confirmation summary message if we just completed dimensions, budget, and location_city.
+    Returns the message text or None if we should not send a confirmation.
     """
-    # Only send confirmation when we have dimensions, budget, and location_city
     if just_answered_key not in ["dimensions", "budget", "location_city"]:
-        return False
+        return None
 
-    # Get all answers (order_by so latest-wins per key is deterministic)
     stmt = (
         select(LeadAnswer)
         .where(LeadAnswer.lead_id == lead.id)
@@ -659,53 +644,56 @@ async def _maybe_send_confirmation_summary(
     answers_list = db.execute(stmt).scalars().all()
     answers_dict = {ans.question_key: ans.answer_text for ans in answers_list}
 
-    # Check if we have all three
     has_dimensions = "dimensions" in answers_dict and answers_dict["dimensions"].strip()
     has_budget = "budget" in answers_dict and answers_dict["budget"].strip()
     has_location = "location_city" in answers_dict and answers_dict["location_city"].strip()
 
     if not (has_dimensions and has_budget and has_location):
-        return False
+        return None
 
-    # Check if we've already sent confirmation (track via a flag in admin_notes or a separate field)
-    # For now, use a simple check: if we have all three and this is the last one we just answered
-    # We'll track this by checking if we've already sent it (could use a flag, but for simplicity
-    # we'll just check if this is the third one being answered)
-    # Actually, let's use a simpler approach: only send if this is the last of the three to be answered
-    # and we haven't sent it before (we can check by looking at the order)
-
-    # Parse values for confirmation
     from app.services.estimation_service import parse_dimensions
+    from app.services.message_composer import render_message
 
     dimensions_text = answers_dict.get("dimensions", "")
     budget_text = answers_dict.get("budget", "")
     location_text = answers_dict.get("location_city", "")
 
-    # Format dimensions
     parsed_dims = parse_dimensions(dimensions_text)
     if parsed_dims:
         size_display = f"{parsed_dims[0]:.0f}×{parsed_dims[1]:.0f}cm"
     else:
-        size_display = dimensions_text[:20]  # Fallback to first 20 chars
+        size_display = dimensions_text[:20]
 
-    # Format budget
     numbers = re.findall(r"\d+", budget_text.replace(",", ""))
     if numbers:
         budget_gbp = int(numbers[0])
         budget_display = f"£{budget_gbp}"
     else:
-        budget_display = budget_text[:20]  # Fallback
+        budget_display = budget_text[:20]
 
-    # Send confirmation
-    from app.services.message_composer import render_message
-
-    confirmation_msg = render_message(
+    return render_message(
         "confirmation_summary",
         lead_id=lead.id,
         size=size_display,
         location=location_text,
         budget=budget_display,
     )
+
+
+async def _maybe_send_confirmation_summary(
+    db: Session,
+    lead: Lead,
+    just_answered_key: str,
+    dry_run: bool,
+) -> bool:
+    """
+    Send micro-confirmation summary if we just completed dimensions, budget, and location_city.
+    Used when we need to send confirmation only (e.g. from tests). In the main flow we combine
+    confirmation + next question into one message via _get_confirmation_summary_message.
+    """
+    confirmation_msg = _get_confirmation_summary_message(db, lead, just_answered_key)
+    if confirmation_msg is None:
+        return False
 
     await _get_send_whatsapp()(
         to=lead.wa_from,
@@ -714,7 +702,6 @@ async def _maybe_send_confirmation_summary(
     )
     lead.last_bot_message_at = func.now()
     db.commit()
-
     return True
 
 

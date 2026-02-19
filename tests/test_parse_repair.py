@@ -250,9 +250,9 @@ async def test_micro_confirmation_after_all_fields(db: Session, sample_lead: Lea
 
     result = await _handle_qualifying_lead(db, sample_lead, "London", dry_run=True)
 
-    # Should send confirmation and advance to next question (confirmation + next question = 2 sends)
+    # Should send one combined message (confirmation + next question)
     assert result["status"] == "confirmation_sent"
-    assert mock_send.await_count >= 1, "At least confirmation must be sent"
+    assert mock_send.await_count >= 1, "At least one combined send must occur"
     # Check that confirmation message was rendered
     assert any("confirmation_summary" in str(call) for call in mock_render.call_args_list)
 

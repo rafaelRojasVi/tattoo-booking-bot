@@ -195,6 +195,6 @@ def cleanup_old_events(
     stmt = delete(SystemEvent).where(SystemEvent.created_at < cutoff)
     result = db.execute(stmt)
     db.commit()
-    deleted = result.rowcount
+    deleted: int = getattr(result, "rowcount", 0) or 0
     logger.info(f"SystemEvent retention: deleted {deleted} events older than {cutoff.isoformat()}")
     return deleted

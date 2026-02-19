@@ -204,9 +204,7 @@ async def test_confirmation_summary_uses_latest_per_key(db):
 
     # _maybe_send_confirmation_summary lives in conversation_qualifying and uses _get_send_whatsapp()
     mock_send = AsyncMock()
-    with patch(
-        "app.services.conversation_qualifying._get_send_whatsapp", return_value=mock_send
-    ):
+    with patch("app.services.conversation_qualifying._get_send_whatsapp", return_value=mock_send):
         sent = await _maybe_send_confirmation_summary(db, lead, "dimensions", dry_run=True)
 
     assert sent is True
@@ -248,7 +246,7 @@ async def test_complete_qualification_uses_latest_per_key(db):
 
     with (
         patch("app.services.conversation.send_whatsapp_message", new_callable=AsyncMock),
-        patch("app.services.sheets.log_lead_to_sheets"),
+        patch("app.services.conversation_qualifying.log_lead_to_sheets"),
         patch("app.services.tour_service.is_city_on_tour", return_value=True),
     ):
         await _complete_qualification(db, lead, dry_run=True)

@@ -38,6 +38,7 @@ from app.services.conversation_booking import (
     _handle_needs_artist_reply,
     _handle_tour_conversion_offered,
 )
+from app.services.conversation_policy import is_opt_back_in_message
 from app.services.conversation_qualifying import (
     _complete_qualification,
     _handle_new_lead,
@@ -250,7 +251,7 @@ async def handle_inbound_message(
 
     elif lead.status == STATUS_OPTOUT:
         # Client opted out - allow them to opt back in (restart policy: OPTOUT -> NEW)
-        if message_text.strip().upper() in ["START", "RESUME", "CONTINUE", "YES"]:
+        if is_opt_back_in_message(message_text):
             transition(db, lead, STATUS_NEW)
             lead.current_step = 0
             db.commit()

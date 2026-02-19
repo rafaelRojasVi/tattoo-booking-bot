@@ -50,7 +50,7 @@ def update_lead_status_if_matches(
     result = db.execute(stmt)
     db.commit()
 
-    if result.rowcount == 0:
+    if getattr(result, "rowcount", 0) == 0:
         # Either lead not found or status didn't match
         lead = db.get(Lead, lead_id)
         if not lead:
@@ -244,7 +244,7 @@ def validate_and_mark_token_used_atomic(
     result = db.execute(stmt)
     db.commit()
 
-    if result.rowcount == 0:
+    if getattr(result, "rowcount", 0) == 0:
         # Token doesn't exist or already used
         stmt_select = select(ActionToken).where(ActionToken.token == token)
         action_token = db.execute(stmt_select).scalar_one_or_none()

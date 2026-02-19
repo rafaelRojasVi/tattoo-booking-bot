@@ -2,7 +2,7 @@
 Booking flow handlers - slot selection, tour conversion offer, needs artist reply (CONTINUE/holding).
 """
 
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 
 from sqlalchemy import func
 from sqlalchemy.orm import Session
@@ -15,6 +15,11 @@ from app.constants.statuses import (
     STATUS_WAITLISTED,
 )
 from app.db.models import Lead
+from app.services.conversation_policy import (
+    handover_hold_cooldown_elapsed,
+    is_opt_out_message,
+    normalize_message,
+)
 from app.services.questions import get_question_by_index
 from app.services.sheets import log_lead_to_sheets
 from app.services.state_machine import transition
@@ -309,12 +314,11 @@ async def _handle_needs_artist_reply(
     from app.services.conversation_qualifying import _handle_new_lead, _handle_opt_out
 
     # Opt-out wins even during handover (STOP/UNSUBSCRIBE must be honored)
-    message_upper = message_text.strip().upper()
-    if message_upper in ["STOP", "UNSUBSCRIBE", "OPT OUT", "OPTOUT"]:
+    if is_opt_out_message(message_text):
         return await _handle_opt_out(db, lead, dry_run)
 
     # Check for CONTINUE to resume flow
-    if message_upper == "CONTINUE":
+    if normalize_message(message_text) == "CONTINUE":
         # Resume qualification flow (enforced via state machine)
         transition(db, lead, STATUS_QUALIFYING)
         # Continue with current question
@@ -352,9 +356,8 @@ async def _handle_needs_artist_reply(
     holding_msg = "I've paused the automated flow. The artist will reply to you directly."
     last_hold_at = dt_replace_utc(lead.handover_last_hold_reply_at)
     now_utc = datetime.now(UTC)
-    # >= 6h so exactly 6h ago sends again (intuitive boundary)
-    send_hold = last_hold_at is None or (now_utc - last_hold_at) >= timedelta(
-        hours=HANDOVER_HOLD_REPLY_COOLDOWN_HOURS
+    send_hold = handover_hold_cooldown_elapsed(
+        last_hold_at, now_utc, HANDOVER_HOLD_REPLY_COOLDOWN_HOURS
     )
     if send_hold:
         await _get_send_whatsapp()(

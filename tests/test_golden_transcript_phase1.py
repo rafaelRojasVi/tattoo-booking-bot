@@ -75,7 +75,9 @@ async def test_golden_transcript_phase1_happy_path(db):
         db.refresh(lead)
         assert lead.status == STATUS_QUALIFYING
         assert lead.current_step == 0
-        assert len(bot_messages) - n_bot_before <= 2, "Happy path: at most two bot sends per inbound (2 = confirmation+next)"
+        assert len(bot_messages) - n_bot_before <= 2, (
+            "Happy path: at most two bot sends per inbound (2 = confirmation+next)"
+        )
         previous_step = 0
 
         # 2) Answer each question in order

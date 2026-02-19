@@ -349,7 +349,7 @@ def advance_step_if_at(
     )
     result = db.execute(stmt)
     db.commit()
-    if result.rowcount == 0:
+    if getattr(result, "rowcount", 0) == 0:
         lead = db.get(Lead, lead_id)
         if lead and lead.current_step != expected_step:
             from app.services.system_event_service import warn
