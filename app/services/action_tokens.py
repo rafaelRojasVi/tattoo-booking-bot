@@ -32,9 +32,7 @@ ERR_LEAD_NOT_FOUND = "Lead not found"
 
 def _err_status_mismatch(lead_status: str, required_status: str) -> str:
     """Exact user-facing message for status-locked validation."""
-    return (
-        f"Cannot perform this action. Lead is in status '{lead_status}', but requires '{required_status}'"
-    )
+    return f"Cannot perform this action. Lead is in status '{lead_status}', but requires '{required_status}'"
 
 
 def _validate_action_token_checks(

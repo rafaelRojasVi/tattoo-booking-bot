@@ -444,7 +444,8 @@ async def test_notify_artist_needs_reply_includes_name_and_contact(db):
 
     with (
         patch(
-            "app.services.integrations.artist_notifications.send_whatsapp_message", new_callable=AsyncMock
+            "app.services.integrations.artist_notifications.send_whatsapp_message",
+            new_callable=AsyncMock,
         ) as mock_send,
         patch.object(settings, "artist_whatsapp_number", "+449999999999"),
     ):

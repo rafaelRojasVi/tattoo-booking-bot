@@ -156,7 +156,9 @@ def test_webhook_creates_attachment_for_image(
     # Mock signature verification
     with patch("app.api.webhooks.verify_whatsapp_signature", return_value=True):
         # Mock background task (we'll verify attachment creation, not upload)
-        with patch("app.services.integrations.media_upload.attempt_upload_attachment_job") as mock_upload:
+        with patch(
+            "app.services.integrations.media_upload.attempt_upload_attachment_job"
+        ) as mock_upload:
             response = client.post(
                 "/webhooks/whatsapp",
                 json=whatsapp_image_payload,

@@ -45,7 +45,9 @@ async def test_duplicate_whatsapp_message_idempotent(db):
             "app.services.messaging.messaging.send_whatsapp_message", new_callable=AsyncMock
         ) as mock_whatsapp,
         patch("app.services.conversation.tour_service.is_city_on_tour", return_value=True),
-        patch("app.services.conversation.handover_service.should_handover", return_value=(False, None)),
+        patch(
+            "app.services.conversation.handover_service.should_handover", return_value=(False, None)
+        ),
     ):
         mock_whatsapp.return_value = {"id": "wamock_123", "status": "sent"}
 
@@ -170,7 +172,8 @@ async def test_duplicate_stripe_webhook_idempotent(db):
 
         # Mock webhook signature verification
         with patch(
-            "app.services.integrations.stripe_service.verify_webhook_signature", return_value=webhook_event
+            "app.services.integrations.stripe_service.verify_webhook_signature",
+            return_value=webhook_event,
         ):
             # Send first webhook
             result1 = await stripe_webhook(mock_request, BackgroundTasks(), db=db)
@@ -232,7 +235,9 @@ async def test_out_of_order_messages_do_not_regress_state(db):
             "app.services.messaging.messaging.send_whatsapp_message", new_callable=AsyncMock
         ) as mock_whatsapp,
         patch("app.services.conversation.tour_service.is_city_on_tour", return_value=True),
-        patch("app.services.conversation.handover_service.should_handover", return_value=(False, None)),
+        patch(
+            "app.services.conversation.handover_service.should_handover", return_value=(False, None)
+        ),
     ):
         mock_whatsapp.return_value = {"id": "wamock_123", "status": "sent"}
 
@@ -324,7 +329,9 @@ async def test_duplicate_whatsapp_exactly_one_state_transition(db):
             "app.services.messaging.messaging.send_whatsapp_message", new_callable=AsyncMock
         ) as mock_whatsapp,
         patch("app.services.conversation.tour_service.is_city_on_tour", return_value=True),
-        patch("app.services.conversation.handover_service.should_handover", return_value=(False, None)),
+        patch(
+            "app.services.conversation.handover_service.should_handover", return_value=(False, None)
+        ),
     ):
         mock_whatsapp.return_value = {"id": "wamock_123", "status": "sent"}
 
@@ -429,7 +436,8 @@ async def test_duplicate_stripe_exactly_one_transition(db):
         mock_request = build_stripe_webhook_request(webhook_event)
 
         with patch(
-            "app.services.integrations.stripe_service.verify_webhook_signature", return_value=webhook_event
+            "app.services.integrations.stripe_service.verify_webhook_signature",
+            return_value=webhook_event,
         ):
             # Process webhook 3 times (simulating retries/duplicates)
             for _i in range(3):

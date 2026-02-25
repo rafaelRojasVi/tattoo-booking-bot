@@ -293,9 +293,7 @@ def execute_action(
             if lead.status not in (STATUS_BOOKING_LINK_SENT, STATUS_BOOKING_PENDING):
                 raise HTTPException(
                     status_code=400,
-                    detail=status_mismatch_detail_actions(
-                        "mark lead as booked", lead.status
-                    ),
+                    detail=status_mismatch_detail_actions("mark lead as booked", lead.status),
                 )
             lead.status = STATUS_BOOKED
             lead.booked_at = func.now()

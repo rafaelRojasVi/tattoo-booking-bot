@@ -200,7 +200,9 @@ async def test_slot_selection_three_strikes_handover(
     def mock_render(*args, **kwargs):
         return "I'm going to have Jonah jump in here — one sec."
 
-    monkeypatch.setattr("app.services.integrations.artist_notifications.notify_artist_needs_reply", mock_notify)
+    monkeypatch.setattr(
+        "app.services.integrations.artist_notifications.notify_artist_needs_reply", mock_notify
+    )
     monkeypatch.setattr("app.services.messaging.messaging.send_whatsapp_message", mock_send)
     monkeypatch.setattr("app.services.messaging.message_composer.render_message", mock_render)
 
@@ -267,9 +269,12 @@ async def test_suggested_slots_stored_when_sent(db: Session, sample_lead: Lead, 
     async def mock_send_window(*args, **kwargs):
         return {"status": "sent", "window_status": "open"}
 
-    monkeypatch.setattr("app.services.messaging.whatsapp_window.send_with_window_check", mock_send_window)
     monkeypatch.setattr(
-        "app.services.integrations.calendar_service.get_available_slots", lambda *args, **kwargs: test_slots
+        "app.services.messaging.whatsapp_window.send_with_window_check", mock_send_window
+    )
+    monkeypatch.setattr(
+        "app.services.integrations.calendar_service.get_available_slots",
+        lambda *args, **kwargs: test_slots,
     )
 
     result = await send_slot_suggestions_to_client(db=db, lead=sample_lead, dry_run=True)

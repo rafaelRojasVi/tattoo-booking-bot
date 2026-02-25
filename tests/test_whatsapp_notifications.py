@@ -103,7 +103,9 @@ def test_stripe_webhook_sends_payment_confirmation(client, db):
     async def mock_send_whatsapp(*args, **kwargs):
         return {"status": "dry_run", "message_id": None}
 
-    with patch("app.services.messaging.messaging.send_whatsapp_message", side_effect=mock_send_whatsapp):
+    with patch(
+        "app.services.messaging.messaging.send_whatsapp_message", side_effect=mock_send_whatsapp
+    ):
         response = client.post(
             "/webhooks/stripe",
             content=json.dumps(webhook_payload).encode("utf-8"),
@@ -231,7 +233,9 @@ def test_payment_confirmation_timestamp_updated(client, db):
     async def mock_send_whatsapp(*args, **kwargs):
         return {"status": "dry_run", "message_id": None}
 
-    with patch("app.services.messaging.messaging.send_whatsapp_message", side_effect=mock_send_whatsapp):
+    with patch(
+        "app.services.messaging.messaging.send_whatsapp_message", side_effect=mock_send_whatsapp
+    ):
         response = client.post(
             "/webhooks/stripe",
             content=json.dumps(webhook_payload).encode("utf-8"),

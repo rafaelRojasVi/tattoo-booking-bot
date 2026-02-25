@@ -38,7 +38,8 @@ async def test_notify_artist_needs_reply_sends_notification(db):
 
     with (
         patch(
-            "app.services.integrations.artist_notifications.send_whatsapp_message", new_callable=AsyncMock
+            "app.services.integrations.artist_notifications.send_whatsapp_message",
+            new_callable=AsyncMock,
         ) as mock_send,
         patch.object(settings, "artist_whatsapp_number", "+1234567890"),
     ):
@@ -80,7 +81,8 @@ async def test_notify_artist_needs_reply_idempotent(db):
 
     with (
         patch(
-            "app.services.integrations.artist_notifications.send_whatsapp_message", new_callable=AsyncMock
+            "app.services.integrations.artist_notifications.send_whatsapp_message",
+            new_callable=AsyncMock,
         ) as mock_send,
         patch.object(settings, "artist_whatsapp_number", "+1234567890"),
     ):
@@ -118,7 +120,8 @@ async def test_notify_artist_needs_follow_up_sends_notification(db):
 
     with (
         patch(
-            "app.services.integrations.artist_notifications.send_whatsapp_message", new_callable=AsyncMock
+            "app.services.integrations.artist_notifications.send_whatsapp_message",
+            new_callable=AsyncMock,
         ) as mock_send,
         patch.object(settings, "artist_whatsapp_number", "+1234567890"),
     ):
@@ -159,7 +162,8 @@ async def test_notify_artist_needs_follow_up_idempotent(db):
 
     with (
         patch(
-            "app.services.integrations.artist_notifications.send_whatsapp_message", new_callable=AsyncMock
+            "app.services.integrations.artist_notifications.send_whatsapp_message",
+            new_callable=AsyncMock,
         ) as mock_send,
         patch.object(settings, "artist_whatsapp_number", "+1234567890"),
     ):
@@ -205,7 +209,8 @@ async def test_notify_artist_needs_reply_includes_summary(db):
 
     with (
         patch(
-            "app.services.integrations.artist_notifications.send_whatsapp_message", new_callable=AsyncMock
+            "app.services.integrations.artist_notifications.send_whatsapp_message",
+            new_callable=AsyncMock,
         ) as mock_send,
         patch.object(settings, "artist_whatsapp_number", "+1234567890"),
     ):
@@ -247,7 +252,8 @@ async def test_notify_artist_needs_follow_up_includes_summary(db):
 
     with (
         patch(
-            "app.services.integrations.artist_notifications.send_whatsapp_message", new_callable=AsyncMock
+            "app.services.integrations.artist_notifications.send_whatsapp_message",
+            new_callable=AsyncMock,
         ) as mock_send,
         patch.object(settings, "artist_whatsapp_number", "+1234567890"),
     ):

@@ -115,7 +115,8 @@ async def test_panic_mode_pauses_automation(db):
     with patch.object(settings, "feature_panic_mode_enabled", True):
         with patch.object(settings, "feature_notifications_enabled", True):
             with patch(
-                "app.services.integrations.artist_notifications.notify_artist", new_callable=AsyncMock
+                "app.services.integrations.artist_notifications.notify_artist",
+                new_callable=AsyncMock,
             ) as mock_notify:
                 mock_notify.return_value = True
                 with patch(

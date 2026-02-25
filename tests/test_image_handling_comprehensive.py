@@ -78,7 +78,9 @@ def test_webhook_creates_attachment_for_image_with_caption(client, db, monkeypat
         ]
     }
 
-    with patch("app.services.integrations.media_upload.attempt_upload_attachment_job") as mock_upload:
+    with patch(
+        "app.services.integrations.media_upload.attempt_upload_attachment_job"
+    ) as mock_upload:
         response = client.post("/webhooks/whatsapp", json=payload)
 
         assert response.status_code == 200
@@ -121,7 +123,9 @@ def test_webhook_creates_attachment_for_image_without_caption(client, db, monkey
         ]
     }
 
-    with patch("app.services.integrations.media_upload.attempt_upload_attachment_job") as mock_upload:
+    with patch(
+        "app.services.integrations.media_upload.attempt_upload_attachment_job"
+    ) as mock_upload:
         response = client.post("/webhooks/whatsapp", json=payload)
 
         assert response.status_code == 200
@@ -159,7 +163,9 @@ def test_webhook_creates_attachment_for_document(client, db, monkeypatch):
         ]
     }
 
-    with patch("app.services.integrations.media_upload.attempt_upload_attachment_job") as mock_upload:
+    with patch(
+        "app.services.integrations.media_upload.attempt_upload_attachment_job"
+    ) as mock_upload:
         response = client.post("/webhooks/whatsapp", json=payload)
 
         assert response.status_code == 200
@@ -305,7 +311,9 @@ def test_webhook_handles_multiple_images_in_payload(client, db, monkeypatch):
         ]
     }
 
-    with patch("app.services.integrations.media_upload.attempt_upload_attachment_job") as mock_upload:
+    with patch(
+        "app.services.integrations.media_upload.attempt_upload_attachment_job"
+    ) as mock_upload:
         response = client.post("/webhooks/whatsapp", json=payload)
 
         assert response.status_code == 200

@@ -38,7 +38,9 @@ async def test_city_not_on_tour_offers_conversion(db):
         patch("app.services.messaging.messaging.send_whatsapp_message", mock_whatsapp_fn),
         patch("app.services.conversation.tour_service.is_city_on_tour", return_value=False),
         patch("app.services.conversation.tour_service.closest_upcoming_city") as mock_closest,
-        patch("app.services.conversation.handover_service.should_handover", return_value=(False, None)),
+        patch(
+            "app.services.conversation.handover_service.should_handover", return_value=(False, None)
+        ),
     ):
         mock_whatsapp = mock_whatsapp_fn
 
@@ -137,7 +139,9 @@ async def test_tour_offer_accepted_continues(db):
             "app.services.messaging.messaging.send_whatsapp_message", new_callable=AsyncMock
         ) as mock_whatsapp,
         patch("app.services.conversation.tour_service.is_city_on_tour", return_value=True),
-        patch("app.services.conversation.handover_service.should_handover", return_value=(False, None)),
+        patch(
+            "app.services.conversation.handover_service.should_handover", return_value=(False, None)
+        ),
     ):
         mock_whatsapp.return_value = {"id": "wamock_123", "status": "sent"}
 

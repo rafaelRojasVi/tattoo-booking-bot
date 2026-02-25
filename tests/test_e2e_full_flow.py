@@ -434,7 +434,9 @@ async def test_artist_handover_and_resume(client, db):
     mock_wa = AsyncMock(return_value={"id": "wamock", "status": "sent"})
     with (
         patch("app.services.conversation.tour_service.is_city_on_tour", return_value=True),
-        patch("app.services.conversation.handover_service.should_handover", return_value=(False, None)),
+        patch(
+            "app.services.conversation.handover_service.should_handover", return_value=(False, None)
+        ),
         patch("app.services.messaging.messaging.send_whatsapp_message", mock_wa),
         patch("app.services.messaging.messaging.send_whatsapp_message", mock_wa),
     ):

@@ -65,7 +65,9 @@ async def test_send_with_window_check_within_window_uses_free_form(db):
     db.commit()
     db.refresh(lead)
 
-    with patch("app.services.messaging.messaging.send_whatsapp_message", new_callable=AsyncMock) as mock_send:
+    with patch(
+        "app.services.messaging.messaging.send_whatsapp_message", new_callable=AsyncMock
+    ) as mock_send:
         mock_send.return_value = {
             "status": "sent",
             "message_id": "test_id",
@@ -144,7 +146,9 @@ async def test_send_with_window_check_outside_window_no_template_graceful(db):
     db.commit()
     db.refresh(lead)
 
-    with patch("app.services.messaging.messaging.send_whatsapp_message", new_callable=AsyncMock) as mock_send:
+    with patch(
+        "app.services.messaging.messaging.send_whatsapp_message", new_callable=AsyncMock
+    ) as mock_send:
         result = await send_with_window_check(
             db=db,
             lead=lead,

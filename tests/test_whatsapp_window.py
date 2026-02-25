@@ -111,7 +111,8 @@ async def test_send_with_window_check_expired_with_template(db, monkeypatch):
         return templates
 
     monkeypatch.setattr(
-        "app.services.messaging.template_registry.get_all_required_templates", mock_get_all_required_templates
+        "app.services.messaging.template_registry.get_all_required_templates",
+        mock_get_all_required_templates,
     )
 
     lead = Lead(

@@ -65,7 +65,8 @@ async def test_stripe_webhook_awaits_send_with_window_check(db, mock_stripe_even
 
             # Mock notify_artist as well (it's also awaited, imported inside function)
             with patch(
-                "app.services.integrations.artist_notifications.notify_artist", new_callable=AsyncMock
+                "app.services.integrations.artist_notifications.notify_artist",
+                new_callable=AsyncMock,
             ) as mock_notify:
                 mock_notify.return_value = {"status": "sent"}
 
@@ -112,7 +113,8 @@ async def test_stripe_webhook_awaits_notify_artist(db, mock_stripe_event, mock_l
 
             # Mock notify_artist as AsyncMock
             with patch(
-                "app.services.integrations.artist_notifications.notify_artist", new_callable=AsyncMock
+                "app.services.integrations.artist_notifications.notify_artist",
+                new_callable=AsyncMock,
             ) as mock_notify:
                 mock_notify.return_value = {"status": "sent"}
 

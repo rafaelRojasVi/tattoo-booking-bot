@@ -68,14 +68,17 @@ async def test_e2e_happy_path_city_on_tour_new_to_booked(db, frozen_time):
         patch("app.services.integrations.stripe_service.create_checkout_session") as mock_stripe,
         patch("app.services.integrations.sheets.log_lead_to_sheets") as mock_sheets,
         patch(
-            "app.services.integrations.artist_notifications.send_artist_summary", new_callable=AsyncMock
+            "app.services.integrations.artist_notifications.send_artist_summary",
+            new_callable=AsyncMock,
         ) as mock_artist_notify,
         patch(
             "app.services.messaging.whatsapp_window.send_with_window_check", new_callable=AsyncMock
         ) as mock_window_send,
         patch("app.services.conversation.tour_service.is_city_on_tour", return_value=True),
         patch("app.services.conversation.tour_service.closest_upcoming_city", return_value=None),
-        patch("app.services.conversation.handover_service.should_handover", return_value=(False, None)),
+        patch(
+            "app.services.conversation.handover_service.should_handover", return_value=(False, None)
+        ),
     ):
         # Setup mocks
         mock_whatsapp.return_value = {"id": "wamock_123", "status": "sent"}
@@ -200,10 +203,12 @@ async def test_e2e_happy_path_city_on_tour_new_to_booked(db, frozen_time):
 
         with (
             patch(
-                "app.services.integrations.stripe_service.verify_webhook_signature", return_value=webhook_event
+                "app.services.integrations.stripe_service.verify_webhook_signature",
+                return_value=webhook_event,
             ),
             patch(
-                "app.services.messaging.whatsapp_window.send_with_window_check", new_callable=AsyncMock
+                "app.services.messaging.whatsapp_window.send_with_window_check",
+                new_callable=AsyncMock,
             ) as mock_webhook_send,
         ):
             mock_webhook_send.return_value = {"id": "wamock_456", "status": "sent"}
@@ -262,8 +267,12 @@ async def test_e2e_no_unexpected_statuses(db, frozen_time):
         patch(
             "app.services.messaging.messaging.send_whatsapp_message", new_callable=AsyncMock
         ) as mock_whatsapp_messaging,
-        patch("app.services.integrations.sheets.log_lead_to_sheets", return_value=True) as mock_sheets,
-        patch("app.services.conversation.handover_service.should_handover", return_value=(False, None)),
+        patch(
+            "app.services.integrations.sheets.log_lead_to_sheets", return_value=True
+        ) as mock_sheets,
+        patch(
+            "app.services.conversation.handover_service.should_handover", return_value=(False, None)
+        ),
         patch("app.services.conversation.tour_service.is_city_on_tour", return_value=True),
         patch("app.services.conversation.tour_service.closest_upcoming_city", return_value=None),
     ):  # Disable tour conversion

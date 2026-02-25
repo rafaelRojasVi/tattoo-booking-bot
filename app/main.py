@@ -100,7 +100,6 @@ async def lifespan(app: FastAPI):
     yield
 
 
-
 app = FastAPI(title="Tattoo Booking Bot", lifespan=lifespan)
 
 app.add_middleware(

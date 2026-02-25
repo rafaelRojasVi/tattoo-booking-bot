@@ -222,7 +222,9 @@ async def test_slot_chosen_but_unavailable_recheck_and_fallback(db):
         patch(
             "app.services.integrations.calendar_service.get_available_slots", return_value=[]
         ) as mock_get_slots,
-        patch("app.services.messaging.messaging.send_whatsapp_message", new_callable=AsyncMock) as mock_send,
+        patch(
+            "app.services.messaging.messaging.send_whatsapp_message", new_callable=AsyncMock
+        ) as mock_send,
         patch("app.services.messaging.message_composer.render_message") as mock_render,
     ):
         mock_render.return_value = (
@@ -285,7 +287,8 @@ async def test_window_closed_templates_missing_no_crash(db):
             return_value=[],  # No templates configured
         ),
         patch(
-            "app.services.integrations.artist_notifications.send_system_alert", new_callable=AsyncMock
+            "app.services.integrations.artist_notifications.send_system_alert",
+            new_callable=AsyncMock,
         ) as mock_alert,
     ):
         result = await send_with_window_check(
@@ -357,7 +360,9 @@ async def test_whatsapp_webhook_duplicate_delivery_idempotency(db):
             "app.services.messaging.messaging.send_whatsapp_message", new_callable=AsyncMock
         ) as mock_whatsapp,
         patch("app.services.conversation.tour_service.is_city_on_tour", return_value=True),
-        patch("app.services.conversation.handover_service.should_handover", return_value=(False, None)),
+        patch(
+            "app.services.conversation.handover_service.should_handover", return_value=(False, None)
+        ),
     ):
         mock_whatsapp.return_value = {"id": "wamock_123", "status": "sent"}
 

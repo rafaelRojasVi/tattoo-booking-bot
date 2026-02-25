@@ -121,7 +121,9 @@ async def test_idea_step_allows_numbers_in_description_integration(db):
         ),
         patch("app.services.conversation.tour_service.is_city_on_tour", return_value=True),
         patch("app.services.conversation.tour_service.closest_upcoming_city", return_value=None),
-        patch("app.services.conversation.handover_service.should_handover", return_value=(False, None)),
+        patch(
+            "app.services.conversation.handover_service.should_handover", return_value=(False, None)
+        ),
     ):
         await handle_inbound_message(db, lead, "Hi", dry_run=True)
         db.refresh(lead)
@@ -154,7 +156,9 @@ async def test_placement_step_allows_measurement_phrases_integration(db):
         ),
         patch("app.services.conversation.tour_service.is_city_on_tour", return_value=True),
         patch("app.services.conversation.tour_service.closest_upcoming_city", return_value=None),
-        patch("app.services.conversation.handover_service.should_handover", return_value=(False, None)),
+        patch(
+            "app.services.conversation.handover_service.should_handover", return_value=(False, None)
+        ),
     ):
         await handle_inbound_message(db, lead, "Hi", dry_run=True)
         db.refresh(lead)
@@ -197,7 +201,9 @@ async def test_idea_step_rejects_budget_only_and_reprompts_idea(db):
         ),
         patch("app.services.conversation.tour_service.is_city_on_tour", return_value=True),
         patch("app.services.conversation.tour_service.closest_upcoming_city", return_value=None),
-        patch("app.services.conversation.handover_service.should_handover", return_value=(False, None)),
+        patch(
+            "app.services.conversation.handover_service.should_handover", return_value=(False, None)
+        ),
     ):
         user_messages.append("Hi")
         await handle_inbound_message(db, lead, user_messages[-1], dry_run=True)
@@ -238,7 +244,9 @@ async def test_idea_step_rejects_dimensions_only_and_reprompts_idea(db):
         ),
         patch("app.services.conversation.tour_service.is_city_on_tour", return_value=True),
         patch("app.services.conversation.tour_service.closest_upcoming_city", return_value=None),
-        patch("app.services.conversation.handover_service.should_handover", return_value=(False, None)),
+        patch(
+            "app.services.conversation.handover_service.should_handover", return_value=(False, None)
+        ),
     ):
         user_messages.append("Hi")
         await handle_inbound_message(db, lead, user_messages[-1], dry_run=True)
@@ -279,7 +287,9 @@ async def test_placement_step_rejects_dimensions_only_and_reprompts_placement(db
         ),
         patch("app.services.conversation.tour_service.is_city_on_tour", return_value=True),
         patch("app.services.conversation.tour_service.closest_upcoming_city", return_value=None),
-        patch("app.services.conversation.handover_service.should_handover", return_value=(False, None)),
+        patch(
+            "app.services.conversation.handover_service.should_handover", return_value=(False, None)
+        ),
     ):
         user_messages.append("Hi")
         await handle_inbound_message(db, lead, user_messages[-1], dry_run=True)
@@ -324,7 +334,9 @@ async def test_budget_step_accepts_budget_only(db):
         ),
         patch("app.services.conversation.tour_service.is_city_on_tour", return_value=True),
         patch("app.services.conversation.tour_service.closest_upcoming_city", return_value=None),
-        patch("app.services.conversation.handover_service.should_handover", return_value=(False, None)),
+        patch(
+            "app.services.conversation.handover_service.should_handover", return_value=(False, None)
+        ),
     ):
         user_messages: list[str] = ["Hi"] + list(answers_to_budget)
         for msg in user_messages:
@@ -385,7 +397,9 @@ async def test_valid_single_answers_never_blocked(db, question_key, valid_answer
         ),
         patch("app.services.conversation.tour_service.is_city_on_tour", return_value=True),
         patch("app.services.conversation.tour_service.closest_upcoming_city", return_value=None),
-        patch("app.services.conversation.handover_service.should_handover", return_value=(False, None)),
+        patch(
+            "app.services.conversation.handover_service.should_handover", return_value=(False, None)
+        ),
     ):
         for ans in answers_before:
             user_messages.append(ans)
@@ -453,7 +467,9 @@ async def test_one_at_a_time_does_not_trigger_for_normal_idea_with_commas(db):
         ),
         patch("app.services.conversation.tour_service.is_city_on_tour", return_value=True),
         patch("app.services.conversation.tour_service.closest_upcoming_city", return_value=None),
-        patch("app.services.conversation.handover_service.should_handover", return_value=(False, None)),
+        patch(
+            "app.services.conversation.handover_service.should_handover", return_value=(False, None)
+        ),
     ):
         # 1) Hi -> welcome + Q0 (idea)
         user_messages.append("Hi")
@@ -519,7 +535,9 @@ async def test_one_at_a_time_triggers_only_when_message_contains_multiple_step_s
         ),
         patch("app.services.conversation.tour_service.is_city_on_tour", return_value=True),
         patch("app.services.conversation.tour_service.closest_upcoming_city", return_value=None),
-        patch("app.services.conversation.handover_service.should_handover", return_value=(False, None)),
+        patch(
+            "app.services.conversation.handover_service.should_handover", return_value=(False, None)
+        ),
     ):
         # 1) Hi -> welcome + Q0 (idea)
         user_messages.append("Hi")
@@ -583,7 +601,9 @@ async def test_reference_images_step_allows_ig_handle_and_style_text(db):
         ),
         patch("app.services.conversation.tour_service.is_city_on_tour", return_value=True),
         patch("app.services.conversation.tour_service.closest_upcoming_city", return_value=None),
-        patch("app.services.conversation.handover_service.should_handover", return_value=(False, None)),
+        patch(
+            "app.services.conversation.handover_service.should_handover", return_value=(False, None)
+        ),
     ):
         # 1) Hi -> welcome + Q0
         user_messages.append("Hi")
@@ -658,7 +678,9 @@ async def test_dimensions_step_accepts_10x15cm_currency_and_advances(db):
         ),
         patch("app.services.conversation.tour_service.is_city_on_tour", return_value=True),
         patch("app.services.conversation.tour_service.closest_upcoming_city", return_value=None),
-        patch("app.services.conversation.handover_service.should_handover", return_value=(False, None)),
+        patch(
+            "app.services.conversation.handover_service.should_handover", return_value=(False, None)
+        ),
     ):
         user_messages.append("Hi")
         await handle_inbound_message(db, lead, user_messages[-1], dry_run=True)
@@ -718,7 +740,9 @@ async def test_reference_images_accepts_ig_url_with_style_words(db):
         ),
         patch("app.services.conversation.tour_service.is_city_on_tour", return_value=True),
         patch("app.services.conversation.tour_service.closest_upcoming_city", return_value=None),
-        patch("app.services.conversation.handover_service.should_handover", return_value=(False, None)),
+        patch(
+            "app.services.conversation.handover_service.should_handover", return_value=(False, None)
+        ),
     ):
         user_messages.append("Hi")
         await handle_inbound_message(db, lead, user_messages[-1], dry_run=True)
@@ -780,7 +804,9 @@ async def test_instagram_handle_step_accepts_handle_even_with_style_word(db):
         ),
         patch("app.services.conversation.tour_service.is_city_on_tour", return_value=True),
         patch("app.services.conversation.tour_service.closest_upcoming_city", return_value=None),
-        patch("app.services.conversation.handover_service.should_handover", return_value=(False, None)),
+        patch(
+            "app.services.conversation.handover_service.should_handover", return_value=(False, None)
+        ),
     ):
         # 1) Hi -> welcome + Q0
         user_messages.append("Hi")

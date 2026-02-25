@@ -37,7 +37,9 @@ async def test_all_day_event_blocks_entire_day(db):
 
     # Mock calendar service to return an all-day event
     # All-day events typically have start/end at midnight or same day
-    with patch("app.services.integrations.calendar_service._get_mock_available_slots") as mock_slots:
+    with patch(
+        "app.services.integrations.calendar_service._get_mock_available_slots"
+    ) as mock_slots:
         # Simulate all-day event by having no available slots
         # (all-day events would block the entire day)
         mock_slots.return_value = []
@@ -68,7 +70,9 @@ async def test_fully_busy_window_returns_no_slots(db):
     db.refresh(lead)
 
     # Mock calendar to return no available slots (fully busy)
-    with patch("app.services.integrations.calendar_service._get_mock_available_slots") as mock_slots:
+    with patch(
+        "app.services.integrations.calendar_service._get_mock_available_slots"
+    ) as mock_slots:
         mock_slots.return_value = []
 
         time_min = datetime.now(UTC)
@@ -143,7 +147,9 @@ async def test_timezone_edge_case_utc_vs_london(db):
 
     # Mock calendar service with UTC events
     # The calendar rules should handle timezone conversion
-    with patch("app.services.integrations.calendar_service._get_mock_available_slots") as mock_slots:
+    with patch(
+        "app.services.integrations.calendar_service._get_mock_available_slots"
+    ) as mock_slots:
         # Return slots in UTC
         utc_now = datetime.now(UTC)
         mock_slots.return_value = [
@@ -179,7 +185,9 @@ async def test_empty_slots_no_crash(db):
 
     with (
         patch("app.services.integrations.calendar_service.get_available_slots", return_value=[]),
-        patch("app.services.integrations.calendar_service.format_slot_suggestions", return_value=""),
+        patch(
+            "app.services.integrations.calendar_service.format_slot_suggestions", return_value=""
+        ),
         patch(
             "app.services.messaging.messaging.send_whatsapp_message", new_callable=AsyncMock
         ) as mock_whatsapp,

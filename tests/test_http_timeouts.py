@@ -50,7 +50,9 @@ def test_messaging_uses_timeout(monkeypatch):
     # So we'll check the source code instead
 
     # Read the source file
-    messaging_file = Path(__file__).parent.parent / "app" / "services" / "messaging" / "messaging.py"
+    messaging_file = (
+        Path(__file__).parent.parent / "app" / "services" / "messaging" / "messaging.py"
+    )
     content = messaging_file.read_text()
 
     # Check that it imports or uses the helper
@@ -62,7 +64,9 @@ def test_messaging_uses_timeout(monkeypatch):
 def test_whatsapp_window_uses_timeout():
     """Test that whatsapp_window.py uses the timeout helper."""
     # Read the source file with explicit encoding
-    window_file = Path(__file__).parent.parent / "app" / "services" / "messaging" / "whatsapp_window.py"
+    window_file = (
+        Path(__file__).parent.parent / "app" / "services" / "messaging" / "whatsapp_window.py"
+    )
     content = window_file.read_text(encoding="utf-8")
 
     # Check that it imports or uses the helper

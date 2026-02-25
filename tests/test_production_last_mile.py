@@ -51,7 +51,9 @@ async def test_send_failure_does_not_advance_step(db):
             side_effect=Exception("Send failed"),
         ),
         patch("app.services.conversation.tour_service.is_city_on_tour", return_value=True),
-        patch("app.services.conversation.handover_service.should_handover", return_value=(False, None)),
+        patch(
+            "app.services.conversation.handover_service.should_handover", return_value=(False, None)
+        ),
     ):
         with pytest.raises(Exception, match="Send failed"):
             await handle_inbound_message(
@@ -109,7 +111,9 @@ async def test_out_of_order_message_does_not_advance_or_reprompt(db):
             new_callable=AsyncMock,
         ) as mock_send,
         patch("app.services.conversation.tour_service.is_city_on_tour", return_value=True),
-        patch("app.services.conversation.handover_service.should_handover", return_value=(False, None)),
+        patch(
+            "app.services.conversation.handover_service.should_handover", return_value=(False, None)
+        ),
     ):
         mock_request = MagicMock()
         mock_request.body = AsyncMock(return_value=json.dumps(payload).encode("utf-8"))
@@ -205,7 +209,9 @@ async def test_duplicate_message_id_different_text_is_ignored(db):
             mock_wa,
         ),
         patch("app.services.conversation.tour_service.is_city_on_tour", return_value=True),
-        patch("app.services.conversation.handover_service.should_handover", return_value=(False, None)),
+        patch(
+            "app.services.conversation.handover_service.should_handover", return_value=(False, None)
+        ),
         patch.object(settings, "pilot_mode_enabled", False),
     ):
         mock_request = MagicMock()

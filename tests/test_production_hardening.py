@@ -70,7 +70,9 @@ async def test_concurrent_inbound_does_not_double_advance_step(db):
             "app.services.messaging.messaging.send_whatsapp_message", new_callable=AsyncMock
         ) as mock_send,
         patch("app.services.conversation.tour_service.is_city_on_tour", return_value=True),
-        patch("app.services.conversation.handover_service.should_handover", return_value=(False, None)),
+        patch(
+            "app.services.conversation.handover_service.should_handover", return_value=(False, None)
+        ),
     ):
         mock_send.return_value = {"id": "wamock_1", "status": "sent"}
 
@@ -147,7 +149,9 @@ async def test_duplicate_message_id_race_only_one_processes(db):
             "app.services.messaging.messaging.send_whatsapp_message", new_callable=AsyncMock
         ) as mock_send,
         patch("app.services.conversation.tour_service.is_city_on_tour", return_value=True),
-        patch("app.services.conversation.handover_service.should_handover", return_value=(False, None)),
+        patch(
+            "app.services.conversation.handover_service.should_handover", return_value=(False, None)
+        ),
     ):
         mock_send.return_value = {"id": "wamock_1", "status": "sent"}
 
@@ -204,7 +208,10 @@ async def test_confirmation_summary_uses_latest_per_key(db):
 
     # _maybe_send_confirmation_summary uses conversation_deps.get_send_whatsapp_message()
     mock_send = AsyncMock()
-    with patch("app.services.conversation.conversation_deps.get_send_whatsapp_message", return_value=mock_send):
+    with patch(
+        "app.services.conversation.conversation_deps.get_send_whatsapp_message",
+        return_value=mock_send,
+    ):
         sent = await _maybe_send_confirmation_summary(db, lead, "dimensions", dry_run=True)
 
     assert sent is True
@@ -378,7 +385,9 @@ async def test_webhook_returns_200_on_duplicate_message_id(db):
     with (
         patch("app.services.messaging.messaging.send_whatsapp_message", new_callable=AsyncMock),
         patch("app.services.conversation.tour_service.is_city_on_tour", return_value=True),
-        patch("app.services.conversation.handover_service.should_handover", return_value=(False, None)),
+        patch(
+            "app.services.conversation.handover_service.should_handover", return_value=(False, None)
+        ),
     ):
         mock_request = MagicMock()
         mock_request.body = AsyncMock(return_value=json.dumps(payload).encode("utf-8"))

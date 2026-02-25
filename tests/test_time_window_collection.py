@@ -57,7 +57,9 @@ async def test_count_time_windows_empty(db, lead_booking_pending):
 @pytest.mark.asyncio
 async def test_collect_first_time_window(db, lead_booking_pending):
     """Test collecting the first time window."""
-    with patch("app.services.conversation.time_window_collection.send_whatsapp_message") as mock_send:
+    with patch(
+        "app.services.conversation.time_window_collection.send_whatsapp_message"
+    ) as mock_send:
         mock_send.return_value = {"status": "sent"}
 
         result = await collect_time_window(
@@ -100,8 +102,12 @@ async def test_collect_second_time_window_transitions(db, lead_booking_pending):
     db.add(answer1)
     db.commit()
 
-    with patch("app.services.conversation.time_window_collection.send_whatsapp_message") as mock_send:
-        with patch("app.services.integrations.artist_notifications.notify_artist_needs_reply") as mock_notify:
+    with patch(
+        "app.services.conversation.time_window_collection.send_whatsapp_message"
+    ) as mock_send:
+        with patch(
+            "app.services.integrations.artist_notifications.notify_artist_needs_reply"
+        ) as mock_notify:
             mock_send.return_value = {"status": "sent"}
             mock_notify.return_value = True
 
@@ -167,8 +173,12 @@ async def test_collect_third_time_window(db, lead_booking_pending):
     db.add(answer2)
     db.commit()
 
-    with patch("app.services.conversation.time_window_collection.send_whatsapp_message") as mock_send:
-        with patch("app.services.integrations.artist_notifications.notify_artist_needs_reply") as mock_notify:
+    with patch(
+        "app.services.conversation.time_window_collection.send_whatsapp_message"
+    ) as mock_send:
+        with patch(
+            "app.services.integrations.artist_notifications.notify_artist_needs_reply"
+        ) as mock_notify:
             mock_send.return_value = {"status": "sent"}
             mock_notify.return_value = True
 
@@ -223,7 +233,8 @@ async def test_artist_notification_includes_time_windows(db, lead_booking_pendin
     with (
         patch("app.services.integrations.artist_notifications.settings", mock_settings),
         patch(
-            "app.services.integrations.artist_notifications.send_whatsapp_message", new_callable=AsyncMock
+            "app.services.integrations.artist_notifications.send_whatsapp_message",
+            new_callable=AsyncMock,
         ) as mock_send,
     ):
         mock_send.return_value = {"status": "sent"}
@@ -256,7 +267,8 @@ async def test_no_slots_triggers_time_window_collection(db, lead_booking_pending
     with (
         patch("app.services.integrations.calendar_service.get_available_slots") as mock_slots,
         patch(
-            "app.services.messaging.whatsapp_window.send_with_window_check", side_effect=mock_send_async
+            "app.services.messaging.whatsapp_window.send_with_window_check",
+            side_effect=mock_send_async,
         ) as mock_send,
     ):
         # Return empty slots
@@ -292,7 +304,9 @@ async def test_time_window_collection_status_handled_in_conversation(db, lead_bo
     lead_booking_pending.status = STATUS_COLLECTING_TIME_WINDOWS
     db.commit()
 
-    with patch("app.services.conversation.time_window_collection.send_whatsapp_message") as mock_send:
+    with patch(
+        "app.services.conversation.time_window_collection.send_whatsapp_message"
+    ) as mock_send:
         mock_send.return_value = {"status": "sent"}
 
         result = await handle_inbound_message(
