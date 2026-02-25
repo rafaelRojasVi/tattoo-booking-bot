@@ -18,15 +18,15 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from app.services.messaging.bundle_guard import (
-    looks_like_multi_answer_bundle,
-    looks_like_wrong_field_single_answer,
-)
 from app.services.conversation import (
     STATUS_QUALIFYING,
     handle_inbound_message,
 )
 from app.services.leads import get_or_create_lead
+from app.services.messaging.bundle_guard import (
+    looks_like_multi_answer_bundle,
+    looks_like_wrong_field_single_answer,
+)
 from tests.helpers.golden_transcript import format_transcript, make_capturing_send
 
 # Answers to reach each step (used by multiple tests)

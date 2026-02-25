@@ -206,7 +206,10 @@ async def _handle_qualifying_lead(
 
             return parse_budget_from_text(message_text) is not None
         if current_question.key == "location_city":
-            from app.services.parsing.location_parsing import is_valid_location, parse_location_input
+            from app.services.parsing.location_parsing import (
+                is_valid_location,
+                parse_location_input,
+            )
 
             parsed = parse_location_input(message_text.strip())
             return not parsed["is_flexible"] and is_valid_location(message_text.strip())
@@ -651,8 +654,8 @@ def _get_confirmation_summary_message(
     if not (has_dimensions and has_budget and has_location):
         return None
 
-    from app.services.parsing.estimation_service import parse_dimensions
     from app.services.messaging.message_composer import render_message
+    from app.services.parsing.estimation_service import parse_dimensions
 
     dimensions_text = answers_dict.get("dimensions", "")
     budget_text = answers_dict.get("budget", "")
@@ -752,8 +755,12 @@ async def _complete_qualification(
     """Complete qualification - Phase 1: run estimation, region checks, tour logic, then move to PENDING_APPROVAL."""
     import logging
 
+    from app.services.conversation.tour_service import (
+        closest_upcoming_city,
+        format_tour_offer,
+        is_city_on_tour,
+    )
     from app.services.parsing.estimation_service import estimate_project
-    from app.services.conversation.tour_service import closest_upcoming_city, format_tour_offer, is_city_on_tour
     from app.services.parsing.region_service import country_to_region, region_min_budget
 
     logger = logging.getLogger(__name__)

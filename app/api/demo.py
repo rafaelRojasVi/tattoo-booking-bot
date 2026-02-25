@@ -13,16 +13,16 @@ from pydantic import BaseModel
 from sqlalchemy import desc, select
 from sqlalchemy.orm import Session
 
-from app.constants.event_types import EVENT_STRIPE_CHECKOUT_SESSION_COMPLETED
 from app.api.dependencies import get_lead_or_404
+from app.constants.event_types import EVENT_STRIPE_CHECKOUT_SESSION_COMPLETED
 from app.core.config import settings
 from app.db.deps import get_db
 from app.db.helpers import commit_and_refresh
 from app.db.models import Lead, LeadAnswer
 from app.services.action_tokens import generate_action_tokens_for_lead
 from app.services.conversation import get_lead_summary, handle_inbound_message
-from app.services.leads import get_or_create_lead
 from app.services.conversation.questions import CONSULTATION_QUESTIONS, get_question_by_index
+from app.services.leads import get_or_create_lead
 from app.utils.datetime_utils import iso_or_none
 
 logger = logging.getLogger(__name__)

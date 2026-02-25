@@ -6,6 +6,13 @@ from datetime import UTC, datetime
 
 import pytest
 
+from app.services.conversation.handover_service import should_handover
+from app.services.conversation.tour_service import (
+    TourStop,
+    format_tour_offer,
+    is_city_on_tour,
+    load_tour_schedule,
+)
 from app.services.parsing.estimation_service import (
     estimate_category,
     estimate_project,
@@ -13,13 +20,10 @@ from app.services.parsing.estimation_service import (
     parse_budget_from_text,
     parse_dimensions,
 )
-from app.services.conversation.handover_service import should_handover
-from app.services.parsing.region_service import country_to_region, region_hourly_rate, region_min_budget
-from app.services.conversation.tour_service import (
-    TourStop,
-    format_tour_offer,
-    is_city_on_tour,
-    load_tour_schedule,
+from app.services.parsing.region_service import (
+    country_to_region,
+    region_hourly_rate,
+    region_min_budget,
 )
 
 

@@ -9,11 +9,11 @@ import pytest
 
 from app.core.config import settings
 from app.db.models import Lead
+from app.services.conversation import handle_inbound_message
 from app.services.integrations.artist_notifications import notify_artist
 from app.services.integrations.calendar_service import send_slot_suggestions_to_client
-from app.services.conversation import handle_inbound_message
-from app.services.messaging.reminders import check_and_send_qualifying_reminder
 from app.services.integrations.sheets import log_lead_to_sheets
+from app.services.messaging.reminders import check_and_send_qualifying_reminder
 
 
 def test_sheets_disabled_by_feature_flag(db):

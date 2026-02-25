@@ -22,8 +22,8 @@ from app.services.conversation import (
     get_lead_summary,
     handle_inbound_message,
 )
-from app.services.leads import get_or_create_lead
 from app.services.conversation.questions import get_total_questions
+from app.services.leads import get_or_create_lead
 from tests.helpers.golden_transcript import (
     PHASE1_HAPPY_PATH_ANSWERS,
     format_transcript,

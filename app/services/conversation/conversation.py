@@ -8,7 +8,6 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.constants.event_types import EVENT_NEEDS_ARTIST_REPLY
-from app.db.helpers import commit_and_refresh
 from app.constants.statuses import (
     STATUS_ABANDONED,
     STATUS_AWAITING_DEPOSIT,
@@ -32,6 +31,7 @@ from app.constants.statuses import (
     STATUS_TOUR_CONVERSION_OFFERED,
     STATUS_WAITLISTED,
 )
+from app.db.helpers import commit_and_refresh
 from app.db.models import Lead, LeadAnswer
 from app.services.conversation.conversation_booking import (
     HANDOVER_HOLD_REPLY_COOLDOWN_HOURS,

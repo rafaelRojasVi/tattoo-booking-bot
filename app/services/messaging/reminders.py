@@ -15,8 +15,6 @@ from sqlalchemy.orm import Session
 
 from app.constants.event_types import reminder_booking_event_type, reminder_qualifying_event_type
 from app.constants.providers import PROVIDER_REMINDER
-from app.db.helpers import commit_and_refresh
-from app.db.models import Lead
 from app.constants.statuses import (
     STATUS_ABANDONED,
     STATUS_AWAITING_DEPOSIT,
@@ -30,8 +28,10 @@ from app.constants.statuses import (
     STATUS_QUALIFYING,
     STATUS_STALE,
 )
-from app.services.safety import check_and_record_processed_event
+from app.db.helpers import commit_and_refresh
+from app.db.models import Lead
 from app.services.messaging.whatsapp_window import send_with_window_check
+from app.services.safety import check_and_record_processed_event
 from app.utils.datetime_utils import dt_replace_utc, iso_or_none
 
 logger = logging.getLogger(__name__)

@@ -31,9 +31,9 @@ from app.services.conversation import (
     STATUS_NEEDS_ARTIST_REPLY,
     handle_inbound_message,
 )
-from app.services.leads import get_or_create_lead
 from app.services.integrations.sheets import log_lead_to_sheets
 from app.services.integrations.stripe_service import verify_webhook_signature
+from app.services.leads import get_or_create_lead
 from app.services.messaging.messaging import format_payment_confirmation_message
 from app.services.messaging.whatsapp_verification import verify_whatsapp_signature
 from app.services.safety import update_lead_status_if_matches

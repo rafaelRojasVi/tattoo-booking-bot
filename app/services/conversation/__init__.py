@@ -44,6 +44,7 @@ from app.services.conversation.state_machine import (
     is_terminal_state,
     transition,
 )
+
 from . import conversation_booking, conversation_qualifying
 from .conversation_booking import _handle_booking_pending
 

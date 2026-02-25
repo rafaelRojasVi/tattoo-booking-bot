@@ -7,9 +7,9 @@ from typing import Literal, cast
 
 from sqlalchemy.orm import Session
 
+from app.constants.statuses import STATUS_NEEDS_ARTIST_REPLY
 from app.db.helpers import commit_and_refresh
 from app.db.models import Lead
-from app.constants.statuses import STATUS_NEEDS_ARTIST_REPLY
 
 logger = logging.getLogger(__name__)
 
@@ -112,10 +112,10 @@ async def trigger_handover_after_parse_failure(
     """
     from sqlalchemy import func
 
+    from app.services.conversation.state_machine import transition
     from app.services.integrations.artist_notifications import notify_artist_needs_reply
     from app.services.messaging.message_composer import render_message
     from app.services.messaging.messaging import send_whatsapp_message
-    from app.services.conversation.state_machine import transition
 
     failure_reason = f"Unable to parse {field} after {MAX_FAILURES} attempts"
     transition(db, lead, STATUS_NEEDS_ARTIST_REPLY, reason=failure_reason)

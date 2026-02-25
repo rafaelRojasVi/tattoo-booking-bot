@@ -10,7 +10,6 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import HTMLResponse
 from sqlalchemy.orm import Session
 
-from app.api.errors import status_mismatch_detail_actions
 from app.api.admin import (
     approve_lead,
     mark_booked,
@@ -18,6 +17,7 @@ from app.api.admin import (
     send_booking_link,
     send_deposit,
 )
+from app.api.errors import status_mismatch_detail_actions
 from app.core.config import settings
 from app.db.deps import get_db
 from app.db.helpers import commit_and_refresh

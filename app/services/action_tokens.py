@@ -17,7 +17,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.db.helpers import commit_and_refresh
-from app.db.models import ActionToken, Lead
+from app.db.models import ActionToken
 from app.services.leads import get_lead_or_none
 from app.utils.datetime_utils import dt_replace_utc
 

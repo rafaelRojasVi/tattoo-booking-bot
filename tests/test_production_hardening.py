@@ -34,11 +34,11 @@ from app.services.conversation import (
     handle_inbound_message,
 )
 from app.services.conversation.handover_packet import build_handover_packet
-from app.services.leads import get_or_create_lead
 from app.services.conversation.state_machine import (
     ALLOWED_TRANSITIONS,
     transition,
 )
+from app.services.leads import get_or_create_lead
 from tests.conftest import TestingSessionLocal, is_sqlite
 
 # ---- P0: Concurrency and races ----

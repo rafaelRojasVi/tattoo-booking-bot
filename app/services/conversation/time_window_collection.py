@@ -7,10 +7,9 @@ import logging
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app.constants.statuses import STATUS_NEEDS_ARTIST_REPLY
 from app.db.helpers import commit_and_refresh
 from app.db.models import Lead, LeadAnswer
-from app.constants.statuses import STATUS_NEEDS_ARTIST_REPLY
-
 from app.services.messaging.messaging import send_whatsapp_message
 
 logger = logging.getLogger(__name__)

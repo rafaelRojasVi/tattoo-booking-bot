@@ -14,13 +14,13 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from app.db.models import Lead
-from app.services.integrations.calendar_service import (
-    get_available_slots,
-    send_slot_suggestions_to_client,
-)
 from app.services.conversation import (
     STATUS_AWAITING_DEPOSIT,
     STATUS_COLLECTING_TIME_WINDOWS,
+)
+from app.services.integrations.calendar_service import (
+    get_available_slots,
+    send_slot_suggestions_to_client,
 )
 
 

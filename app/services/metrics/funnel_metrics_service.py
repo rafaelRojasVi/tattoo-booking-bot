@@ -8,7 +8,6 @@ from datetime import UTC, datetime, timedelta
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.db.models import Lead
 from app.constants.statuses import (
     STATUS_ABANDONED,
     STATUS_BOOKED,
@@ -18,6 +17,7 @@ from app.constants.statuses import (
     STATUS_REJECTED,
     STATUS_STALE,
 )
+from app.db.models import Lead
 
 logger = logging.getLogger(__name__)
 

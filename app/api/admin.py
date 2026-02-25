@@ -26,9 +26,9 @@ from app.services.conversation import (
     STATUS_REJECTED,
     get_lead_summary,
 )
+from app.services.integrations.sheets import log_lead_to_sheets
 from app.services.messaging.messaging import format_deposit_link_message
 from app.services.safety import update_lead_status_if_matches
-from app.services.integrations.sheets import log_lead_to_sheets
 from app.utils.datetime_utils import dt_replace_utc, iso_or_none
 
 logger = logging.getLogger(__name__)

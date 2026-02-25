@@ -574,7 +574,10 @@ async def test_coverup_no_variations(db, lead_with_answers):
 @pytest.mark.asyncio
 async def test_time_window_collection_max_windows(db, sample_lead):
     """Test that time window collection stops after max windows (2-3)."""
-    from app.services.conversation.time_window_collection import collect_time_window, count_time_windows
+    from app.services.conversation.time_window_collection import (
+        collect_time_window,
+        count_time_windows,
+    )
 
     sample_lead.status = "COLLECTING_TIME_WINDOWS"
     db.commit()

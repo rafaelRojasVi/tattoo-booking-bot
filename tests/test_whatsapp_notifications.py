@@ -6,7 +6,10 @@ from unittest.mock import AsyncMock, patch
 
 from app.db.models import Lead
 from app.services.conversation import STATUS_AWAITING_DEPOSIT
-from app.services.messaging.messaging import format_deposit_link_message, format_payment_confirmation_message
+from app.services.messaging.messaging import (
+    format_deposit_link_message,
+    format_payment_confirmation_message,
+)
 
 
 def test_format_deposit_link_message():
