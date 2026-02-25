@@ -10,6 +10,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import HTMLResponse
 from sqlalchemy.orm import Session
 
+from app.api.errors import status_mismatch_detail_actions
 from app.api.admin import (
     approve_lead,
     mark_booked,
@@ -19,6 +20,7 @@ from app.api.admin import (
 )
 from app.core.config import settings
 from app.db.deps import get_db
+from app.db.helpers import commit_and_refresh
 from app.services.action_tokens import validate_action_token
 
 logger = logging.getLogger(__name__)
@@ -194,21 +196,21 @@ def execute_action(
             STATUS_PENDING_APPROVAL,
             STATUS_REJECTED,
         )
-        from app.services.sheets import log_lead_to_sheets
+        from app.services.integrations.sheets import log_lead_to_sheets
 
         lead = action_token.lead
 
         if action_token.action_type == "approve":
             if lead.status != STATUS_PENDING_APPROVAL:
                 raise HTTPException(
-                    status_code=400, detail=f"Cannot approve lead in status '{lead.status}'"
+                    status_code=400,
+                    detail=status_mismatch_detail_actions("approve lead", lead.status),
                 )
             lead.status = STATUS_AWAITING_DEPOSIT
             lead.approved_at = func.now()
             lead.last_admin_action = "approve"
             lead.last_admin_action_at = func.now()
-            db.commit()
-            db.refresh(lead)
+            commit_and_refresh(db, lead)
             log_lead_to_sheets(db, lead)
             result = {
                 "success": True,
@@ -226,8 +228,7 @@ def execute_action(
             lead.rejected_at = func.now()
             lead.last_admin_action = "reject"
             lead.last_admin_action_at = func.now()
-            db.commit()
-            db.refresh(lead)
+            commit_and_refresh(db, lead)
             log_lead_to_sheets(db, lead)
             result = {
                 "success": True,
@@ -240,7 +241,9 @@ def execute_action(
             if lead.status != STATUS_AWAITING_DEPOSIT:
                 raise HTTPException(
                     status_code=400,
-                    detail=f"Cannot send deposit link for lead in status '{lead.status}'",
+                    detail=status_mismatch_detail_actions(
+                        "send deposit link for lead", lead.status
+                    ),
                 )
             from app.core.config import settings
 
@@ -260,8 +263,7 @@ def execute_action(
             lead.deposit_rule_version = settings.deposit_rule_version  # Store rule version
             lead.last_admin_action = "send_deposit"
             lead.last_admin_action_at = func.now()
-            db.commit()
-            db.refresh(lead)
+            commit_and_refresh(db, lead)
             log_lead_to_sheets(db, lead)
             result = {
                 "success": True,
@@ -290,14 +292,16 @@ def execute_action(
         elif action_token.action_type == "mark_booked":
             if lead.status not in (STATUS_BOOKING_LINK_SENT, STATUS_BOOKING_PENDING):
                 raise HTTPException(
-                    status_code=400, detail=f"Cannot mark lead as booked in status '{lead.status}'"
+                    status_code=400,
+                    detail=status_mismatch_detail_actions(
+                        "mark lead as booked", lead.status
+                    ),
                 )
             lead.status = STATUS_BOOKED
             lead.booked_at = func.now()
             lead.last_admin_action = "mark_booked"
             lead.last_admin_action_at = func.now()
-            db.commit()
-            db.refresh(lead)
+            commit_and_refresh(db, lead)
             log_lead_to_sheets(db, lead)
             result = {
                 "success": True,

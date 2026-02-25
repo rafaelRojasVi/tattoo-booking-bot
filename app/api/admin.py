@@ -6,8 +6,11 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.api.auth import get_admin_auth
+from app.api.dependencies import get_lead_or_404
+from app.api.errors import status_mismatch_detail_admin
 from app.constants.event_types import EVENT_DEPOSIT_EXPIRED_SWEEP, EVENT_PENDING_APPROVAL
 from app.db.deps import get_db
+from app.db.helpers import commit_and_refresh
 from app.db.models import Lead, OutboxMessage
 from app.schemas.admin import (
     RejectRequest,
@@ -23,9 +26,9 @@ from app.services.conversation import (
     STATUS_REJECTED,
     get_lead_summary,
 )
-from app.services.messaging import format_deposit_link_message
+from app.services.messaging.messaging import format_deposit_link_message
 from app.services.safety import update_lead_status_if_matches
-from app.services.sheets import log_lead_to_sheets
+from app.services.integrations.sheets import log_lead_to_sheets
 from app.utils.datetime_utils import dt_replace_utc, iso_or_none
 
 logger = logging.getLogger(__name__)
@@ -76,7 +79,7 @@ def retry_outbox_messages(
     Retry due outbox rows (PENDING/FAILED with next_retry_at <= now).
     Only active when OUTBOX_ENABLED=true.
     """
-    from app.services.outbox_service import retry_due_outbox_rows
+    from app.services.messaging.outbox_service import retry_due_outbox_rows
 
     results = retry_due_outbox_rows(db, limit=limit)
     return {"outbox_retry": results}
@@ -94,7 +97,7 @@ def test_webhook_exception_simulation(
     """
     from app.constants.event_types import EVENT_WHATSAPP_WEBHOOK_FAILURE
     from app.core.config import settings
-    from app.services.system_event_service import error
+    from app.services.metrics.system_event_service import error
 
     if settings.app_env == "production":
         raise HTTPException(
@@ -125,7 +128,7 @@ def cleanup_system_events_retention(
     Delete SystemEvents older than retention_days (default 90).
     Admin-only. Use for periodic retention or manual cleanup.
     """
-    from app.services.system_event_service import cleanup_old_events
+    from app.services.metrics.system_event_service import cleanup_old_events
 
     deleted = cleanup_old_events(db, retention_days=retention_days)
     return {"deleted": deleted, "retention_days": retention_days}
@@ -136,7 +139,7 @@ def get_metrics(
     _auth: bool = Security(get_admin_auth),
 ):
     """Get system metrics (duplicate events, failed atomic updates, etc.)."""
-    from app.services.metrics import get_metrics, get_metrics_summary
+    from app.services.metrics.metrics import get_metrics, get_metrics_summary
 
     return {
         "metrics": get_metrics(),
@@ -159,7 +162,7 @@ def get_funnel(
     Returns:
         Dict with counts and conversion rates
     """
-    from app.services.funnel_metrics_service import get_funnel_metrics
+    from app.services.metrics.funnel_metrics_service import get_funnel_metrics
 
     return get_funnel_metrics(db, days=days)
 
@@ -179,7 +182,7 @@ def get_slot_parse_stats_endpoint(
     Returns:
         Dict with success/reject counts
     """
-    from app.services.slot_parsing import get_slot_parse_stats
+    from app.services.parsing.slot_parsing import get_slot_parse_stats
 
     return get_slot_parse_stats(db, last_days=days)
 
@@ -219,7 +222,7 @@ def get_lead_detail(
 
 @router.post("/leads/{lead_id}/approve")
 async def approve_lead(
-    lead_id: int,
+    lead: Lead = Depends(get_lead_or_404),
     db: Session = Depends(get_db),
     _auth: bool = Security(get_admin_auth),
 ):
@@ -227,14 +230,10 @@ async def approve_lead(
     Approve a lead - transitions from PENDING_APPROVAL to AWAITING_DEPOSIT.
     Status-locked: only works from PENDING_APPROVAL.
     """
-    lead = db.get(Lead, lead_id)
-    if not lead:
-        raise HTTPException(status_code=404, detail="Lead not found")
-
     # Atomic status-locked update (prevents race conditions)
     success, lead = update_lead_status_if_matches(
         db=db,
-        lead_id=lead_id,
+        lead_id=lead.id,
         expected_status=STATUS_PENDING_APPROVAL,
         new_status=STATUS_AWAITING_DEPOSIT,
         approved_at=func.now(),
@@ -247,7 +246,9 @@ async def approve_lead(
             raise HTTPException(status_code=404, detail="Lead not found")
         raise HTTPException(
             status_code=400,
-            detail=f"Cannot approve lead in status '{lead.status}'. Lead must be in '{STATUS_PENDING_APPROVAL}'.",
+            detail=status_mismatch_detail_admin(
+                "approve lead", lead.status, STATUS_PENDING_APPROVAL
+            ),
         )
     if lead is None:
         raise HTTPException(status_code=404, detail="Lead not found")
@@ -256,7 +257,7 @@ async def approve_lead(
 
     # Phase 1: Send calendar slot suggestions after approval (before deposit)
     from app.core.config import settings
-    from app.services.calendar_service import send_slot_suggestions_to_client
+    from app.services.integrations.calendar_service import send_slot_suggestions_to_client
 
     try:
         await send_slot_suggestions_to_client(
@@ -266,10 +267,10 @@ async def approve_lead(
         )
     except Exception as e:
         # Log error but don't fail the approval
-        logger.error(f"Failed to send slot suggestions to lead {lead_id}: {e}")
+        logger.error(f"Failed to send slot suggestions to lead {lead.id}: {e}")
 
     # Phase 1: Notify artist that lead was approved
-    from app.services.artist_notifications import notify_artist
+    from app.services.integrations.artist_notifications import notify_artist
 
     try:
         await notify_artist(
@@ -279,7 +280,7 @@ async def approve_lead(
             dry_run=settings.whatsapp_dry_run,
         )
     except Exception as e:
-        logger.error(f"Failed to notify artist of approval for lead {lead_id}: {e}")
+        logger.error(f"Failed to notify artist of approval for lead {lead.id}: {e}")
 
     return {
         "success": True,
@@ -291,8 +292,8 @@ async def approve_lead(
 
 @router.post("/leads/{lead_id}/reject")
 def reject_lead(
-    lead_id: int,
     request: RejectRequest,
+    lead: Lead = Depends(get_lead_or_404),
     db: Session = Depends(get_db),
     _auth: bool = Security(get_admin_auth),
 ):
@@ -300,10 +301,6 @@ def reject_lead(
     Reject a lead - transitions to REJECTED.
     Can be called from any status (status-locked only for approve/send-deposit/send-booking).
     """
-    lead = db.get(Lead, lead_id)
-    if not lead:
-        raise HTTPException(status_code=404, detail="Lead not found")
-
     if lead.status == STATUS_REJECTED:
         raise HTTPException(status_code=400, detail="Lead is already rejected")
 
@@ -317,8 +314,7 @@ def reject_lead(
     lead.last_admin_action_at = func.now()
     if request.reason:
         lead.admin_notes = (lead.admin_notes or "") + f"\nRejection reason: {request.reason}"
-    db.commit()
-    db.refresh(lead)
+    commit_and_refresh(db, lead)
 
     log_lead_to_sheets(db, lead)
 
@@ -334,7 +330,7 @@ def reject_lead(
 
 @router.post("/leads/{lead_id}/send-deposit")
 async def send_deposit(
-    lead_id: int,
+    lead: Lead = Depends(get_lead_or_404),
     request: SendDepositRequest | None = None,
     db: Session = Depends(get_db),
     _auth: bool = Security(get_admin_auth),
@@ -344,10 +340,6 @@ async def send_deposit(
     Status-locked: only works from AWAITING_DEPOSIT.
     Note: Status remains AWAITING_DEPOSIT until webhook confirms payment.
     """
-    lead = db.get(Lead, lead_id)
-    if not lead:
-        raise HTTPException(status_code=404, detail="Lead not found")
-
     if lead.status != STATUS_AWAITING_DEPOSIT:
         raise HTTPException(
             status_code=400,
@@ -363,13 +355,12 @@ async def send_deposit(
         if expires_at is not None and now >= expires_at:
             # Session expired - clear it and create a new one
             logger.info(
-                f"Existing checkout session {lead.stripe_checkout_session_id} for lead {lead_id} "
+                f"Existing checkout session {lead.stripe_checkout_session_id} for lead {lead.id} "
                 f"expired at {expires_at}. Creating new session."
             )
             lead.stripe_checkout_session_id = None
             lead.deposit_checkout_expires_at = None
-            db.commit()
-            db.refresh(lead)
+            commit_and_refresh(db, lead)
 
     # Lock deposit amount: prefer deposit_amount_pence if already set, else estimated_deposit_amount
     # This ensures the amount is locked once approved/deposit link is generated
@@ -391,7 +382,7 @@ async def send_deposit(
         amount_pence = request.amount_pence
     else:
         # Fallback to estimated_category calculation
-        from app.services.estimation_service import Category, get_deposit_amount
+        from app.services.parsing.estimation_service import Category, get_deposit_amount
 
         if lead.estimated_category:
             # For XL, use estimated_days if available
@@ -412,11 +403,10 @@ async def send_deposit(
     lead.deposit_sent_at = func.now()  # Track when sent
     lead.last_admin_action = "send_deposit"
     lead.last_admin_action_at = func.now()
-    db.commit()
-    db.refresh(lead)
+    commit_and_refresh(db, lead)
 
     # Create Stripe checkout session
-    from app.services.stripe_service import create_checkout_session
+    from app.services.integrations.stripe_service import create_checkout_session
 
     checkout_result = create_checkout_session(
         lead_id=lead.id,
@@ -434,17 +424,16 @@ async def send_deposit(
     # Store checkout session ID and expiry timestamp
     lead.stripe_checkout_session_id = checkout_result["checkout_session_id"]
     lead.deposit_checkout_expires_at = checkout_result.get("expires_at")
-    db.commit()
-    db.refresh(lead)
+    commit_and_refresh(db, lead)
 
     log_lead_to_sheets(db, lead)
 
     # Send WhatsApp message with deposit link (with 24h window check)
-    from app.services.whatsapp_templates import (
+    from app.services.messaging.whatsapp_templates import (
         get_template_for_next_steps,
         get_template_params_next_steps_reply_to_continue,
     )
-    from app.services.whatsapp_window import send_with_window_check
+    from app.services.messaging.whatsapp_window import send_with_window_check
 
     deposit_message = format_deposit_link_message(
         checkout_result["checkout_url"], amount_pence, lead_id=lead.id
@@ -461,8 +450,7 @@ async def send_deposit(
 
     # Update last bot message timestamp
     lead.last_bot_message_at = func.now()
-    db.commit()
-    db.refresh(lead)
+    commit_and_refresh(db, lead)
 
     return {
         "success": True,
@@ -477,8 +465,8 @@ async def send_deposit(
 
 @router.post("/leads/{lead_id}/send-booking-link")
 def send_booking_link(
-    lead_id: int,
     request: SendBookingLinkRequest,
+    lead: Lead = Depends(get_lead_or_404),
     db: Session = Depends(get_db),
     _auth: bool = Security(get_admin_auth),
 ):
@@ -486,14 +474,10 @@ def send_booking_link(
     Send booking link - transitions from DEPOSIT_PAID to BOOKING_LINK_SENT.
     Status-locked: only works from DEPOSIT_PAID.
     """
-    lead = db.get(Lead, lead_id)
-    if not lead:
-        raise HTTPException(status_code=404, detail="Lead not found")
-
     # Atomic status-locked update (prevents race conditions)
     success, lead = update_lead_status_if_matches(
         db=db,
-        lead_id=lead_id,
+        lead_id=lead.id,
         expected_status=STATUS_DEPOSIT_PAID,
         new_status=STATUS_BOOKING_LINK_SENT,
         booking_link=request.booking_url,
@@ -508,7 +492,9 @@ def send_booking_link(
             raise HTTPException(status_code=404, detail="Lead not found")
         raise HTTPException(
             status_code=400,
-            detail=f"Cannot send booking link for lead in status '{lead.status}'. Lead must be in '{STATUS_DEPOSIT_PAID}'.",
+            detail=status_mismatch_detail_admin(
+                "send booking link for lead", lead.status, STATUS_DEPOSIT_PAID
+            ),
         )
     if lead is None:
         raise HTTPException(status_code=404, detail="Lead not found")
@@ -528,7 +514,7 @@ def send_booking_link(
 
 @router.post("/leads/{lead_id}/mark-booked")
 def mark_booked(
-    lead_id: int,
+    lead: Lead = Depends(get_lead_or_404),
     db: Session = Depends(get_db),
     _auth: bool = Security(get_admin_auth),
 ):
@@ -538,15 +524,11 @@ def mark_booked(
     """
     from app.services.conversation import STATUS_BOOKING_PENDING
 
-    lead = db.get(Lead, lead_id)
-    if not lead:
-        raise HTTPException(status_code=404, detail="Lead not found")
-
     # Atomic status-locked update (prevents race conditions)
     # BOOKED can only be set manually - no external events can set this
     success, lead = update_lead_status_if_matches(
         db=db,
-        lead_id=lead_id,
+        lead_id=lead.id,
         expected_status=STATUS_BOOKING_PENDING,
         new_status=STATUS_BOOKED,
         booked_at=func.now(),
@@ -563,12 +545,13 @@ def mark_booked(
             lead.booked_at = func.now()
             lead.last_admin_action = "mark_booked"
             lead.last_admin_action_at = func.now()
-            db.commit()
-            db.refresh(lead)
+            commit_and_refresh(db, lead)
         else:
             raise HTTPException(
                 status_code=400,
-                detail=f"Cannot mark lead as booked in status '{lead.status}'. Lead must be in '{STATUS_BOOKING_PENDING}'.",
+                detail=status_mismatch_detail_admin(
+                    "mark lead as booked", lead.status, STATUS_BOOKING_PENDING
+                ),
             )
     if lead is None:
         raise HTTPException(status_code=404, detail="Lead not found")
@@ -631,7 +614,7 @@ def get_events(
 
 @router.get("/debug/lead/{lead_id}")
 def debug_lead(
-    lead_id: int,
+    lead: Lead = Depends(get_lead_or_404),
     db: Session = Depends(get_db),
     _auth: bool = Security(get_admin_auth),
 ):
@@ -652,12 +635,8 @@ def debug_lead(
     Returns:
         Comprehensive debug information
     """
-    lead = db.get(Lead, lead_id)
-    if not lead:
-        raise HTTPException(status_code=404, detail="Lead not found")
-
     # Get handover packet
-    from app.services.handover_packet import build_handover_packet
+    from app.services.conversation.handover_packet import build_handover_packet
 
     packet = build_handover_packet(db, lead)
 
@@ -666,7 +645,7 @@ def debug_lead(
 
     answers = (
         db.query(LeadAnswer)
-        .filter(LeadAnswer.lead_id == lead_id)
+        .filter(LeadAnswer.lead_id == lead.id)
         .order_by(LeadAnswer.created_at)
         .all()
     )
@@ -678,7 +657,7 @@ def debug_lead(
 
     events = (
         db.query(SystemEvent)
-        .filter(SystemEvent.lead_id == lead_id)
+        .filter(SystemEvent.lead_id == lead.id)
         .order_by(desc(SystemEvent.created_at))
         .limit(50)
         .all()
@@ -689,7 +668,7 @@ def debug_lead(
 
     processed_messages = (
         db.query(ProcessedMessage)
-        .filter(ProcessedMessage.lead_id == lead_id)
+        .filter(ProcessedMessage.lead_id == lead.id)
         .order_by(desc(ProcessedMessage.processed_at))
         .limit(20)
         .all()
@@ -820,7 +799,7 @@ def sweep_expired_deposits(
     from datetime import UTC, datetime, timedelta
 
     from app.services.conversation import STATUS_AWAITING_DEPOSIT
-    from app.services.system_event_service import info
+    from app.services.metrics.system_event_service import info
 
     # Find leads in AWAITING_DEPOSIT status with deposit_sent_at older than threshold
     cutoff_time = datetime.now(UTC) - timedelta(hours=hours_threshold)
@@ -844,7 +823,7 @@ def sweep_expired_deposits(
     for lead in expired_leads:
         try:
             # Use existing function from reminders service
-            from app.services.reminders import check_and_mark_deposit_expired
+            from app.services.messaging.reminders import check_and_mark_deposit_expired
 
             result = check_and_mark_deposit_expired(db, lead, hours_threshold=hours_threshold)
 

@@ -23,6 +23,7 @@ from app.constants.event_types import (
 from app.constants.providers import PROVIDER_WHATSAPP
 from app.core.config import settings
 from app.db.deps import get_db
+from app.db.helpers import commit_and_refresh
 from app.db.models import Lead, ProcessedMessage
 from app.services.conversation import (
     STATUS_AWAITING_DEPOSIT,
@@ -31,16 +32,85 @@ from app.services.conversation import (
     handle_inbound_message,
 )
 from app.services.leads import get_or_create_lead
-from app.services.messaging import format_payment_confirmation_message
+from app.services.integrations.sheets import log_lead_to_sheets
+from app.services.integrations.stripe_service import verify_webhook_signature
+from app.services.messaging.messaging import format_payment_confirmation_message
+from app.services.messaging.whatsapp_verification import verify_whatsapp_signature
 from app.services.safety import update_lead_status_if_matches
-from app.services.sheets import log_lead_to_sheets
-from app.services.stripe_service import verify_webhook_signature
-from app.services.whatsapp_verification import verify_whatsapp_signature
 from app.utils.datetime_utils import dt_replace_utc, iso_or_none
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+
+def _wa_error_response(status_code: int, error: str, **content_extras) -> JSONResponse:
+    """Build JSONResponse for WhatsApp webhook errors: {"received": False, "error": ...}."""
+    content: dict = {"received": False, "error": error, **content_extras}
+    return JSONResponse(status_code=status_code, content=content)
+
+
+def _stripe_error_response(status_code: int, error: str, **content_extras) -> JSONResponse:
+    """Build JSONResponse for Stripe webhook errors: {"error": ...}."""
+    content: dict = {"error": error, **content_extras}
+    return JSONResponse(status_code=status_code, content=content)
+
+
+async def _verify_whatsapp_webhook(
+    request: Request, db: Session
+) -> tuple[bytes | None, JSONResponse | None]:
+    """
+    Read raw body, verify WhatsApp webhook signature.
+    Returns (raw_body, None) on success; (None, error_response) on failure.
+    """
+    raw_body = await request.body()
+    signature_header = request.headers.get("X-Hub-Signature-256")
+    if not verify_whatsapp_signature(raw_body, signature_header):
+        logger.warning("WhatsApp webhook signature verification failed - rejecting request")
+        from app.services.metrics.system_event_service import warn
+
+        warn(
+            db=db,
+            event_type=EVENT_WHATSAPP_SIGNATURE_VERIFICATION_FAILURE,
+            lead_id=None,
+            payload={"has_signature_header": signature_header is not None},
+        )
+        return None, _wa_error_response(403, "Invalid webhook signature")
+    return raw_body, None
+
+
+async def _verify_stripe_webhook(
+    request: Request, db: Session
+) -> tuple[dict | None, JSONResponse | None]:
+    """
+    Read raw body, check stripe-signature header, verify Stripe webhook signature.
+    Returns (event_dict, None) on success; (None, error_response) on failure.
+    """
+    body = await request.body()
+    signature = request.headers.get("stripe-signature")
+    if not signature:
+        return None, _stripe_error_response(400, "Missing stripe-signature header")
+    try:
+        event = verify_webhook_signature(body, signature)
+    except ValueError as e:
+        logger.warning(f"Invalid Stripe webhook signature: {str(e)}")
+        from app.services.metrics.system_event_service import warn
+
+        warn(
+            db=db,
+            event_type=EVENT_STRIPE_SIGNATURE_VERIFICATION_FAILURE,
+            lead_id=None,
+            payload={"error": str(e)[:200]},
+        )
+        return None, _stripe_error_response(400, "Invalid webhook signature")
+    except Exception as e:
+        logger.error(
+            f"Stripe webhook verification failed unexpectedly - "
+            f"error_type={type(e).__name__}: {str(e)}",
+            exc_info=True,
+        )
+        return None, _stripe_error_response(500, "Webhook verification failed")
+    return event, None
 
 
 def _is_processed_message_unique_violation(exc: IntegrityError) -> bool:
@@ -94,25 +164,9 @@ async def whatsapp_inbound(
         },
     )
 
-    # Get raw body for signature verification (must read before parsing JSON)
-    raw_body = await request.body()
-
-    # Verify webhook signature
-    signature_header = request.headers.get("X-Hub-Signature-256")
-    if not verify_whatsapp_signature(raw_body, signature_header):
-        logger.warning("WhatsApp webhook signature verification failed - rejecting request")
-        # Log system event
-        from app.services.system_event_service import warn
-
-        warn(
-            db=db,
-            event_type=EVENT_WHATSAPP_SIGNATURE_VERIFICATION_FAILURE,
-            lead_id=None,
-            payload={"has_signature_header": signature_header is not None},
-        )
-        return JSONResponse(
-            status_code=403, content={"received": False, "error": "Invalid webhook signature"}
-        )
+    raw_body, err_response = await _verify_whatsapp_webhook(request, db)
+    if err_response is not None:
+        return err_response
 
     # Parse JSON payload after signature verification
     try:
@@ -122,9 +176,7 @@ async def whatsapp_inbound(
     except (ValueError, json.JSONDecodeError) as e:
         # Invalid JSON payload
         logger.warning(f"Invalid JSON payload in WhatsApp webhook: {e}")
-        return JSONResponse(
-            status_code=400, content={"received": False, "error": "Invalid JSON payload"}
-        )
+        return _wa_error_response(400, "Invalid JSON payload")
 
     # Try to extract sender ("from") and message body
     wa_from = None
@@ -182,18 +234,14 @@ async def whatsapp_inbound(
     # If it's not a message event, just ack (delivery receipts etc.)
     # But check for empty string specifically (which is invalid)
     if wa_from == "":
-        return JSONResponse(
-            status_code=400, content={"received": False, "error": "Invalid phone number format"}
-        )
+        return _wa_error_response(400, "Invalid phone number format")
 
     if not wa_from:
         return {"received": True, "type": "non-message-event"}
 
     # Validate phone number format (basic check)
     if not isinstance(wa_from, str) or len(wa_from.strip()) < 10:
-        return JSONResponse(
-            status_code=400, content={"received": False, "error": "Invalid phone number format"}
-        )
+        return _wa_error_response(400, "Invalid phone number format")
 
     # Idempotency: insert ProcessedMessage FIRST (before any processing).
     # Only treat unique-constraint violation on (provider, message_id) as duplicate.
@@ -233,10 +281,7 @@ async def whatsapp_inbound(
             f"Database error in WhatsApp webhook for {wa_from}: {type(e).__name__}: {e}",
             exc_info=True,
         )
-        return JSONResponse(
-            status_code=500,
-            content={"received": False, "error": "Database error", "detail": str(e)},
-        )
+        return _wa_error_response(500, "Database error", detail=str(e))
 
     # Pilot mode check: if enabled, only allowlisted numbers can start consultation
     if settings.pilot_mode_enabled:
@@ -255,7 +300,7 @@ async def whatsapp_inbound(
 
             # Send polite message (async function in async context)
             try:
-                from app.services.messaging import send_whatsapp_message
+                from app.services.messaging.messaging import send_whatsapp_message
 
                 await send_whatsapp_message(
                     to=wa_from,
@@ -266,7 +311,7 @@ async def whatsapp_inbound(
                 logger.error(f"Failed to send pilot mode message to {wa_from}: {e}")
 
             # Log system event
-            from app.services.system_event_service import info
+            from app.services.metrics.system_event_service import info
 
             info(
                 db=db,
@@ -347,13 +392,12 @@ async def whatsapp_inbound(
                     content_type=None,  # Will be determined during download
                 )
                 db.add(attachment)
-                db.commit()
-                db.refresh(attachment)
+                commit_and_refresh(db, attachment)
 
                 # Schedule background task to attempt upload once
                 # Sweeper will handle retries if this fails
                 # Use job wrapper since background tasks run in separate context
-                from app.services.media_upload import attempt_upload_attachment_job
+                from app.services.integrations.media_upload import attempt_upload_attachment_job
 
                 background_tasks.add_task(attempt_upload_attachment_job, attachment.id)
 
@@ -375,7 +419,7 @@ async def whatsapp_inbound(
                 exc_info=True,
             )
             # Log system event for WhatsApp webhook failure
-            from app.services.system_event_service import error
+            from app.services.metrics.system_event_service import error
 
             error(
                 db=db,
@@ -408,10 +452,9 @@ async def whatsapp_inbound(
             content_type=None,  # Will be determined during download
         )
         db.add(attachment)
-        db.commit()
-        db.refresh(attachment)
+        commit_and_refresh(db, attachment)
 
-        from app.services.media_upload import attempt_upload_attachment_job
+        from app.services.integrations.media_upload import attempt_upload_attachment_job
 
         background_tasks.add_task(attempt_upload_attachment_job, attachment.id)
 
@@ -452,47 +495,16 @@ async def stripe_webhook(
     Handles:
     - checkout.session.completed: Deposit payment confirmed
     """
-    # Get raw body for signature verification
-    body = await request.body()
-    signature = request.headers.get("stripe-signature")
-
-    if not signature:
-        return JSONResponse(status_code=400, content={"error": "Missing stripe-signature header"})
-
-    try:
-        # Verify webhook signature
-        event = verify_webhook_signature(body, signature)
-    except ValueError as e:
-        # Invalid signature - known error type
-        logger.warning(f"Invalid Stripe webhook signature: {str(e)}")
-        # Log system event
-        from app.services.system_event_service import warn
-
-        warn(
-            db=db,
-            event_type=EVENT_STRIPE_SIGNATURE_VERIFICATION_FAILURE,
-            lead_id=None,
-            payload={"error": str(e)[:200]},  # Truncate to avoid storing too much
-        )
-        return JSONResponse(status_code=400, content={"error": "Invalid webhook signature"})
-    except Exception as e:
-        # Unexpected error during verification
-        logger.error(
-            f"Stripe webhook verification failed unexpectedly - "
-            f"error_type={type(e).__name__}: {str(e)}",
-            exc_info=True,
-        )
-        return JSONResponse(status_code=500, content={"error": "Webhook verification failed"})
+    event, err_response = await _verify_stripe_webhook(request, db)
+    if err_response is not None:
+        return err_response
 
     # Handle the event
     event_type = event.get("type")
     data = event.get("data")
     event_data = data.get("object") if isinstance(data, dict) else None
     if event_data is None:
-        return JSONResponse(
-            status_code=400,
-            content={"error": "Malformed event: missing data.object"},
-        )
+        return _stripe_error_response(400, "Malformed event: missing data.object")
 
     # Idempotency: Stripe sends idempotency key in event id
     event_id = event.get("id")
@@ -525,14 +537,12 @@ async def stripe_webhook(
             lead_id = _safe_parse_lead_id(client_reference_id)
 
         if lead_id is None or lead_id <= 0:
-            return JSONResponse(
-                status_code=400, content={"error": "No lead_id found in checkout session"}
-            )
+            return _stripe_error_response(400, "No lead_id found in checkout session")
 
         # Find the lead
         lead = db.get(Lead, lead_id)
         if not lead:
-            return JSONResponse(status_code=404, content={"error": f"Lead {lead_id} not found"})
+            return _stripe_error_response(404, f"Lead {lead_id} not found")
 
         # Verify checkout_session_id matches (prevent payment applied to wrong lead)
         if lead.stripe_checkout_session_id:
@@ -542,7 +552,7 @@ async def stripe_webhook(
                     f"Expected: {lead.stripe_checkout_session_id}, Got: {checkout_session_id}"
                 )
                 # Log SystemEvent for session_id mismatch
-                from app.services.system_event_service import error
+                from app.services.metrics.system_event_service import error
 
                 error(
                     db=db,
@@ -554,14 +564,12 @@ async def stripe_webhook(
                         "event_id": event_id,
                     },
                 )
-                return JSONResponse(
-                    status_code=400,
-                    content={
-                        "error": "Checkout session ID mismatch",
-                        "lead_id": lead_id,
-                        "expected_session_id": lead.stripe_checkout_session_id,
-                        "received_session_id": checkout_session_id,
-                    },
+                return _stripe_error_response(
+                    400,
+                    "Checkout session ID mismatch",
+                    lead_id=lead_id,
+                    expected_session_id=lead.stripe_checkout_session_id,
+                    received_session_id=checkout_session_id,
                 )
 
         # CRITICAL FIX: Check idempotency FIRST (read-only check)
@@ -569,7 +577,7 @@ async def stripe_webhook(
 
         event_id_str = str(event_id) if event_id else None
         if not event_id_str:
-            return JSONResponse(status_code=400, content={"error": "Stripe event has no id"})
+            return _stripe_error_response(400, "Stripe event has no id")
         is_duplicate, processed = check_processed_event(db, event_id_str)
         if is_duplicate:
             return {
@@ -602,7 +610,7 @@ async def stripe_webhook(
         if not success:
             # Status mismatch - lead may have been updated by another process
             if lead is None:
-                return JSONResponse(status_code=404, content={"error": f"Lead {lead_id} not found"})
+                return _stripe_error_response(404, f"Lead {lead_id} not found")
             db.refresh(lead)
             if lead.status == STATUS_DEPOSIT_PAID:
                 # Already processed by another request - return success
@@ -626,11 +634,9 @@ async def stripe_webhook(
                     db.refresh(lead)
             if not success:
                 if lead is None:
-                    return JSONResponse(
-                        status_code=404, content={"error": f"Lead {lead_id} not found"}
-                    )
+                    return _stripe_error_response(404, f"Lead {lead_id} not found")
                 # Log Stripe webhook failure due to status mismatch
-                from app.services.system_event_service import error
+                from app.services.metrics.system_event_service import error
 
                 error(
                     db=db,
@@ -647,7 +653,7 @@ async def stripe_webhook(
                 # Optional: Notify artist if notifications enabled
                 if settings.feature_notifications_enabled and settings.artist_whatsapp_number:
                     try:
-                        from app.services.artist_notifications import send_system_alert
+                        from app.services.integrations.artist_notifications import send_system_alert
 
                         await send_system_alert(
                             message=(
@@ -660,23 +666,20 @@ async def stripe_webhook(
                         )
                     except Exception as e:
                         logger.error(f"Failed to notify artist about unexpected status: {e}")
-                return JSONResponse(
-                    status_code=400,
-                    content={
-                        "error": f"Lead {lead_id} is in status '{lead.status}', expected '{STATUS_AWAITING_DEPOSIT}'"
-                    },
+                return _stripe_error_response(
+                    400,
+                    f"Lead {lead_id} is in status '{lead.status}', expected '{STATUS_AWAITING_DEPOSIT}'",
                 )
 
         if lead is None:
-            return JSONResponse(status_code=404, content={"error": f"Lead {lead_id} not found"})
+            return _stripe_error_response(404, f"Lead {lead_id} not found")
 
         # Phase 1: After deposit paid, set to BOOKING_PENDING (not BOOKING_LINK_SENT)
         from app.services.conversation import STATUS_BOOKING_PENDING
 
         lead.status = STATUS_BOOKING_PENDING
         lead.booking_pending_at = func.now()
-        db.commit()
-        db.refresh(lead)
+        commit_and_refresh(db, lead)
 
         # CRITICAL FIX: Side effects happen AFTER commit
         # 1. DB transaction committed (status updated)
@@ -694,7 +697,7 @@ async def stripe_webhook(
 
         # Phase 1: Send WhatsApp confirmation message to client (with 24h window check)
         if lead.deposit_amount_pence:
-            from app.services.whatsapp_window import send_with_window_check
+            from app.services.messaging.whatsapp_window import send_with_window_check
 
             confirmation_message = format_payment_confirmation_message(
                 lead.deposit_amount_pence, lead_id=lead.id
@@ -708,7 +711,7 @@ async def stripe_webhook(
             )
 
             # Send message (async function in sync context)
-            from app.services.whatsapp_templates import (
+            from app.services.messaging.whatsapp_templates import (
                 get_template_for_deposit_confirmation,
                 get_template_params_deposit_received_next_steps,
             )
@@ -736,11 +739,10 @@ async def stripe_webhook(
 
             # Update last bot message timestamp
             lead.last_bot_message_at = func.now()
-            db.commit()
-            db.refresh(lead)
+            commit_and_refresh(db, lead)
 
             # Phase 1: Notify artist that deposit was paid
-            from app.services.artist_notifications import notify_artist
+            from app.services.integrations.artist_notifications import notify_artist
 
             try:
                 await notify_artist(
@@ -805,7 +807,7 @@ def _log_lead_to_sheets_background(lead_id: int, correlation_id: str | None = No
         set_correlation_id(correlation_id)
     from app.db.models import Lead
     from app.db.session import SessionLocal
-    from app.services.system_event_service import error as log_system_error
+    from app.services.metrics.system_event_service import error as log_system_error
 
     # Create a new DB session for the background task
     db = SessionLocal()

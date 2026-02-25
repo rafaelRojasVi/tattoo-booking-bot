@@ -14,13 +14,15 @@ from sqlalchemy import desc, select
 from sqlalchemy.orm import Session
 
 from app.constants.event_types import EVENT_STRIPE_CHECKOUT_SESSION_COMPLETED
+from app.api.dependencies import get_lead_or_404
 from app.core.config import settings
 from app.db.deps import get_db
+from app.db.helpers import commit_and_refresh
 from app.db.models import Lead, LeadAnswer
 from app.services.action_tokens import generate_action_tokens_for_lead
 from app.services.conversation import get_lead_summary, handle_inbound_message
 from app.services.leads import get_or_create_lead
-from app.services.questions import CONSULTATION_QUESTIONS, get_question_by_index
+from app.services.conversation.questions import CONSULTATION_QUESTIONS, get_question_by_index
 from app.utils.datetime_utils import iso_or_none
 
 logger = logging.getLogger(__name__)
@@ -140,7 +142,7 @@ async def demo_client_send(
 
 @router.get("/lead/{lead_id}/messages")
 async def demo_lead_messages(
-    lead_id: int,
+    lead: Lead = Depends(get_lead_or_404),
     db: Session = Depends(get_db),
     demo_mode: bool = Depends(require_demo_mode),
 ):
@@ -148,9 +150,6 @@ async def demo_lead_messages(
     Get conversation history for a lead (for demo client UI).
     Returns bot questions + client answers interleaved.
     """
-    lead = db.get(Lead, lead_id)
-    if not lead:
-        raise HTTPException(status_code=404, detail="Lead not found")
     messages = _build_demo_messages(db, lead)
     return {
         "lead_id": lead.id,
@@ -281,8 +280,7 @@ async def demo_stripe_pay(
     if lead is None:
         raise HTTPException(status_code=404, detail="Lead not found")
 
-    db.commit()
-    db.refresh(lead)
+    commit_and_refresh(db, lead)
 
     return {
         "received": True,

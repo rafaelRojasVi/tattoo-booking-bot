@@ -20,9 +20,8 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI):
     """Startup and shutdown lifecycle."""
     from app.core.config import settings
-    from app.services.template_check import startup_check_templates
+    from app.services.messaging.template_check import startup_check_templates
 
-    # Validate critical settings (fail-fast if missing)
     required_settings = [
         "database_url",
         "whatsapp_verify_token",
@@ -38,25 +37,21 @@ async def lifespan(app: FastAPI):
             "Please check your .env file or environment configuration."
         )
 
-    # Production-specific validation (fail-fast if in production)
     if settings.app_env == "production":
         production_errors = []
 
-        # Require ADMIN_API_KEY in production
         if not settings.admin_api_key:
             production_errors.append(
                 "ADMIN_API_KEY is required in production. "
                 "Set ADMIN_API_KEY environment variable with a strong random key."
             )
 
-        # Require WHATSAPP_APP_SECRET in production (for webhook signature verification)
         if not settings.whatsapp_app_secret:
             production_errors.append(
                 "WHATSAPP_APP_SECRET is required in production for webhook signature verification. "
                 "Set WHATSAPP_APP_SECRET environment variable with your Meta App Secret."
             )
 
-        # Require STRIPE_WEBHOOK_SECRET in production (must not be test stub)
         if not settings.stripe_webhook_secret:
             production_errors.append(
                 "STRIPE_WEBHOOK_SECRET is required in production. "
@@ -68,7 +63,6 @@ async def lifespan(app: FastAPI):
                 "Use your live Stripe webhook signing secret."
             )
 
-        # Require DEMO_MODE to be False in production
         if settings.demo_mode:
             production_errors.append(
                 "DEMO_MODE must be False in production. "
@@ -86,7 +80,6 @@ async def lifespan(app: FastAPI):
             logger.error(error_message)
             raise RuntimeError(error_message)
 
-    # Log enabled integrations summary (no secrets)
     logger.info(
         "Startup: Configuration loaded - "
         f"Environment: {settings.app_env}, "
@@ -95,11 +88,9 @@ async def lifespan(app: FastAPI):
         f"WhatsApp dry-run: {settings.whatsapp_dry_run}"
     )
 
-    # Warn if demo mode is enabled
     if settings.demo_mode:
         logger.warning("DEMO MODE ENABLED - DO NOT USE IN PROD")
 
-    # Check template configuration
     template_status = startup_check_templates()
     logger.info(
         f"Startup: Template check completed - "
@@ -107,17 +98,15 @@ async def lifespan(app: FastAPI):
     )
 
     yield
-    # Shutdown (none currently)
+
 
 
 app = FastAPI(title="Tattoo Booking Bot", lifespan=lifespan)
 
-# Add rate limiting middleware for admin and action endpoints
 app.add_middleware(
     RateLimitMiddleware,
-    rate_limited_paths=["/admin", "/a/"],  # Admin endpoints and action tokens
+    rate_limited_paths=["/admin", "/a/"],
 )
-# Correlation ID middleware (outermost - runs first for request tracing)
 app.add_middleware(CorrelationIdMiddleware)
 
 
@@ -128,7 +117,7 @@ def health():
 
     Returns 200 immediately - used for basic health checks.
     """
-    from app.services.template_check import REQUIRED_TEMPLATES
+    from app.services.messaging.template_check import REQUIRED_TEMPLATES
 
     return {
         "ok": True,
@@ -158,7 +147,6 @@ def ready(db: Session = Depends(get_db)):
     from sqlalchemy import text
 
     try:
-        # Simple SELECT 1 query to verify database connection
         db.execute(text("SELECT 1"))
         return {"ok": True, "database": "connected"}
     except Exception as e:
