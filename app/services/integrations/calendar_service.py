@@ -6,9 +6,12 @@ import logging
 import re
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from sqlalchemy.orm import Session
+
+if TYPE_CHECKING:
+    from pytz.tzinfo import BaseTzInfo  # type: ignore[import-untyped]
 
 from app.constants.event_types import EVENT_CALENDAR_NO_SLOTS_FALLBACK
 from app.core.config import settings
@@ -63,7 +66,7 @@ def poll_pending_bookings(db: Session, dry_run: bool = True) -> list[dict]:
     """
     from sqlalchemy import select
 
-    from app.services.conversation import STATUS_BOOKING_PENDING
+    from app.constants.statuses import STATUS_BOOKING_PENDING
 
     # Find all leads in BOOKING_PENDING with deposit_paid_at set
     stmt = select(Lead).where(
@@ -161,7 +164,7 @@ def get_available_slots(
         List of dicts with 'start' and 'end' datetime objects
         Example: [{'start': datetime(...), 'end': datetime(...)}, ...]
     """
-    from app.services.calendar_rules import (
+    from app.services.integrations.calendar_rules import (
         get_lookahead_days,
         get_minimum_advance_hours,
         get_session_duration,
@@ -170,7 +173,7 @@ def get_available_slots(
     )
 
     # Load rules
-    tz = get_timezone()
+    tz: BaseTzInfo = get_timezone()
     lookahead_days = get_lookahead_days()
     min_advance_hours = get_minimum_advance_hours()
 
@@ -228,7 +231,7 @@ def _get_mock_available_slots(
     time_max: datetime,
     duration_minutes: int,
     max_results: int,
-    tz: Any | None = None,
+    tz: "BaseTzInfo | None" = None,
     is_within_working_hours: Callable | None = None,
 ) -> list[dict[str, datetime]]:
     """
@@ -236,10 +239,10 @@ def _get_mock_available_slots(
 
     Creates slots starting from time_min, respecting working hours if rules are provided.
     """
-    from app.services.calendar_rules import (
+    from app.services.integrations.calendar_rules import (
         get_timezone,
     )
-    from app.services.calendar_rules import (
+    from app.services.integrations.calendar_rules import (
         is_within_working_hours as default_is_within,
     )
 
@@ -296,14 +299,14 @@ def format_slot_suggestions(
     Returns:
         Formatted message string with numbered options
     """
-    from app.services.message_composer import render_message
+    from app.services.messaging.message_composer import render_message
 
     if not slots:
         return render_message("slot_suggestions_empty", lead_id=lead_id)
 
-    from app.services.calendar_rules import get_timezone
+    from app.services.integrations.calendar_rules import get_timezone
 
-    tz = get_timezone()
+    tz: BaseTzInfo = get_timezone()
     tz_name = start.tzname() if (start := slots[0]["start"]).tzinfo else tz.zone
 
     header = render_message(
@@ -373,7 +376,7 @@ async def send_slot_suggestions_to_client(
                 f"No available slots found for lead {lead.id} - asking for preferred time windows"
             )
             # Log system event for calendar no-slots fallback
-            from app.services.system_event_service import info
+            from app.services.metrics.system_event_service import info
 
             info(
                 db=db,
@@ -386,14 +389,14 @@ async def send_slot_suggestions_to_client(
             )
             from sqlalchemy import func
 
-            from app.services.conversation import STATUS_COLLECTING_TIME_WINDOWS
-            from app.services.state_machine import transition
-            from app.services.time_window_collection import format_time_windows_request
-            from app.services.whatsapp_templates import (
+            from app.constants.statuses import STATUS_COLLECTING_TIME_WINDOWS
+            from app.services.conversation.state_machine import transition
+            from app.services.conversation.time_window_collection import format_time_windows_request
+            from app.services.messaging.whatsapp_templates import (
                 get_template_for_next_steps,
                 get_template_params_next_steps_reply_to_continue,
             )
-            from app.services.whatsapp_window import send_with_window_check
+            from app.services.messaging.whatsapp_window import send_with_window_check
 
             # Set status to collecting time windows (enforced via state machine)
             transition(db, lead, STATUS_COLLECTING_TIME_WINDOWS)
@@ -412,7 +415,7 @@ async def send_slot_suggestions_to_client(
 
             lead.last_bot_message_at = func.now()
             db.commit()
-            from app.services.sheets import log_lead_to_sheets
+            from app.services.integrations.sheets import log_lead_to_sheets
 
             log_lead_to_sheets(db, lead)
 
@@ -435,11 +438,11 @@ async def send_slot_suggestions_to_client(
         message = format_slot_suggestions(slots, lead_id=lead.id)
 
         # Send via WhatsApp (with 24h window check)
-        from app.services.whatsapp_templates import (
+        from app.services.messaging.whatsapp_templates import (
             get_template_for_next_steps,
             get_template_params_next_steps_reply_to_continue,
         )
-        from app.services.whatsapp_window import send_with_window_check
+        from app.services.messaging.whatsapp_window import send_with_window_check
 
         await send_with_window_check(
             db=db,

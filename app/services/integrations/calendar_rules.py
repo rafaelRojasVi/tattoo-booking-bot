@@ -10,6 +10,7 @@ from typing import Any, cast
 
 import pytz
 import yaml
+from pytz.tzinfo import BaseTzInfo  # type: ignore[import-untyped]
 
 logger = logging.getLogger(__name__)
 
@@ -80,7 +81,7 @@ def _get_default_rules() -> dict[str, Any]:
     }
 
 
-def get_timezone() -> pytz.timezone:
+def get_timezone() -> BaseTzInfo:
     """
     Get the configured timezone.
 
@@ -89,7 +90,7 @@ def get_timezone() -> pytz.timezone:
     """
     rules = load_calendar_rules()
     tz_name = rules.get("timezone", "Europe/London")
-    return pytz.timezone(tz_name)
+    return cast(BaseTzInfo, pytz.timezone(tz_name))
 
 
 def get_working_hours(weekday: str) -> dict[str, time] | None:
