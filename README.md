@@ -768,11 +768,12 @@ alembic current
 
 1. **Make changes** to code
 2. **Run tests** to verify: `pytest tests/test_your_feature.py -v`
-3. **Check linting**: `ruff check app tests`
-4. **Format code**: `ruff format .`
-5. **Type check** (optional): `mypy app`
-6. **Commit** with descriptive message
-7. **Push** to trigger CI/CD
+3. **Check app imports** (catches CI import errors before push): `python scripts/check_imports.py`
+4. **Check linting**: `ruff check app tests`
+5. **Format code**: `ruff format .`
+6. **Type check** (optional): `mypy app`
+7. **Commit** with descriptive message
+8. **Push** to trigger CI/CD
 
 ### Pre-commit Hooks (Optional but Recommended)
 
@@ -819,7 +820,7 @@ This runs ruff format + ruff check on every commit, ensuring code quality.
    - **WhatsApp:** Set webhook URL to `https://your-app.onrender.com/webhooks/whatsapp`
    - **Stripe:** Set webhook URL to `https://your-app.onrender.com/webhooks/stripe`
 
-**See [DEPLOYMENT_RENDER.md](docs/DEPLOYMENT_RENDER.md) for detailed instructions.**
+**See [DEPLOYMENT_RENDER.md](docs/deployment/DEPLOYMENT_RENDER.md) for detailed instructions.**
 
 ### Docker Deployment (Alternative)
 
@@ -877,7 +878,7 @@ docker compose -f docker-compose.prod.yml exec api alembic upgrade head
 - [ ] CI/CD green on main branch
 - [ ] Manual smoke test on staging environment
 
-**See [runbook_go_live.md](docs/runbook_go_live.md) for comprehensive launch checklist.**
+**See [runbook_go_live.md](docs/runbooks/runbook_go_live.md) for comprehensive launch checklist.**
 
 ---
 
@@ -887,64 +888,64 @@ docker compose -f docker-compose.prod.yml exec api alembic upgrade head
 
 | Document | Purpose |
 |----------|---------|
-| [ops_runbook.md](docs/ops_runbook.md) | **Start here!** Production setup, troubleshooting, monitoring |
-| [DEPLOYMENT_RENDER.md](docs/DEPLOYMENT_RENDER.md) | Step-by-step Render.com deployment |
-| [runbook_go_live.md](docs/runbook_go_live.md) | Go-live checklist, recovery procedures |
-| [WHATSAPP_QUICK_START.md](docs/WHATSAPP_QUICK_START.md) | 5-minute WhatsApp setup guide |
+| [ops_runbook.md](docs/runbooks/ops_runbook.md) | **Start here!** Production setup, troubleshooting, monitoring |
+| [DEPLOYMENT_RENDER.md](docs/deployment/DEPLOYMENT_RENDER.md) | Step-by-step Render.com deployment |
+| [runbook_go_live.md](docs/runbooks/runbook_go_live.md) | Go-live checklist, recovery procedures |
+| [WHATSAPP_QUICK_START.md](docs/deployment/WHATSAPP_QUICK_START.md) | 5-minute WhatsApp setup guide |
 
 ### Architecture & Design
 
 | Document | Purpose |
 |----------|---------|
-| [ARCHITECTURE_IMPROVEMENTS.md](docs/ARCHITECTURE_IMPROVEMENTS.md) | Production hardening: race conditions, idempotency, side effects |
-| [ARCHITECTURE_SANITY_CHECK.md](docs/ARCHITECTURE_SANITY_CHECK.md) | Code review & improvement recommendations |
-| [IMPLEMENTATION_SUMMARY.md](docs/IMPLEMENTATION_SUMMARY.md) | Exhaustive what's built, what's not |
-| [FAILURE_ISOLATION_ANALYSIS.md](docs/FAILURE_ISOLATION_ANALYSIS.md) | Error isolation & worker strategy |
-| [PRODUCTION_HARDENING_STATE_AND_RACE.md](docs/PRODUCTION_HARDENING_STATE_AND_RACE.md) | Concurrency fixes & state machine |
+| [ARCHITECTURE_IMPROVEMENTS.md](docs/architecture/ARCHITECTURE_IMPROVEMENTS.md) | Production hardening: race conditions, idempotency, side effects |
+| [ARCHITECTURE_SANITY_CHECK.md](docs/architecture/ARCHITECTURE_SANITY_CHECK.md) | Code review & improvement recommendations |
+| [IMPLEMENTATION_SUMMARY.md](docs/misc/IMPLEMENTATION_SUMMARY.md) | Exhaustive what's built, what's not |
+| [FAILURE_ISOLATION_ANALYSIS.md](docs/audits/FAILURE_ISOLATION_ANALYSIS.md) | Error isolation & worker strategy |
+| [PRODUCTION_HARDENING_STATE_AND_RACE.md](docs/audits/PRODUCTION_HARDENING_STATE_AND_RACE.md) | Concurrency fixes & state machine |
 
 ### Testing & Quality
 
 | Document | Purpose |
 |----------|---------|
-| [QUALITY_AUDIT.md](docs/QUALITY_AUDIT.md) | Code quality assessment & P0/P1/P2 issues |
-| [TEST_CHANGES_AND_SCOPE_ALIGNMENT.md](docs/TEST_CHANGES_AND_SCOPE_ALIGNMENT.md) | Test suite evolution & scope |
-| [SIDE_EFFECT_ORDERING_AND_LAST_MILE_TESTS.md](docs/SIDE_EFFECT_ORDERING_AND_LAST_MILE_TESTS.md) | Side-effect ordering & production tests |
-| [IMAGE_PIPELINE_TEST_RESULTS.md](docs/IMAGE_PIPELINE_TEST_RESULTS.md) | Media upload testing results |
+| [QUALITY_AUDIT.md](docs/audits/QUALITY_AUDIT.md) | Code quality assessment & P0/P1/P2 issues |
+| [TEST_CHANGES_AND_SCOPE_ALIGNMENT.md](docs/testing/TEST_CHANGES_AND_SCOPE_ALIGNMENT.md) | Test suite evolution & scope |
+| [SIDE_EFFECT_ORDERING_AND_LAST_MILE_TESTS.md](docs/audits/SIDE_EFFECT_ORDERING_AND_LAST_MILE_TESTS.md) | Side-effect ordering & production tests |
+| [IMAGE_PIPELINE_TEST_RESULTS.md](docs/testing/IMAGE_PIPELINE_TEST_RESULTS.md) | Media upload testing results |
 
 ### WhatsApp Integration
 
 | Document | Purpose |
 |----------|---------|
-| [WHATSAPP_READY.md](docs/WHATSAPP_READY.md) | Readiness checklist |
-| [WHATSAPP_SETUP.md](docs/WHATSAPP_SETUP.md) | Detailed setup instructions |
-| [WHATSAPP_TESTING_GUIDE.md](docs/WHATSAPP_TESTING_GUIDE.md) | Testing procedures |
-| [WHATSAPP_VERIFICATION_CHECKLIST.md](docs/WHATSAPP_VERIFICATION_CHECKLIST.md) | Implementation verification |
+| [WHATSAPP_READY.md](docs/deployment/WHATSAPP_READY.md) | Readiness checklist |
+| [WHATSAPP_SETUP.md](docs/deployment/WHATSAPP_SETUP.md) | Detailed setup instructions |
+| [WHATSAPP_TESTING_GUIDE.md](docs/deployment/WHATSAPP_TESTING_GUIDE.md) | Testing procedures |
+| [WHATSAPP_VERIFICATION_CHECKLIST.md](docs/deployment/WHATSAPP_VERIFICATION_CHECKLIST.md) | Implementation verification |
 
 ### Observability & Operations
 
 | Document | Purpose |
 |----------|---------|
-| [SYSTEM_EVENTS.md](docs/SYSTEM_EVENTS.md) | SystemEvents logging & monitoring |
-| [demo_script.md](docs/demo_script.md) | Demo presentation guide |
-| [DEVELOPMENT_SUMMARY.md](docs/DEVELOPMENT_SUMMARY.md) | Development session notes & decisions |
+| [SYSTEM_EVENTS.md](docs/architecture/SYSTEM_EVENTS.md) | SystemEvents logging & monitoring |
+| [demo_script.md](docs/misc/demo_script.md) | Demo presentation guide |
+| [DEVELOPMENT_SUMMARY.md](docs/misc/DEVELOPMENT_SUMMARY.md) | Development session notes & decisions |
 
 ### Contract & Scope
 
 | Document | Purpose |
 |----------|---------|
-| [CLIENT_COST_SPECIFICATION_BY_PHASE.md](docs/CLIENT_COST_SPECIFICATION_BY_PHASE.md) | What each milestone delivers |
-| [CONTRACT_GAP_ANALYSIS.md](docs/CONTRACT_GAP_ANALYSIS.md) | Implementation vs contract |
-| [PHASE_SUMMARY_AND_COSTS.md](docs/PHASE_SUMMARY_AND_COSTS.md) | Phase 1/2/3 status & tracking |
-| [SCHEDULE_C_IMPLEMENTATION_TRACEABILITY.md](docs/SCHEDULE_C_IMPLEMENTATION_TRACEABILITY.md) | Feature-by-feature tracking |
+| [CLIENT_COST_SPECIFICATION_BY_PHASE.md](docs/client/CLIENT_COST_SPECIFICATION_BY_PHASE.md) | What each milestone delivers |
+| [CONTRACT_GAP_ANALYSIS.md](docs/audits/CONTRACT_GAP_ANALYSIS.md) | Implementation vs contract |
+| [PHASE_SUMMARY_AND_COSTS.md](docs/client/PHASE_SUMMARY_AND_COSTS.md) | Phase 1/2/3 status & tracking |
+| [SCHEDULE_C_IMPLEMENTATION_TRACEABILITY.md](docs/client/SCHEDULE_C_IMPLEMENTATION_TRACEABILITY.md) | Feature-by-feature tracking |
 
 ### Miscellaneous
 
 | Document | Purpose |
 |----------|---------|
-| [FILE_ORGANIZATION.md](docs/FILE_ORGANIZATION.md) | Project structure guide |
-| [CONVERSATION_AND_NATURALNESS_REVIEW.md](docs/CONVERSATION_AND_NATURALNESS_REVIEW.md) | UX & conversation flow improvements |
-| [CRITICAL_FIXES_SUMMARY.md](docs/CRITICAL_FIXES_SUMMARY.md) | Critical bug fixes applied |
-| [DEEP_AUDIT_HANDOVER_AND_RELEASE.md](docs/DEEP_AUDIT_HANDOVER_AND_RELEASE.md) | Pre-launch audit checklist |
+| [FILE_ORGANIZATION.md](docs/architecture/FILE_ORGANIZATION.md) | Project structure guide |
+| [CONVERSATION_AND_NATURALNESS_REVIEW.md](docs/audits/CONVERSATION_AND_NATURALNESS_REVIEW.md) | UX & conversation flow improvements |
+| [CRITICAL_FIXES_SUMMARY.md](docs/audits/CRITICAL_FIXES_SUMMARY.md) | Critical bug fixes applied |
+| [DEEP_AUDIT_HANDOVER_AND_RELEASE.md](docs/audits/DEEP_AUDIT_HANDOVER_AND_RELEASE.md) | Pre-launch audit checklist |
 
 ---
 
@@ -1202,17 +1203,17 @@ docker compose logs api | grep "stripe.webhook_failure"
 psql $DATABASE_URL -c "SELECT id, status, last_client_message_at FROM leads WHERE status = 'NEEDS_ARTIST_REPLY' AND last_client_message_at < NOW() - INTERVAL '24 hours';"
 ```
 
-**For production troubleshooting, see [ops_runbook.md](docs/ops_runbook.md).**
+**For production troubleshooting, see [ops_runbook.md](docs/runbooks/ops_runbook.md).**
 
 ---
 
 ## 📞 Support & Resources
 
 ### Documentation
-- **[Operations Runbook](docs/ops_runbook.md)** - Production setup & troubleshooting
-- **[Deployment Guide](docs/DEPLOYMENT_RENDER.md)** - Render.com deployment
-- **[Go-Live Checklist](docs/runbook_go_live.md)** - Launch procedures & recovery
-- **[WhatsApp Setup](docs/WHATSAPP_QUICK_START.md)** - 5-minute setup guide
+- **[Operations Runbook](docs/runbooks/ops_runbook.md)** - Production setup & troubleshooting
+- **[Deployment Guide](docs/deployment/DEPLOYMENT_RENDER.md)** - Render.com deployment
+- **[Go-Live Checklist](docs/runbooks/runbook_go_live.md)** - Launch procedures & recovery
+- **[WhatsApp Setup](docs/deployment/WHATSAPP_QUICK_START.md)** - 5-minute setup guide
 
 ### External Resources
 - **WhatsApp Business API:** [Meta Developer Docs](https://developers.facebook.com/docs/whatsapp)
