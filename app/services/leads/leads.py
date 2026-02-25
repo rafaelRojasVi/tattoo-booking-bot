@@ -2,8 +2,7 @@ from sqlalchemy import desc, select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
-from app.db.models import Lead
-from app.services.conversation import (
+from app.constants.statuses import (
     STATUS_AWAITING_DEPOSIT,
     STATUS_BOOKING_LINK_SENT,
     STATUS_DEPOSIT_PAID,
@@ -11,7 +10,9 @@ from app.services.conversation import (
     STATUS_PENDING_APPROVAL,
     STATUS_QUALIFYING,
 )
-from app.services.sheets import log_lead_to_sheets
+from app.db.helpers import commit_and_refresh
+from app.db.models import Lead
+from app.services.integrations.sheets import log_lead_to_sheets
 
 # Active statuses - leads in these statuses should be reused
 ACTIVE_STATUSES = {
@@ -35,6 +36,15 @@ INACTIVE_STATUSES = {
     "REFUNDED",
     "CANCELLED",
 }
+
+
+def get_lead_or_none(db: Session, lead_id: int) -> Lead | None:
+    """
+    Load a lead by ID. Returns None if not found.
+
+    Use when the caller will handle "not found" (e.g. return tuple, log, raise).
+    """
+    return db.get(Lead, lead_id)
 
 
 def get_or_create_lead(db: Session, wa_from: str) -> Lead:
@@ -86,8 +96,7 @@ def get_or_create_lead(db: Session, wa_from: str) -> Lead:
         # No leads exist OR most recent is inactive - create new lead
         lead = Lead(wa_from=wa_from, status="NEW")
         db.add(lead)
-        db.commit()
-        db.refresh(lead)
+        commit_and_refresh(db, lead)
 
         log_lead_to_sheets(db, lead)
 
