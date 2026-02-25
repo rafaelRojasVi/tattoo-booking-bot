@@ -95,14 +95,14 @@
 
 **Recommendation (smallest, safe)**
 - Keep the current per-module override for `assignment` on the conversation modules, state_machine, and other files that touch Lead/ORM datetime columns. Do not broaden to entire `app` to avoid losing signal elsewhere.
-- Optional: add a one-line comment in `docs/MYPY_TRIAGE_PLAN.md` or `SPLIT_CONVERSATION_SUMMARY.md` that the split conversation modules are included in the SQLAlchemy datetime override list and why (plugin limitation with `Mapped[DateTime|None]` and `func.now()`).
+- Optional: add a one-line comment in `docs/misc/MYPY_TRIAGE_PLAN.md` or `docs/audits/SPLIT_CONVERSATION_SUMMARY.md` that the split conversation modules are included in the SQLAlchemy datetime override list and why (plugin limitation with `Mapped[DateTime|None]` and `func.now()`).
 - No change to `Mapped`/`mapped_column` types in models for this review; that would be a larger, cross-file change.
 
 ---
 
 ## 6) Files to touch (before proposing edits)
 
-- `docs/SPLIT_CONVERSATION_REVIEW.md` (this report) – **created**
+- `docs/audits/SPLIT_CONVERSATION_REVIEW.md` (this report) – **created**
 - `tests/test_conversation.py` – **add 2 tests** (dispatch PENDING_APPROVAL, dispatch BOOKED with send_whatsapp patch)
 - `tests/test_conversation_split_regressions.py` – **new file** with 2 split-regression tests (late-binding, dispatch routing)
 - No other files in this pass (no broad refactors).
@@ -181,5 +181,5 @@ The two behavior-contract tests in `test_conversation.py` lock **policy** (PENDI
 **🔧 Top 3 small improvements**
 
 1. **Explicit re-exports** — Add `_handle_new_lead` to `conversation.__all__` (the orchestrator uses it; `_handle_opt_out` is only used by booking and imported from qualifying there, so not re-exported by conversation). **Done.**
-2. **Mypy triage doc** — In `docs/MYPY_TRIAGE_PLAN.md`, note under the SQLAlchemy DateTime bucket that the conversation split modules are explicitly in the per-module `disable_error_code = ["assignment"]` override list (plugin limitation). **Done.**
+2. **Mypy triage doc** — In `docs/misc/MYPY_TRIAGE_PLAN.md`, note under the SQLAlchemy DateTime bucket that the conversation split modules are explicitly in the per-module `disable_error_code = ["assignment"]` override list (plugin limitation). **Done.**
 3. **Optional: test unknown-status recovery** — Add a small test that an unknown/invalid status leads to NEW and a question_sent-style response. Low priority; only if you want the recovery path explicitly locked.

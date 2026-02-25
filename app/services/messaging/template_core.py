@@ -7,7 +7,7 @@ Both depend on template_core only.
 
 from enum import StrEnum
 
-from app.services.whatsapp_templates import (
+from app.services.messaging.whatsapp_templates import (
     TEMPLATE_CONSULTATION_REMINDER_2_FINAL,
     TEMPLATE_DEPOSIT_RECEIVED_NEXT_STEPS,
     TEMPLATE_NEXT_STEPS_REPLY_TO_CONTINUE,

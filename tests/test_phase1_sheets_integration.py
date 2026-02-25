@@ -7,7 +7,7 @@ from unittest.mock import MagicMock, patch
 
 from app.core.config import settings
 from app.db.models import Lead, LeadAnswer
-from app.services.sheets import (
+from app.services.integrations.sheets import (
     _count_reference_media,
     _get_sheets_service,
     _parse_budget_amount,
@@ -117,7 +117,7 @@ def test_log_lead_to_sheets_with_real_api_mock(db):
     }
     mock_service.spreadsheets.return_value.values.return_value.append.return_value.execute.return_value = {}
 
-    with patch("app.services.sheets._get_sheets_service", return_value=mock_service):
+    with patch("app.services.integrations.sheets._get_sheets_service", return_value=mock_service):
         with patch.object(settings, "google_sheets_enabled", True):
             with patch.object(settings, "google_sheets_spreadsheet_id", "test_spreadsheet_id"):
                 result = log_lead_to_sheets(db, lead)
@@ -143,7 +143,7 @@ def test_log_lead_to_sheets_updates_existing_row(db):
     }
     mock_service.spreadsheets.return_value.values.return_value.update.return_value.execute.return_value = {}
 
-    with patch("app.services.sheets._get_sheets_service", return_value=mock_service):
+    with patch("app.services.integrations.sheets._get_sheets_service", return_value=mock_service):
         with patch.object(settings, "google_sheets_enabled", True):
             with patch.object(settings, "google_sheets_spreadsheet_id", "test_spreadsheet_id"):
                 result = log_lead_to_sheets(db, lead)

@@ -79,11 +79,11 @@ async def test_slot_selection_by_number(db: Session, lead_with_suggested_slots: 
         mock_notify_calls.append((args, kwargs))
         return True
 
-    monkeypatch.setattr("app.services.conversation.send_whatsapp_message", mock_send)
-    monkeypatch.setattr("app.services.messaging.send_whatsapp_message", mock_send)
-    monkeypatch.setattr("app.services.message_composer.render_message", mock_render)
+    monkeypatch.setattr("app.services.messaging.messaging.send_whatsapp_message", mock_send)
+    monkeypatch.setattr("app.services.messaging.messaging.send_whatsapp_message", mock_send)
+    monkeypatch.setattr("app.services.messaging.message_composer.render_message", mock_render)
     monkeypatch.setattr(
-        "app.services.artist_notifications.notify_artist_slot_selected", mock_notify
+        "app.services.integrations.artist_notifications.notify_artist_slot_selected", mock_notify
     )
 
     result = await handle_inbound_message(
@@ -125,11 +125,11 @@ async def test_slot_selection_by_option_number(
         mock_notify_calls.append((args, kwargs))
         return True
 
-    monkeypatch.setattr("app.services.conversation.send_whatsapp_message", mock_send)
-    monkeypatch.setattr("app.services.messaging.send_whatsapp_message", mock_send)
-    monkeypatch.setattr("app.services.message_composer.render_message", mock_render)
+    monkeypatch.setattr("app.services.messaging.messaging.send_whatsapp_message", mock_send)
+    monkeypatch.setattr("app.services.messaging.messaging.send_whatsapp_message", mock_send)
+    monkeypatch.setattr("app.services.messaging.message_composer.render_message", mock_render)
     monkeypatch.setattr(
-        "app.services.artist_notifications.notify_artist_slot_selected", mock_notify
+        "app.services.integrations.artist_notifications.notify_artist_slot_selected", mock_notify
     )
 
     result = await handle_inbound_message(
@@ -155,7 +155,7 @@ async def test_slot_selection_repair_on_invalid(
         mock_send_calls.append((args, kwargs))
         return {"status": "sent"}
 
-    monkeypatch.setattr("app.services.conversation.send_whatsapp_message", mock_send)
+    monkeypatch.setattr("app.services.messaging.messaging.send_whatsapp_message", mock_send)
 
     result = await handle_inbound_message(
         db=db,
@@ -200,9 +200,9 @@ async def test_slot_selection_three_strikes_handover(
     def mock_render(*args, **kwargs):
         return "I'm going to have Jonah jump in here — one sec."
 
-    monkeypatch.setattr("app.services.artist_notifications.notify_artist_needs_reply", mock_notify)
-    monkeypatch.setattr("app.services.messaging.send_whatsapp_message", mock_send)
-    monkeypatch.setattr("app.services.message_composer.render_message", mock_render)
+    monkeypatch.setattr("app.services.integrations.artist_notifications.notify_artist_needs_reply", mock_notify)
+    monkeypatch.setattr("app.services.messaging.messaging.send_whatsapp_message", mock_send)
+    monkeypatch.setattr("app.services.messaging.message_composer.render_message", mock_render)
 
     result = await handle_inbound_message(
         db=db,
@@ -231,7 +231,7 @@ async def test_slot_selection_without_suggested_slots(db: Session, sample_lead: 
             "Thanks for your deposit! Jonah will confirm your date in the calendar and message you."
         )
 
-    monkeypatch.setattr("app.services.message_composer.render_message", mock_render)
+    monkeypatch.setattr("app.services.messaging.message_composer.render_message", mock_render)
 
     result = await handle_inbound_message(
         db=db,
@@ -247,7 +247,7 @@ async def test_slot_selection_without_suggested_slots(db: Session, sample_lead: 
 @pytest.mark.asyncio
 async def test_suggested_slots_stored_when_sent(db: Session, sample_lead: Lead, monkeypatch):
     """Test that suggested slots are stored when sent to client."""
-    from app.services.calendar_service import send_slot_suggestions_to_client
+    from app.services.integrations.calendar_service import send_slot_suggestions_to_client
 
     sample_lead.status = STATUS_BOOKING_PENDING
     db.commit()
@@ -267,9 +267,9 @@ async def test_suggested_slots_stored_when_sent(db: Session, sample_lead: Lead, 
     async def mock_send_window(*args, **kwargs):
         return {"status": "sent", "window_status": "open"}
 
-    monkeypatch.setattr("app.services.whatsapp_window.send_with_window_check", mock_send_window)
+    monkeypatch.setattr("app.services.messaging.whatsapp_window.send_with_window_check", mock_send_window)
     monkeypatch.setattr(
-        "app.services.calendar_service.get_available_slots", lambda *args, **kwargs: test_slots
+        "app.services.integrations.calendar_service.get_available_slots", lambda *args, **kwargs: test_slots
     )
 
     result = await send_slot_suggestions_to_client(db=db, lead=sample_lead, dry_run=True)
@@ -302,11 +302,11 @@ async def test_artist_notification_includes_slot_details(
         mock_notify_calls.append((args, kwargs))
         return True
 
-    monkeypatch.setattr("app.services.conversation.send_whatsapp_message", mock_send)
-    monkeypatch.setattr("app.services.messaging.send_whatsapp_message", mock_send)
-    monkeypatch.setattr("app.services.message_composer.render_message", mock_render)
+    monkeypatch.setattr("app.services.messaging.messaging.send_whatsapp_message", mock_send)
+    monkeypatch.setattr("app.services.messaging.messaging.send_whatsapp_message", mock_send)
+    monkeypatch.setattr("app.services.messaging.message_composer.render_message", mock_render)
     monkeypatch.setattr(
-        "app.services.artist_notifications.notify_artist_slot_selected", mock_notify
+        "app.services.integrations.artist_notifications.notify_artist_slot_selected", mock_notify
     )
 
     # Select slot 2

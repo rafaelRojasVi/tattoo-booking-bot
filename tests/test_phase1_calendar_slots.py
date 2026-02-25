@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from app.db.models import Lead
-from app.services.calendar_service import (
+from app.services.integrations.calendar_service import (
     format_slot_suggestions,
     get_available_slots,
     send_slot_suggestions_to_client,
@@ -131,7 +131,7 @@ async def test_send_slot_suggestions_to_client(db):
     db.refresh(lead)
 
     with patch(
-        "app.services.whatsapp_window.send_with_window_check", new_callable=AsyncMock
+        "app.services.messaging.whatsapp_window.send_with_window_check", new_callable=AsyncMock
     ) as mock_send:
         mock_send.return_value = {"status": "sent"}
 
@@ -159,7 +159,7 @@ async def test_send_slot_suggestions_handles_error(db):
     db.refresh(lead)
 
     # Force an error by making get_available_slots fail
-    with patch("app.services.calendar_service.get_available_slots") as mock_slots:
+    with patch("app.services.integrations.calendar_service.get_available_slots") as mock_slots:
         mock_slots.side_effect = Exception("Calendar API error")
 
         result = await send_slot_suggestions_to_client(
@@ -188,7 +188,7 @@ async def test_slot_suggestions_integration_with_webhook(db):
     db.refresh(lead)
 
     with patch(
-        "app.services.whatsapp_window.send_with_window_check", new_callable=AsyncMock
+        "app.services.messaging.whatsapp_window.send_with_window_check", new_callable=AsyncMock
     ) as mock_send:
         mock_send.return_value = {"status": "sent"}
 

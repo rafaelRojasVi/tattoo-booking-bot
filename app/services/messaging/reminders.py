@@ -15,17 +15,23 @@ from sqlalchemy.orm import Session
 
 from app.constants.event_types import reminder_booking_event_type, reminder_qualifying_event_type
 from app.constants.providers import PROVIDER_REMINDER
+from app.db.helpers import commit_and_refresh
 from app.db.models import Lead
-from app.services.conversation import (
+from app.constants.statuses import (
+    STATUS_ABANDONED,
+    STATUS_AWAITING_DEPOSIT,
     STATUS_BOOKING_LINK_SENT,
     STATUS_BOOKING_PENDING,
+    STATUS_DEPOSIT_EXPIRED,
     STATUS_DEPOSIT_PAID,
     STATUS_NEEDS_FOLLOW_UP,
     STATUS_OPTOUT,
+    STATUS_PENDING_APPROVAL,
     STATUS_QUALIFYING,
+    STATUS_STALE,
 )
 from app.services.safety import check_and_record_processed_event
-from app.services.whatsapp_window import send_with_window_check
+from app.services.messaging.whatsapp_window import send_with_window_check
 from app.utils.datetime_utils import dt_replace_utc, iso_or_none
 
 logger = logging.getLogger(__name__)
@@ -105,7 +111,7 @@ def check_and_send_qualifying_reminder(
         return {"status": "duplicate", "event_id": event_id}
 
     # Send reminder
-    from app.services.whatsapp_templates import (
+    from app.services.messaging.whatsapp_templates import (
         get_template_for_reminder_2,
         get_template_params_consultation_reminder_2_final,
     )
@@ -162,8 +168,7 @@ def check_and_send_qualifying_reminder(
     if reminder_number == 1:
         lead.reminder_qualifying_sent_at = func.now()
     # TODO: Add field for reminder 2
-    db.commit()
-    db.refresh(lead)
+    commit_and_refresh(db, lead)
 
     return {
         "status": "sent",
@@ -192,8 +197,6 @@ def check_and_mark_abandoned(
     Returns:
         dict with status
     """
-    from app.services.conversation import STATUS_ABANDONED
-
     if lead.status != STATUS_QUALIFYING:
         return {"status": "skipped", "reason": f"Lead not in {STATUS_QUALIFYING} status"}
 
@@ -239,8 +242,6 @@ def check_and_mark_stale(
     Returns:
         dict with status
     """
-    from app.services.conversation import STATUS_PENDING_APPROVAL, STATUS_STALE
-
     if lead.status != STATUS_PENDING_APPROVAL:
         return {"status": "skipped", "reason": f"Lead not in {STATUS_PENDING_APPROVAL} status"}
 
@@ -375,8 +376,7 @@ def check_and_send_booking_reminder(
     elif reminder_type == "72h":
         lead.reminder_booking_sent_72h_at = func.now()
 
-    db.commit()
-    db.refresh(lead)
+    commit_and_refresh(db, lead)
 
     return {
         "status": "sent",
@@ -406,8 +406,6 @@ def check_and_mark_deposit_expired(
     Returns:
         dict with status
     """
-    from app.services.conversation import STATUS_AWAITING_DEPOSIT, STATUS_DEPOSIT_EXPIRED
-
     if lead.status != STATUS_AWAITING_DEPOSIT:
         return {"status": "skipped", "reason": f"Lead not in {STATUS_AWAITING_DEPOSIT} status"}
 
@@ -484,7 +482,7 @@ def check_and_mark_booking_pending_stale(
     # Notify artist (idempotent - only notifies on transition)
     import asyncio
 
-    from app.services.artist_notifications import notify_artist_needs_follow_up
+    from app.services.integrations.artist_notifications import notify_artist_needs_follow_up
 
     try:
         asyncio.run(

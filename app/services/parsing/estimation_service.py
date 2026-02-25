@@ -26,7 +26,7 @@ def parse_dimensions(dimensions_text: str) -> tuple[float, float] | None:
     if not dimensions_text:
         return None
 
-    from app.services.text_normalization import normalize_for_dimensions
+    from app.services.parsing.text_normalization import normalize_for_dimensions
 
     text = normalize_for_dimensions(dimensions_text).lower()
 
@@ -76,7 +76,7 @@ def parse_budget_from_text(text: str) -> int | None:
     """
     if not text or not isinstance(text, str):
         return None
-    from app.services.text_normalization import normalize_for_budget
+    from app.services.parsing.text_normalization import normalize_for_budget
 
     cleaned = normalize_for_budget(text).lower().replace(",", "")
     for sym in ["£", "$", "€"]:

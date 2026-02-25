@@ -5,19 +5,13 @@ Template configuration check - validates WhatsApp templates are configured.
 import logging
 from typing import Any
 
-from app.services.template_registry import get_all_required_templates, validate_template_registry
+from app.services.messaging.template_core import get_required_templates_app
+from app.services.messaging.template_registry import validate_template_registry
 
 logger = logging.getLogger(__name__)
 
-# All required templates (from registry)
-# Get required templates from registry
-_required_templates = get_all_required_templates()
-
-# Add test_template for testing (if not already present)
-if "test_template" not in _required_templates:
-    _required_templates.append("test_template")
-
-REQUIRED_TEMPLATES: list[str] = _required_templates
+# All required templates (registry + test_template for tests)
+REQUIRED_TEMPLATES: list[str] = get_required_templates_app()
 
 
 def startup_check_templates() -> dict[str, Any]:
@@ -73,7 +67,7 @@ def startup_check_templates() -> dict[str, Any]:
             try:
                 import asyncio
 
-                from app.services.artist_notifications import send_system_alert
+                from app.services.integrations.artist_notifications import send_system_alert
 
                 try:
                     asyncio.run(

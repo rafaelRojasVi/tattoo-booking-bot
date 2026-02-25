@@ -14,7 +14,7 @@ from app.services.conversation import (
     STATUS_QUALIFYING,
     STATUS_STALE,
 )
-from app.services.reminders import (
+from app.services.messaging.reminders import (
     check_and_mark_abandoned,
     check_and_mark_stale,
     check_and_send_booking_reminder,
@@ -203,7 +203,7 @@ def test_qualifying_reminder_uses_template_when_outside_24h_window(client, db):
     db.commit()
 
     with patch(
-        "app.services.whatsapp_window.send_template_message",
+        "app.services.messaging.whatsapp_window.send_template_message",
         new_callable=AsyncMock,
         return_value={"status": "dry_run_template", "message_id": None},
     ) as mock_template:
@@ -244,12 +244,12 @@ def test_booking_reminder_uses_template_when_outside_24h_window(client, db):
     db.commit()
 
     with patch(
-        "app.services.whatsapp_window.send_template_message",
+        "app.services.messaging.whatsapp_window.send_template_message",
         new_callable=AsyncMock,
         return_value={"status": "dry_run_template", "message_id": None},
     ) as mock_template:
         with patch(
-            "app.services.template_registry.get_all_required_templates",
+            "app.services.messaging.template_registry.get_all_required_templates",
             return_value=["reminder_booking", "consultation_reminder_2_final"],
         ):
             result = check_and_send_booking_reminder(

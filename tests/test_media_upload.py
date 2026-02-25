@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from app.db.models import Attachment, Lead
-from app.services.media_upload import attempt_upload_attachment
+from app.services.integrations.media_upload import attempt_upload_attachment
 
 
 @pytest.fixture
@@ -44,8 +44,8 @@ def pending_attachment(db, lead):
 async def test_attempt_upload_success(db, pending_attachment):
     """Test successful upload flow."""
     with (
-        patch("app.services.media_upload._download_whatsapp_media") as mock_download,
-        patch("app.services.media_upload._upload_to_supabase") as mock_upload,
+        patch("app.services.integrations.media_upload._download_whatsapp_media") as mock_download,
+        patch("app.services.integrations.media_upload._upload_to_supabase") as mock_upload,
     ):
         # Mock successful download
         mock_download.return_value = (b"fake_image_data", "image/jpeg")
@@ -79,8 +79,8 @@ async def test_attempt_upload_success(db, pending_attachment):
 async def test_attempt_upload_failure_retry(db, pending_attachment):
     """Test upload failure with retry capability."""
     with (
-        patch("app.services.media_upload._download_whatsapp_media") as mock_download,
-        patch("app.services.system_event_service.error") as mock_error,
+        patch("app.services.integrations.media_upload._download_whatsapp_media") as mock_download,
+        patch("app.services.metrics.system_event_service.error") as mock_error,
     ):
         # Mock download failure
         mock_download.side_effect = Exception("WhatsApp API error")
@@ -115,8 +115,8 @@ async def test_attempt_upload_fails_after_5_attempts(db, lead):
     db.refresh(attachment)
 
     with (
-        patch("app.services.media_upload._download_whatsapp_media") as mock_download,
-        patch("app.services.system_event_service.error") as mock_error,
+        patch("app.services.integrations.media_upload._download_whatsapp_media") as mock_download,
+        patch("app.services.metrics.system_event_service.error") as mock_error,
     ):
         # Mock download failure
         mock_download.side_effect = Exception("Persistent error")
@@ -148,7 +148,7 @@ async def test_attempt_upload_skips_already_uploaded(db, lead):
     db.commit()
     db.refresh(attachment)
 
-    with patch("app.services.media_upload._download_whatsapp_media") as mock_download:
+    with patch("app.services.integrations.media_upload._download_whatsapp_media") as mock_download:
         # Run upload
         await attempt_upload_attachment(db, attachment.id)
 
@@ -208,7 +208,7 @@ def test_sweep_pending_uploads_respects_retry_delay(db, lead):
     db.add(attachment)
     db.commit()
 
-    with patch("app.services.media_upload.attempt_upload_attachment") as mock_upload:
+    with patch("app.services.integrations.media_upload.attempt_upload_attachment") as mock_upload:
         # Run sweep with 5 minute retry delay
         results = run_sweep(limit=10, retry_delay_minutes=5)
 
@@ -232,7 +232,7 @@ def test_sweep_pending_uploads_skips_failed(db, lead):
     db.add(attachment)
     db.commit()
 
-    with patch("app.services.media_upload.attempt_upload_attachment") as mock_upload:
+    with patch("app.services.integrations.media_upload.attempt_upload_attachment") as mock_upload:
         # Run sweep
         results = run_sweep(limit=10)
 
@@ -244,10 +244,10 @@ def test_sweep_pending_uploads_skips_failed(db, lead):
 @pytest.mark.asyncio
 async def test_download_whatsapp_media_success():
     """Test successful WhatsApp media download."""
-    from app.services.media_upload import _download_whatsapp_media
+    from app.services.integrations.media_upload import _download_whatsapp_media
 
     # media_upload imports create_httpx_client from http_client inside _download_whatsapp_media
-    with patch("app.services.http_client.create_httpx_client") as mock_client:
+    with patch("app.services.integrations.http_client.create_httpx_client") as mock_client:
         # Mock HTTP client
         mock_response_1 = MagicMock()
         mock_response_1.json.return_value = {"url": "https://example.com/media.jpg"}
@@ -280,7 +280,7 @@ async def test_upload_to_supabase_success():
     """Test successful Supabase upload."""
     pytest.importorskip("supabase")
     from app.core.config import settings
-    from app.services.media_upload import _upload_to_supabase
+    from app.services.integrations.media_upload import _upload_to_supabase
 
     # Mock settings; patch supabase.create_client (used inside _upload_to_supabase)
     with (
@@ -308,7 +308,7 @@ async def test_upload_to_supabase_success():
 async def test_upload_to_supabase_not_configured():
     """Test that upload fails if Supabase is not configured."""
     from app.core.config import settings
-    from app.services.media_upload import _upload_to_supabase
+    from app.services.integrations.media_upload import _upload_to_supabase
 
     # Mock settings without Supabase config
     with (

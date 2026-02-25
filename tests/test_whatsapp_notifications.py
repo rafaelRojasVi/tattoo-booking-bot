@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, patch
 
 from app.db.models import Lead
 from app.services.conversation import STATUS_AWAITING_DEPOSIT
-from app.services.messaging import format_deposit_link_message, format_payment_confirmation_message
+from app.services.messaging.messaging import format_deposit_link_message, format_payment_confirmation_message
 
 
 def test_format_deposit_link_message():
@@ -41,7 +41,7 @@ def test_send_deposit_sends_whatsapp_message(client, db):
     db.refresh(lead)
 
     with patch(
-        "app.services.whatsapp_window.send_with_window_check", new_callable=AsyncMock
+        "app.services.messaging.whatsapp_window.send_with_window_check", new_callable=AsyncMock
     ) as mock_send:
         mock_send.return_value = {"status": "dry_run", "message_id": None}
 
@@ -100,7 +100,7 @@ def test_stripe_webhook_sends_payment_confirmation(client, db):
     async def mock_send_whatsapp(*args, **kwargs):
         return {"status": "dry_run", "message_id": None}
 
-    with patch("app.services.messaging.send_whatsapp_message", side_effect=mock_send_whatsapp):
+    with patch("app.services.messaging.messaging.send_whatsapp_message", side_effect=mock_send_whatsapp):
         response = client.post(
             "/webhooks/stripe",
             content=json.dumps(webhook_payload).encode("utf-8"),
@@ -157,7 +157,7 @@ def test_whatsapp_notification_respects_dry_run(client, db):
     db.refresh(lead)
 
     with patch(
-        "app.services.whatsapp_window.send_with_window_check", new_callable=AsyncMock
+        "app.services.messaging.whatsapp_window.send_with_window_check", new_callable=AsyncMock
     ) as mock_send:
         mock_send.return_value = {"status": "dry_run", "message_id": None}
 
@@ -185,7 +185,7 @@ def test_deposit_link_message_timestamp_updated(client, db):
 
     initial_timestamp = lead.last_bot_message_at
 
-    with patch("app.services.messaging.send_whatsapp_message", new_callable=AsyncMock):
+    with patch("app.services.messaging.messaging.send_whatsapp_message", new_callable=AsyncMock):
         response = client.post(f"/admin/leads/{lead.id}/send-deposit", json={"amount_pence": 5000})
 
         assert response.status_code == 200
@@ -228,7 +228,7 @@ def test_payment_confirmation_timestamp_updated(client, db):
     async def mock_send_whatsapp(*args, **kwargs):
         return {"status": "dry_run", "message_id": None}
 
-    with patch("app.services.messaging.send_whatsapp_message", side_effect=mock_send_whatsapp):
+    with patch("app.services.messaging.messaging.send_whatsapp_message", side_effect=mock_send_whatsapp):
         response = client.post(
             "/webhooks/stripe",
             content=json.dumps(webhook_payload).encode("utf-8"),

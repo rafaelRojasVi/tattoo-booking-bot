@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session
 
 from app.db.models import Attachment
 from app.db.session import SessionLocal
-from app.services.media_upload import attempt_upload_attachment
+from app.services.integrations.media_upload import attempt_upload_attachment
 
 logger = logging.getLogger(__name__)
 

@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.db.models import Lead
-from app.services.messaging import send_whatsapp_message
+from app.services.messaging.messaging import send_whatsapp_message
 
 logger = logging.getLogger(__name__)
 
@@ -25,7 +25,7 @@ async def send_system_alert(message: str, dry_run: bool = True) -> dict:
         dict with status
     """
     from app.core.config import settings
-    from app.services.messaging import send_whatsapp_message
+    from app.services.messaging.messaging import send_whatsapp_message
 
     if not settings.artist_whatsapp_number:
         logger.warning("Artist WhatsApp number not configured - system alert not sent")
@@ -60,7 +60,7 @@ def format_artist_summary(
     Returns:
         Formatted message string
     """
-    from app.services.summary import extract_phase1_summary_context, format_summary_message
+    from app.services.conversation.summary import extract_phase1_summary_context, format_summary_message
 
     # If answers_dict is provided, temporarily add to lead.answers for context extraction
     # (extract_phase1_summary_context reads from lead.answers)
@@ -256,7 +256,7 @@ async def notify_artist_slot_selected(
         ]
 
         # Add lead summary
-        from app.services.summary import extract_phase1_summary_context, format_summary_message
+        from app.services.conversation.summary import extract_phase1_summary_context, format_summary_message
 
         ctx = extract_phase1_summary_context(lead)
         summary = format_summary_message(ctx)
@@ -311,7 +311,7 @@ async def notify_artist_needs_reply(
     from sqlalchemy import func
 
     from app.services.action_tokens import generate_action_tokens_for_lead
-    from app.services.summary import extract_phase1_summary_context, format_summary_message
+    from app.services.conversation.summary import extract_phase1_summary_context, format_summary_message
 
     # Idempotency check: only notify if we haven't notified for this transition
     if lead.needs_artist_reply_notified_at is not None:
@@ -353,7 +353,7 @@ async def notify_artist_needs_reply(
         from sqlalchemy import select
 
         from app.db.models import LeadAnswer
-        from app.services.time_window_collection import PREFERRED_TIME_WINDOWS_KEY
+        from app.services.conversation.time_window_collection import PREFERRED_TIME_WINDOWS_KEY
 
         stmt = (
             select(LeadAnswer)
@@ -452,7 +452,7 @@ async def notify_artist_needs_follow_up(
     from sqlalchemy import func
 
     from app.services.action_tokens import generate_action_tokens_for_lead, get_action_url
-    from app.services.summary import extract_phase1_summary_context, format_summary_message
+    from app.services.conversation.summary import extract_phase1_summary_context, format_summary_message
 
     # Idempotency check: only notify if we haven't notified for this transition
     if lead.needs_follow_up_notified_at is not None:

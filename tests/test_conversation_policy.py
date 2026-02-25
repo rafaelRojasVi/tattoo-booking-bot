@@ -6,7 +6,7 @@ from datetime import UTC, datetime
 
 import pytest
 
-from app.services.conversation_policy import (
+from app.services.conversation.conversation_policy import (
     handover_hold_cooldown_elapsed,
     is_delete_data_request_message,
     is_human_request_message,

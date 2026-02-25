@@ -769,11 +769,12 @@ alembic current
 1. **Make changes** to code
 2. **Run tests** to verify: `pytest tests/test_your_feature.py -v`
 3. **Check app imports** (catches CI import errors before push): `python scripts/check_imports.py`
-4. **Check linting**: `ruff check app tests`
-5. **Format code**: `ruff format .`
-6. **Type check** (optional): `mypy app`
-7. **Commit** with descriptive message
-8. **Push** to trigger CI/CD
+4. **Check Docker + tests** (same as CI; requires Docker): `python scripts/check_docker.py`
+5. **Check linting**: `ruff check app tests`
+6. **Format code**: `ruff format .`
+7. **Type check** (optional): `mypy app`
+8. **Commit** with descriptive message
+9. **Push** to trigger CI/CD
 
 ### Pre-commit Hooks (Optional but Recommended)
 

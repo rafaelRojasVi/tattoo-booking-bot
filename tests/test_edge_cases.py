@@ -421,7 +421,7 @@ def test_concurrent_token_usage_attempts(db, client):
 
 def test_sheets_logging_with_null_values(db):
     """Test Google Sheets logging with leads containing null values."""
-    from app.services.sheets import log_lead_to_sheets
+    from app.services.integrations.sheets import log_lead_to_sheets
 
     lead = Lead(
         wa_from="1234567890",
@@ -444,7 +444,7 @@ def test_sheets_logging_with_null_values(db):
 
 def test_sheets_logging_with_special_characters(db):
     """Test Google Sheets logging with special characters in lead data."""
-    from app.services.sheets import log_lead_to_sheets
+    from app.services.integrations.sheets import log_lead_to_sheets
 
     lead = Lead(
         wa_from="1234567890",

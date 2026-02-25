@@ -9,7 +9,7 @@ from pathlib import Path
 import pytz
 import yaml
 
-from app.services.calendar_rules import (
+from app.services.integrations.calendar_rules import (
     apply_buffer,
     get_buffer_minutes,
     get_lookahead_days,
@@ -151,7 +151,7 @@ def test_calendar_rules_custom_config():
         temp_path = Path(f.name)
 
     try:
-        from app.services import calendar_rules
+        from app.services.integrations import calendar_rules
 
         original_path = calendar_rules.CALENDAR_RULES_PATH
         calendar_rules.CALENDAR_RULES_PATH = temp_path

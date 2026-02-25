@@ -15,7 +15,7 @@ from app.services.conversation import (
     STATUS_QUALIFYING,
     STATUS_REJECTED,
 )
-from app.services.state_machine import (
+from app.services.conversation.state_machine import (
     advance_step_if_at,
     get_allowed_transitions,
     is_transition_allowed,

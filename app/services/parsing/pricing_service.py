@@ -12,8 +12,8 @@ Price ranges are stored in the Lead model for admin/artist visibility only.
 import logging
 from dataclasses import dataclass
 
-from app.services.estimation_service import Category
-from app.services.region_service import RegionBucket, region_hourly_rate
+from app.services.parsing.estimation_service import Category
+from app.services.parsing.region_service import RegionBucket, region_hourly_rate
 
 logger = logging.getLogger(__name__)
 

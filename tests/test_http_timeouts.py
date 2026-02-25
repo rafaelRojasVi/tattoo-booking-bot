@@ -8,7 +8,7 @@ from pathlib import Path
 
 import httpx
 
-from app.services.http_client import create_httpx_client, get_httpx_timeout
+from app.services.integrations.http_client import create_httpx_client, get_httpx_timeout
 
 
 def test_http_client_helper_returns_timeout():
@@ -50,7 +50,7 @@ def test_messaging_uses_timeout(monkeypatch):
     # So we'll check the source code instead
 
     # Read the source file
-    messaging_file = Path(__file__).parent.parent / "app" / "services" / "messaging.py"
+    messaging_file = Path(__file__).parent.parent / "app" / "services" / "messaging" / "messaging.py"
     content = messaging_file.read_text()
 
     # Check that it imports or uses the helper
@@ -62,7 +62,7 @@ def test_messaging_uses_timeout(monkeypatch):
 def test_whatsapp_window_uses_timeout():
     """Test that whatsapp_window.py uses the timeout helper."""
     # Read the source file with explicit encoding
-    window_file = Path(__file__).parent.parent / "app" / "services" / "whatsapp_window.py"
+    window_file = Path(__file__).parent.parent / "app" / "services" / "messaging" / "whatsapp_window.py"
     content = window_file.read_text(encoding="utf-8")
 
     # Check that it imports or uses the helper
@@ -114,7 +114,7 @@ def test_no_direct_httpx_client_creation_in_app():
     if issues:
         error_msg = (
             "Found httpx.AsyncClient() calls without explicit timeout. "
-            "Use create_httpx_client() from app.services.http_client instead:\n\n"
+            "Use create_httpx_client() from app.services.integrations.http_client instead:\n\n"
             + "\n".join(f"  - {issue}" for issue in issues)
         )
         raise AssertionError(error_msg)

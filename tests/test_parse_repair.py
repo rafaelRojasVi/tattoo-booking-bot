@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.db.models import Lead, LeadAnswer
 from app.services.conversation import STATUS_NEEDS_ARTIST_REPLY, STATUS_QUALIFYING
-from app.services.parse_repair import (
+from app.services.parsing.parse_repair import (
     get_failure_count,
     increment_parse_failure,
     reset_parse_failures,
@@ -91,15 +91,15 @@ async def test_trigger_handover_after_parse_failure(db: Session, sample_lead: Le
     # Patch at source so parse_repair's function-level imports get the mocks
     mock_notify = AsyncMock(return_value=True)
     monkeypatch.setattr(
-        "app.services.artist_notifications.notify_artist_needs_reply",
+        "app.services.integrations.artist_notifications.notify_artist_needs_reply",
         mock_notify,
     )
     mock_send = AsyncMock(return_value={"status": "sent"})
-    monkeypatch.setattr("app.services.messaging.send_whatsapp_message", mock_send)
+    monkeypatch.setattr("app.services.messaging.messaging.send_whatsapp_message", mock_send)
     from unittest.mock import MagicMock
 
     mock_render = MagicMock(return_value="I'm going to have Jonah jump in here — one sec.")
-    monkeypatch.setattr("app.services.message_composer.render_message", mock_render)
+    monkeypatch.setattr("app.services.messaging.message_composer.render_message", mock_render)
 
     result = await trigger_handover_after_parse_failure(db, sample_lead, "dimensions", dry_run=True)
 
@@ -131,7 +131,7 @@ async def test_soft_repair_dimensions(db: Session, sample_lead: Lead, monkeypatc
     db.commit()
 
     mock_send = AsyncMock(return_value={"status": "sent"})
-    monkeypatch.setattr("app.services.conversation.send_whatsapp_message", mock_send)
+    monkeypatch.setattr("app.services.messaging.messaging.send_whatsapp_message", mock_send)
 
     result = await _handle_qualifying_lead(db, sample_lead, "not a size", dry_run=True)
 
@@ -160,13 +160,13 @@ async def test_three_strikes_handover_dimensions(db: Session, sample_lead: Lead,
 
     mock_notify = AsyncMock(return_value=True)
     monkeypatch.setattr(
-        "app.services.artist_notifications.notify_artist_needs_reply",
+        "app.services.integrations.artist_notifications.notify_artist_needs_reply",
         mock_notify,
     )
     mock_send = AsyncMock(return_value={"status": "sent"})
-    monkeypatch.setattr("app.services.conversation.send_whatsapp_message", mock_send)
+    monkeypatch.setattr("app.services.messaging.messaging.send_whatsapp_message", mock_send)
     mock_render = MagicMock(return_value="I'm going to have Jonah jump in here — one sec.")
-    monkeypatch.setattr("app.services.message_composer.render_message", mock_render)
+    monkeypatch.setattr("app.services.messaging.message_composer.render_message", mock_render)
 
     result = await _handle_qualifying_lead(db, sample_lead, "still not a size", dry_run=True)
 
@@ -188,9 +188,9 @@ async def test_soft_repair_budget(db: Session, sample_lead: Lead, monkeypatch):
     db.commit()
 
     mock_send = AsyncMock(return_value={"status": "sent"})
-    monkeypatch.setattr("app.services.conversation.send_whatsapp_message", mock_send)
+    monkeypatch.setattr("app.services.messaging.messaging.send_whatsapp_message", mock_send)
     mock_render = MagicMock(return_value="Just to clarify — what's your budget amount?")
-    monkeypatch.setattr("app.services.message_composer.render_message", mock_render)
+    monkeypatch.setattr("app.services.messaging.message_composer.render_message", mock_render)
 
     result = await _handle_qualifying_lead(db, sample_lead, "not a number", dry_run=True)
 
@@ -212,9 +212,9 @@ async def test_soft_repair_location(db: Session, sample_lead: Lead, monkeypatch)
     db.commit()
 
     mock_send = AsyncMock(return_value={"status": "sent"})
-    monkeypatch.setattr("app.services.conversation.send_whatsapp_message", mock_send)
+    monkeypatch.setattr("app.services.messaging.messaging.send_whatsapp_message", mock_send)
     mock_render = MagicMock(return_value="Just to make sure — what city are you currently in?")
-    monkeypatch.setattr("app.services.message_composer.render_message", mock_render)
+    monkeypatch.setattr("app.services.messaging.message_composer.render_message", mock_render)
 
     result = await _handle_qualifying_lead(db, sample_lead, "a", dry_run=True)  # Too short
 
@@ -242,11 +242,11 @@ async def test_micro_confirmation_after_all_fields(db: Session, sample_lead: Lea
 
     # _handle_qualifying_lead uses _get_send_whatsapp() which reads from conversation
     mock_send = AsyncMock(return_value={"status": "sent"})
-    monkeypatch.setattr("app.services.conversation.send_whatsapp_message", mock_send)
+    monkeypatch.setattr("app.services.messaging.messaging.send_whatsapp_message", mock_send)
     mock_render = MagicMock(
         return_value="Got it — 10×7cm, London, budget ~£500. Reply if you want to change anything."
     )
-    monkeypatch.setattr("app.services.message_composer.render_message", mock_render)
+    monkeypatch.setattr("app.services.messaging.message_composer.render_message", mock_render)
 
     result = await _handle_qualifying_lead(db, sample_lead, "London", dry_run=True)
 

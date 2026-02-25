@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from app.db.models import Lead
-from app.services.whatsapp_templates import (
+from app.services.messaging.whatsapp_templates import (
     get_template_for_deposit_confirmation,
     get_template_for_next_steps,
     get_template_for_reminder_2,
@@ -16,7 +16,7 @@ from app.services.whatsapp_templates import (
     get_template_params_deposit_received_next_steps,
     get_template_params_next_steps_reply_to_continue,
 )
-from app.services.whatsapp_window import send_with_window_check
+from app.services.messaging.whatsapp_window import send_with_window_check
 
 
 def test_template_names():
@@ -65,7 +65,7 @@ async def test_send_with_window_check_within_window_uses_free_form(db):
     db.commit()
     db.refresh(lead)
 
-    with patch("app.services.messaging.send_whatsapp_message", new_callable=AsyncMock) as mock_send:
+    with patch("app.services.messaging.messaging.send_whatsapp_message", new_callable=AsyncMock) as mock_send:
         mock_send.return_value = {
             "status": "sent",
             "message_id": "test_id",
@@ -102,11 +102,11 @@ async def test_send_with_window_check_outside_window_uses_template(db):
     # Template must be in "required" list or code returns "closed" (not configured)
     with (
         patch(
-            "app.services.template_registry.get_all_required_templates",
+            "app.services.messaging.template_registry.get_all_required_templates",
             return_value=["test_template", "other_template"],
         ),
         patch(
-            "app.services.whatsapp_window.send_template_message", new_callable=AsyncMock
+            "app.services.messaging.whatsapp_window.send_template_message", new_callable=AsyncMock
         ) as mock_template,
     ):
         mock_template.return_value = {
@@ -144,7 +144,7 @@ async def test_send_with_window_check_outside_window_no_template_graceful(db):
     db.commit()
     db.refresh(lead)
 
-    with patch("app.services.messaging.send_whatsapp_message", new_callable=AsyncMock) as mock_send:
+    with patch("app.services.messaging.messaging.send_whatsapp_message", new_callable=AsyncMock) as mock_send:
         result = await send_with_window_check(
             db=db,
             lead=lead,
@@ -160,7 +160,7 @@ async def test_send_with_window_check_outside_window_no_template_graceful(db):
 
 def test_reminder_1_template_name_is_none():
     """Test that reminder #1 uses template_name=None (should be within window)."""
-    from app.services.whatsapp_templates import get_template_for_reminder_2
+    from app.services.messaging.whatsapp_templates import get_template_for_reminder_2
 
     # Verify reminder 1 doesn't use template (it's at 12h, should be within window)
     # This is a unit test of the template selection logic, not the full reminder flow
@@ -171,7 +171,7 @@ def test_reminder_1_template_name_is_none():
 
 def test_reminder_2_uses_template():
     """Test that reminder #2 uses the correct template."""
-    from app.services.whatsapp_templates import (
+    from app.services.messaging.whatsapp_templates import (
         get_template_for_reminder_2,
         get_template_params_consultation_reminder_2_final,
     )

@@ -22,7 +22,7 @@ from app.services.conversation import (
     get_lead_summary,
     handle_inbound_message,
 )
-from app.services.questions import get_total_questions
+from app.services.conversation.questions import get_total_questions
 
 
 @pytest.mark.asyncio
@@ -95,7 +95,7 @@ async def test_complete_flow_start_to_finish(client, db):
     # Answer questions one by one
     # Mock tour service to ensure city is on tour (avoids waitlist)
 
-    with patch("app.services.tour_service.is_city_on_tour", return_value=True):
+    with patch("app.services.conversation.tour_service.is_city_on_tour", return_value=True):
         for i, (key, answer) in enumerate(answers.items()):
             message_id = f"msg_{i + 2:03d}"
 
@@ -177,7 +177,7 @@ async def test_complete_flow_start_to_finish(client, db):
 
     # Step 4: Artist approves lead
     # Mock calendar service to return slots (prevents status change to NEEDS_ARTIST_REPLY)
-    with patch("app.services.calendar_service.get_available_slots") as mock_get_slots:
+    with patch("app.services.integrations.calendar_service.get_available_slots") as mock_get_slots:
         # Return mock slots to prevent status change
         from datetime import datetime, timedelta
 
@@ -433,10 +433,10 @@ async def test_artist_handover_and_resume(client, db):
     # Mock WhatsApp send so flow completes without real API calls
     mock_wa = AsyncMock(return_value={"id": "wamock", "status": "sent"})
     with (
-        patch("app.services.tour_service.is_city_on_tour", return_value=True),
-        patch("app.services.handover_service.should_handover", return_value=(False, None)),
-        patch("app.services.conversation.send_whatsapp_message", mock_wa),
-        patch("app.services.messaging.send_whatsapp_message", mock_wa),
+        patch("app.services.conversation.tour_service.is_city_on_tour", return_value=True),
+        patch("app.services.conversation.handover_service.should_handover", return_value=(False, None)),
+        patch("app.services.messaging.messaging.send_whatsapp_message", mock_wa),
+        patch("app.services.messaging.messaging.send_whatsapp_message", mock_wa),
     ):
         remaining_answers = {
             "style": "Fine line",
@@ -522,7 +522,7 @@ async def test_data_persistence_throughout_flow(client, db):
     # Complete consultation - answer all questions in Phase 1 order
     # Mock tour service to ensure city is on tour (avoids waitlist)
 
-    with patch("app.services.tour_service.is_city_on_tour", return_value=True):
+    with patch("app.services.conversation.tour_service.is_city_on_tour", return_value=True):
         # Phase 1 question order (from CONSULTATION_QUESTIONS)
         answers_in_order = [
             ("idea", "Test idea"),

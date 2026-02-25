@@ -50,7 +50,7 @@ def looks_like_multi_answer_bundle(
     signals = 0
 
     # (a) dimension: use parse_dimensions when possible; else dimension pattern with word-boundary cm/inch
-    from app.services.estimation_service import parse_budget_from_text, parse_dimensions
+    from app.services.parsing.estimation_service import parse_budget_from_text, parse_dimensions
 
     has_dimension = parse_dimensions(text) is not None
     if not has_dimension:
@@ -107,7 +107,7 @@ def looks_like_wrong_field_single_answer(
     if not text or not text.strip():
         return False
 
-    from app.services.estimation_service import parse_budget_from_text, parse_dimensions
+    from app.services.parsing.estimation_service import parse_budget_from_text, parse_dimensions
 
     t = text.strip()
     alpha_chars = sum(1 for c in t if c.isalpha())

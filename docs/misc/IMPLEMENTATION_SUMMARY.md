@@ -279,8 +279,8 @@ After approval, calendar_service suggests N slots; user replies with number or â
 ## 13. Deployment & Operations
 
 - **Docker:** `Dockerfile`, `docker-compose.yml`, `docker-compose.test.yml`, `docker-compose.prod.yml`.
-- **Render:** `render.yaml` blueprint; `docs/DEPLOYMENT_RENDER.md`.
-- **Runbooks:** `docs/runbook_go_live.md` (pre-launch checklist, recovery), `docs/ops_runbook.md`.
+- **Render:** `render.yaml` blueprint; `docs/deployment/DEPLOYMENT_RENDER.md`.
+- **Runbooks:** `docs/runbooks/runbook_go_live.md` (pre-launch checklist, recovery), `docs/runbooks/ops_runbook.md`.
 - **Health:** `/health` (no DB), `/ready` (DB); suitable for load balancers and orchestration.
 - **Cron-style:** `POST /admin/sweep-expired-deposits` (expire deposit links); `app/jobs/sweep_pending_uploads.py` (retry attachment uploads). Scripts: `scripts/smoke_workers.sh`, `scripts/whatsapp_smoke.py`, etc.
 

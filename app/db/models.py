@@ -21,6 +21,7 @@ class Lead(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     channel: Mapped[str] = mapped_column(String(20), default=PROVIDER_WHATSAPP)
+    artist_id: Mapped[str] = mapped_column(String(64), default="default", nullable=False)
     wa_from: Mapped[str] = mapped_column(String(64), index=True)
     status: Mapped[str] = mapped_column(String(32), default="NEW")
     current_step: Mapped[int] = mapped_column(Integer, default=0)

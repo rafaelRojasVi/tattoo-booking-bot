@@ -22,10 +22,10 @@ Your WhatsApp Cloud API integration is **fully implemented and ready for testing
 
 ### ✅ Documentation Created
 
-- `docs/WHATSAPP_SETUP.md` - Complete setup guide
-- `docs/WHATSAPP_QUICK_START.md` - 5-minute quick start
-- `docs/WHATSAPP_VERIFICATION_CHECKLIST.md` - Implementation verification
-- `docs/WHATSAPP_TESTING_GUIDE.md` - Testing procedures
+- `docs/deployment/WHATSAPP_SETUP.md` - Complete setup guide
+- `docs/deployment/WHATSAPP_QUICK_START.md` - 5-minute quick start
+- `docs/deployment/WHATSAPP_VERIFICATION_CHECKLIST.md` - Implementation verification
+- `docs/deployment/WHATSAPP_TESTING_GUIDE.md` - Testing procedures
 
 ---
 

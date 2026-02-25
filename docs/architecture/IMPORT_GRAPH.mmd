@@ -6,6 +6,8 @@ flowchart LR
     app_api_admin["api.admin"]
     app_api_auth["api.auth"]
     app_api_demo["api.demo"]
+    app_api_dependencies["api.dependencies"]
+    app_api_errors["api.errors"]
     app_api_webhooks["api.webhooks"]
     app_constants["constants"]
     app_constants_event_types["constants.event_types"]
@@ -14,6 +16,7 @@ flowchart LR
     app_core_config["core.config"]
     app_db_base["db.base"]
     app_db_deps["db.deps"]
+    app_db_helpers["db.helpers"]
     app_db_models["db.models"]
     app_db_session["db.session"]
     app_jobs_cleanup_system_events["jobs.cleanup_system_events"]
@@ -30,6 +33,7 @@ flowchart LR
     app_services_calendar_service["services.calendar_service"]
     app_services_conversation["services.conversation"]
     app_services_conversation_booking["services.conversation_booking"]
+    app_services_conversation_deps["services.conversation_deps"]
     app_services_conversation_policy["services.conversation_policy"]
     app_services_conversation_qualifying["services.conversation_qualifying"]
     app_services_estimation_service["services.estimation_service"]
@@ -57,6 +61,7 @@ flowchart LR
     app_services_summary["services.summary"]
     app_services_system_event_service["services.system_event_service"]
     app_services_template_check["services.template_check"]
+    app_services_template_core["services.template_core"]
     app_services_template_registry["services.template_registry"]
     app_services_text_normalization["services.text_normalization"]
     app_services_time_window_collection["services.time_window_collection"]
@@ -67,15 +72,20 @@ flowchart LR
     app_services_whatsapp_window["services.whatsapp_window"]
     app_utils_datetime_utils["utils.datetime_utils"]
     app_api_actions --> app_api_admin
+    app_api_actions --> app_api_errors
     app_api_actions --> app_core_config
     app_api_actions --> app_db_deps
+    app_api_actions --> app_db_helpers
     app_api_actions --> app_services_action_tokens
     app_api_actions --> app_services_conversation
     app_api_actions --> app_services_sheets
     app_api_admin --> app_api_auth
+    app_api_admin --> app_api_dependencies
+    app_api_admin --> app_api_errors
     app_api_admin --> app_constants_event_types
     app_api_admin --> app_core_config
     app_api_admin --> app_db_deps
+    app_api_admin --> app_db_helpers
     app_api_admin --> app_db_models
     app_api_admin --> app_schemas_admin
     app_api_admin --> app_services_artist_notifications
@@ -97,9 +107,11 @@ flowchart LR
     app_api_admin --> app_services_whatsapp_window
     app_api_admin --> app_utils_datetime_utils
     app_api_auth --> app_core_config
+    app_api_demo --> app_api_dependencies
     app_api_demo --> app_constants_event_types
     app_api_demo --> app_core_config
     app_api_demo --> app_db_deps
+    app_api_demo --> app_db_helpers
     app_api_demo --> app_db_models
     app_api_demo --> app_services_action_tokens
     app_api_demo --> app_services_conversation
@@ -107,10 +119,13 @@ flowchart LR
     app_api_demo --> app_services_questions
     app_api_demo --> app_services_safety
     app_api_demo --> app_utils_datetime_utils
+    app_api_dependencies --> app_db_deps
+    app_api_dependencies --> app_db_models
     app_api_webhooks --> app_constants_event_types
     app_api_webhooks --> app_constants_providers
     app_api_webhooks --> app_core_config
     app_api_webhooks --> app_db_deps
+    app_api_webhooks --> app_db_helpers
     app_api_webhooks --> app_db_models
     app_api_webhooks --> app_db_session
     app_api_webhooks --> app_middleware_correlation_id
@@ -150,7 +165,9 @@ flowchart LR
     app_middleware_rate_limit --> app_core_config
     app_schemas --> app_schemas_admin
     app_services_action_tokens --> app_core_config
+    app_services_action_tokens --> app_db_helpers
     app_services_action_tokens --> app_db_models
+    app_services_action_tokens --> app_services_leads
     app_services_action_tokens --> app_utils_datetime_utils
     app_services_artist_notifications --> app_core_config
     app_services_artist_notifications --> app_db_models
@@ -174,6 +191,7 @@ flowchart LR
     app_services_conversation --> app_constants_event_types
     app_services_conversation --> app_constants_statuses
     app_services_conversation --> app_core_config
+    app_services_conversation --> app_db_helpers
     app_services_conversation --> app_db_models
     app_services_conversation --> app_services_artist_notifications
     app_services_conversation --> app_services_conversation_booking
@@ -188,10 +206,11 @@ flowchart LR
     app_services_conversation_booking --> app_constants_event_types
     app_services_conversation_booking --> app_constants_statuses
     app_services_conversation_booking --> app_core_config
+    app_services_conversation_booking --> app_db_helpers
     app_services_conversation_booking --> app_db_models
     app_services_conversation_booking --> app_services_artist_notifications
     app_services_conversation_booking --> app_services_calendar_service
-    app_services_conversation_booking --> app_services_conversation
+    app_services_conversation_booking --> app_services_conversation_deps
     app_services_conversation_booking --> app_services_conversation_policy
     app_services_conversation_booking --> app_services_conversation_qualifying
     app_services_conversation_booking --> app_services_message_composer
@@ -202,12 +221,14 @@ flowchart LR
     app_services_conversation_booking --> app_services_state_machine
     app_services_conversation_booking --> app_services_system_event_service
     app_services_conversation_booking --> app_utils_datetime_utils
+    app_services_conversation_deps --> app_services_conversation
     app_services_conversation_qualifying --> app_constants_statuses
+    app_services_conversation_qualifying --> app_db_helpers
     app_services_conversation_qualifying --> app_db_models
     app_services_conversation_qualifying --> app_services_action_tokens
     app_services_conversation_qualifying --> app_services_artist_notifications
     app_services_conversation_qualifying --> app_services_bundle_guard
-    app_services_conversation_qualifying --> app_services_conversation
+    app_services_conversation_qualifying --> app_services_conversation_deps
     app_services_conversation_qualifying --> app_services_conversation_policy
     app_services_conversation_qualifying --> app_services_estimation_service
     app_services_conversation_qualifying --> app_services_handover_service
@@ -231,11 +252,13 @@ flowchart LR
     app_services_handover_packet --> app_utils_datetime_utils
     app_services_handover_service --> app_db_models
     app_services_handover_service --> app_services_message_composer
+    app_services_leads --> app_db_helpers
     app_services_leads --> app_db_models
     app_services_leads --> app_services_conversation
     app_services_leads --> app_services_sheets
     app_services_media_upload --> app_constants_event_types
     app_services_media_upload --> app_core_config
+    app_services_media_upload --> app_db_helpers
     app_services_media_upload --> app_db_models
     app_services_media_upload --> app_db_session
     app_services_media_upload --> app_services_http_client
@@ -246,9 +269,11 @@ flowchart LR
     app_services_messaging --> app_services_message_composer
     app_services_messaging --> app_services_summary
     app_services_outbox_service --> app_core_config
+    app_services_outbox_service --> app_db_helpers
     app_services_outbox_service --> app_db_models
     app_services_outbox_service --> app_services_messaging
     app_services_outbox_service --> app_services_whatsapp_window
+    app_services_parse_repair --> app_db_helpers
     app_services_parse_repair --> app_db_models
     app_services_parse_repair --> app_services_artist_notifications
     app_services_parse_repair --> app_services_conversation
@@ -260,6 +285,7 @@ flowchart LR
     app_services_reminders --> app_constants_event_types
     app_services_reminders --> app_constants_providers
     app_services_reminders --> app_core_config
+    app_services_reminders --> app_db_helpers
     app_services_reminders --> app_db_models
     app_services_reminders --> app_services_artist_notifications
     app_services_reminders --> app_services_conversation
@@ -269,10 +295,12 @@ flowchart LR
     app_services_reminders --> app_utils_datetime_utils
     app_services_safety --> app_constants_event_types
     app_services_safety --> app_constants_providers
+    app_services_safety --> app_db_helpers
     app_services_safety --> app_db_models
+    app_services_safety --> app_services_action_tokens
+    app_services_safety --> app_services_leads
     app_services_safety --> app_services_metrics
     app_services_safety --> app_services_system_event_service
-    app_services_safety --> app_utils_datetime_utils
     app_services_sheets --> app_core_config
     app_services_sheets --> app_db_models
     app_services_slot_parsing --> app_db_models
@@ -280,17 +308,22 @@ flowchart LR
     app_services_slot_parsing --> app_services_text_normalization
     app_services_state_machine --> app_constants_event_types
     app_services_state_machine --> app_constants_statuses
+    app_services_state_machine --> app_db_helpers
     app_services_state_machine --> app_db_models
+    app_services_state_machine --> app_services_leads
     app_services_state_machine --> app_services_system_event_service
     app_services_stripe_service --> app_core_config
     app_services_summary --> app_db_models
+    app_services_system_event_service --> app_db_helpers
     app_services_system_event_service --> app_db_models
     app_services_system_event_service --> app_middleware_correlation_id
     app_services_template_check --> app_core_config
     app_services_template_check --> app_services_artist_notifications
+    app_services_template_check --> app_services_template_core
     app_services_template_check --> app_services_template_registry
-    app_services_template_registry --> app_services_template_check
-    app_services_template_registry --> app_services_whatsapp_templates
+    app_services_template_core --> app_services_whatsapp_templates
+    app_services_template_registry --> app_services_template_core
+    app_services_time_window_collection --> app_db_helpers
     app_services_time_window_collection --> app_db_models
     app_services_time_window_collection --> app_services_artist_notifications
     app_services_time_window_collection --> app_services_conversation

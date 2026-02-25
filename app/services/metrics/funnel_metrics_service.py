@@ -9,7 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db.models import Lead
-from app.services.conversation import (
+from app.constants.statuses import (
     STATUS_ABANDONED,
     STATUS_BOOKED,
     STATUS_NEEDS_ARTIST_REPLY,

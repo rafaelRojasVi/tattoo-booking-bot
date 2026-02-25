@@ -17,10 +17,10 @@ from app.services.conversation import (
     STATUS_WAITLISTED,
     handle_inbound_message,
 )
-from app.services.estimation_service import get_deposit_amount
-from app.services.parse_repair import increment_parse_failure, should_handover_after_failure
-from app.services.pricing_service import calculate_price_range
-from app.services.slot_parsing import parse_slot_selection_logged
+from app.services.parsing.estimation_service import get_deposit_amount
+from app.services.parsing.parse_repair import increment_parse_failure, should_handover_after_failure
+from app.services.parsing.pricing_service import calculate_price_range
+from app.services.parsing.slot_parsing import parse_slot_selection_logged
 
 # ============================================================================
 # Consultation Flow Edge Cases
@@ -131,7 +131,7 @@ async def test_consultation_handles_duplicate_answers(db, sample_lead):
 async def test_budget_exactly_at_minimum(db, lead_with_answers):
     """Test budget exactly at minimum (should pass)."""
     from app.services.conversation import _complete_qualification
-    from app.services.region_service import country_to_region, region_min_budget
+    from app.services.parsing.region_service import country_to_region, region_min_budget
 
     lead_with_answers.location_country = "United Kingdom"
     lead_with_answers.region_bucket = country_to_region("United Kingdom")
@@ -167,7 +167,7 @@ async def test_budget_exactly_at_minimum(db, lead_with_answers):
 async def test_budget_one_pence_below_minimum(db, lead_with_answers):
     """Test budget 1 pence below minimum (edge case)."""
     from app.services.conversation import _complete_qualification
-    from app.services.region_service import country_to_region, region_min_budget
+    from app.services.parsing.region_service import country_to_region, region_min_budget
 
     lead_with_answers.location_country = "United Kingdom"
     lead_with_answers.region_bucket = country_to_region("United Kingdom")
@@ -192,7 +192,7 @@ async def test_budget_one_pence_below_minimum(db, lead_with_answers):
 async def test_budget_very_low(db, lead_with_answers):
     """Test budget very far below minimum (e.g., £50 when min is £400)."""
     from app.services.conversation import _complete_qualification
-    from app.services.region_service import country_to_region, region_min_budget
+    from app.services.parsing.region_service import country_to_region, region_min_budget
 
     lead_with_answers.location_country = "United Kingdom"
     lead_with_answers.region_bucket = country_to_region("United Kingdom")
@@ -241,7 +241,7 @@ async def test_budget_unparseable(db, lead_with_answers):
 async def test_tour_conversion_no_upcoming_tours(db, lead_with_answers):
     """Test when no upcoming tours exist (should waitlist)."""
     from app.services.conversation import _complete_qualification
-    from app.services.tour_service import load_tour_schedule
+    from app.services.conversation.tour_service import load_tour_schedule
 
     # Clear tour schedule
     load_tour_schedule([])
@@ -267,7 +267,7 @@ async def test_tour_conversion_no_upcoming_tours(db, lead_with_answers):
 @pytest.mark.asyncio
 async def test_tour_conversion_city_case_insensitive(db, lead_with_answers):
     """Test that tour city matching is case-insensitive."""
-    from app.services.tour_service import is_city_on_tour, load_tour_schedule
+    from app.services.conversation.tour_service import is_city_on_tour, load_tour_schedule
 
     # Load a tour schedule
     now = datetime.now(UTC)
@@ -574,7 +574,7 @@ async def test_coverup_no_variations(db, lead_with_answers):
 @pytest.mark.asyncio
 async def test_time_window_collection_max_windows(db, sample_lead):
     """Test that time window collection stops after max windows (2-3)."""
-    from app.services.time_window_collection import collect_time_window, count_time_windows
+    from app.services.conversation.time_window_collection import collect_time_window, count_time_windows
 
     sample_lead.status = "COLLECTING_TIME_WINDOWS"
     db.commit()
@@ -603,7 +603,7 @@ def test_deposit_expiry_exactly_24h(db, sample_lead):
     """Test deposit expiry check at exactly 24 hours."""
     from datetime import UTC, datetime, timedelta
 
-    from app.services.reminders import check_and_mark_deposit_expired
+    from app.services.messaging.reminders import check_and_mark_deposit_expired
 
     sample_lead.status = "AWAITING_DEPOSIT"
     sample_lead.deposit_sent_at = datetime.now(UTC) - timedelta(hours=24)
@@ -620,7 +620,7 @@ def test_deposit_expiry_just_before_24h(db, sample_lead):
     """Test deposit expiry check just before 24 hours."""
     from datetime import UTC, datetime, timedelta
 
-    from app.services.reminders import check_and_mark_deposit_expired
+    from app.services.messaging.reminders import check_and_mark_deposit_expired
 
     sample_lead.status = "AWAITING_DEPOSIT"
     sample_lead.deposit_sent_at = datetime.now(UTC) - timedelta(hours=23, minutes=59)

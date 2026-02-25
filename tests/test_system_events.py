@@ -5,7 +5,7 @@ Tests for system events service and admin endpoint.
 import pytest
 
 from app.db.models import Lead, SystemEvent
-from app.services.system_event_service import error, info, warn
+from app.services.metrics.system_event_service import error, info, warn
 
 
 @pytest.fixture

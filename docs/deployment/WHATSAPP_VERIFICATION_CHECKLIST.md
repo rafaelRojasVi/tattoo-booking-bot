@@ -153,8 +153,8 @@ async def _download_whatsapp_media(media_id: str) -> tuple[bytes, str]:
 
 1. **`scripts/whatsapp_smoke.py`** - Test sending messages
 2. **`scripts/webhook_replay.py`** - Test receiving webhooks
-3. **`docs/WHATSAPP_SETUP.md`** - Complete setup guide
-4. **`docs/WHATSAPP_QUICK_START.md`** - 5-minute quick start
+3. **`docs/deployment/WHATSAPP_SETUP.md`** - Complete setup guide
+4. **`docs/deployment/WHATSAPP_QUICK_START.md`** - 5-minute quick start
 
 ---
 

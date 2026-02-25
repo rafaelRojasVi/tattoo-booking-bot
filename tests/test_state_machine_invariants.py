@@ -77,7 +77,7 @@ async def test_approve_only_from_pending_approval(db, invalid_status):
 
     with patch("app.api.admin.get_admin_auth", return_value=True):
         with pytest.raises(HTTPException) as exc_info:
-            await approve_lead(lead.id, db=db)
+            await approve_lead(lead=lead, db=db)
 
         assert exc_info.value.status_code == 400
         assert "PENDING_APPROVAL" in str(exc_info.value.detail)
@@ -94,17 +94,17 @@ async def test_approve_from_pending_approval_succeeds(db):
     with (
         patch("app.api.admin.get_admin_auth", return_value=True),
         patch(
-            "app.services.calendar_service.send_slot_suggestions_to_client",
+            "app.services.integrations.calendar_service.send_slot_suggestions_to_client",
             new_callable=AsyncMock,
             return_value=True,
         ),
         patch(
-            "app.services.artist_notifications.notify_artist", new_callable=AsyncMock
+            "app.services.integrations.artist_notifications.notify_artist", new_callable=AsyncMock
         ) as mock_notify,
     ):
         mock_notify.return_value = True
 
-        result = await approve_lead(lead.id, db=db)
+        result = await approve_lead(lead=lead, db=db)
         db.refresh(lead)
 
         assert lead.status == STATUS_AWAITING_DEPOSIT
@@ -130,7 +130,7 @@ def test_reject_blocks_booked(db, invalid_status):
 
     with patch("app.api.admin.get_admin_auth", return_value=True):
         with pytest.raises(HTTPException) as exc_info:
-            reject_lead(lead.id, request=RejectRequest(reason="Test"), db=db)
+            reject_lead(request=RejectRequest(reason="Test"), lead=lead, db=db)
 
         assert exc_info.value.status_code == 400
         assert "booked" in str(exc_info.value.detail).lower()
@@ -144,7 +144,7 @@ def test_reject_from_pending_approval_succeeds(db):
     db.refresh(lead)
 
     with patch("app.api.admin.get_admin_auth", return_value=True):
-        result = reject_lead(lead.id, request=RejectRequest(reason="Not suitable"), db=db)
+        result = reject_lead(request=RejectRequest(reason="Not suitable"), lead=lead, db=db)
         db.refresh(lead)
 
         assert lead.status == STATUS_REJECTED
@@ -184,7 +184,7 @@ async def test_send_deposit_only_from_awaiting_deposit(db, invalid_status):
 
     with patch("app.api.admin.get_admin_auth", return_value=True):
         with pytest.raises(HTTPException) as exc_info:
-            await send_deposit(lead.id, request=SendDepositRequest(), db=db)
+            await send_deposit(lead=lead, request=SendDepositRequest(), db=db)
 
         assert exc_info.value.status_code == 400
         assert "AWAITING_DEPOSIT" in str(exc_info.value.detail)
@@ -202,9 +202,9 @@ async def test_send_deposit_from_awaiting_deposit_succeeds(db):
 
     with (
         patch("app.api.admin.get_admin_auth", return_value=True),
-        patch("app.services.stripe_service.create_checkout_session") as mock_stripe,
+        patch("app.services.integrations.stripe_service.create_checkout_session") as mock_stripe,
         patch(
-            "app.services.whatsapp_window.send_with_window_check", new_callable=AsyncMock
+            "app.services.messaging.whatsapp_window.send_with_window_check", new_callable=AsyncMock
         ) as mock_whatsapp,
     ):
         mock_stripe.return_value = {
@@ -213,7 +213,7 @@ async def test_send_deposit_from_awaiting_deposit_succeeds(db):
         }
         mock_whatsapp.return_value = {"id": "wamock_123", "status": "sent"}
 
-        result = await send_deposit(lead.id, request=SendDepositRequest(), db=db)
+        result = await send_deposit(lead=lead, request=SendDepositRequest(), db=db)
         db.refresh(lead)
 
         assert lead.stripe_checkout_session_id == "cs_test_123"
@@ -253,7 +253,7 @@ def test_mark_booked_only_from_booking_pending(db, invalid_status):
 
     with patch("app.api.admin.get_admin_auth", return_value=True):
         with pytest.raises(HTTPException) as exc_info:
-            mark_booked(lead.id, db=db)
+            mark_booked(lead=lead, db=db)
 
         assert exc_info.value.status_code == 400
         assert "BOOKING_PENDING" in str(exc_info.value.detail)
@@ -268,7 +268,7 @@ def test_mark_booked_from_booking_pending_succeeds(db):
     db.refresh(lead)
 
     with patch("app.api.admin.get_admin_auth", return_value=True):
-        result = mark_booked(lead.id, db=db)
+        result = mark_booked(lead=lead, db=db)
         db.refresh(lead)
 
         assert lead.status == STATUS_BOOKED
@@ -286,7 +286,7 @@ async def test_approve_after_rejected_fails(db):
 
     with patch("app.api.admin.get_admin_auth", return_value=True):
         with pytest.raises(HTTPException) as exc_info:
-            await approve_lead(lead.id, db=db)
+            await approve_lead(lead=lead, db=db)
 
         assert exc_info.value.status_code == 400
 
@@ -301,7 +301,7 @@ async def test_send_deposit_before_approval_fails(db):
 
     with patch("app.api.admin.get_admin_auth", return_value=True):
         with pytest.raises(HTTPException) as exc_info:
-            await send_deposit(lead.id, request=SendDepositRequest(), db=db)
+            await send_deposit(lead=lead, request=SendDepositRequest(), db=db)
 
         assert exc_info.value.status_code == 400
         assert "AWAITING_DEPOSIT" in str(exc_info.value.detail)
@@ -316,7 +316,7 @@ def test_mark_booked_before_deposit_paid_fails(db):
 
     with patch("app.api.admin.get_admin_auth", return_value=True):
         with pytest.raises(HTTPException) as exc_info:
-            mark_booked(lead.id, db=db)
+            mark_booked(lead=lead, db=db)
 
         assert exc_info.value.status_code == 400
         assert "BOOKING_PENDING" in str(exc_info.value.detail)
@@ -332,7 +332,7 @@ def test_reject_after_booked_fails(db):
 
     with patch("app.api.admin.get_admin_auth", return_value=True):
         with pytest.raises(HTTPException) as exc_info:
-            reject_lead(lead.id, request=RejectRequest(reason="Test"), db=db)
+            reject_lead(request=RejectRequest(reason="Test"), lead=lead, db=db)
 
         assert exc_info.value.status_code == 400
         assert "booked" in str(exc_info.value.detail).lower()
@@ -349,7 +349,7 @@ async def test_send_deposit_after_booked_fails(db):
 
     with patch("app.api.admin.get_admin_auth", return_value=True):
         with pytest.raises(HTTPException) as exc_info:
-            await send_deposit(lead.id, request=SendDepositRequest(), db=db)
+            await send_deposit(lead=lead, request=SendDepositRequest(), db=db)
 
         assert exc_info.value.status_code == 400
         assert "AWAITING_DEPOSIT" in str(exc_info.value.detail)
@@ -366,6 +366,6 @@ async def test_approve_after_booked_fails(db):
 
     with patch("app.api.admin.get_admin_auth", return_value=True):
         with pytest.raises(HTTPException) as exc_info:
-            await approve_lead(lead.id, db=db)
+            await approve_lead(lead=lead, db=db)
 
         assert exc_info.value.status_code == 400

@@ -7,8 +7,9 @@ from typing import Literal, cast
 
 from sqlalchemy.orm import Session
 
+from app.db.helpers import commit_and_refresh
 from app.db.models import Lead
-from app.services.conversation import STATUS_NEEDS_ARTIST_REPLY
+from app.constants.statuses import STATUS_NEEDS_ARTIST_REPLY
 
 logger = logging.getLogger(__name__)
 
@@ -41,8 +42,7 @@ def increment_parse_failure(db: Session, lead: Lead, field: ParseableField) -> i
 
     flag_modified(lead, "parse_failure_counts")
 
-    db.commit()
-    db.refresh(lead)  # Refresh to ensure consistency
+    commit_and_refresh(db, lead)
 
     logger.info(f"Lead {lead.id}: Parse failure for '{field}' (count: {new_count})")
     return cast(int, new_count)
@@ -66,8 +66,7 @@ def reset_parse_failures(db: Session, lead: Lead, field: ParseableField) -> None
         from sqlalchemy.orm.attributes import flag_modified
 
         flag_modified(lead, "parse_failure_counts")
-        db.commit()
-        db.refresh(lead)  # Refresh to ensure consistency
+        commit_and_refresh(db, lead)
         logger.info(f"Lead {lead.id}: Reset parse failures for '{field}'")
 
 
@@ -113,10 +112,10 @@ async def trigger_handover_after_parse_failure(
     """
     from sqlalchemy import func
 
-    from app.services.artist_notifications import notify_artist_needs_reply
-    from app.services.message_composer import render_message
-    from app.services.messaging import send_whatsapp_message
-    from app.services.state_machine import transition
+    from app.services.integrations.artist_notifications import notify_artist_needs_reply
+    from app.services.messaging.message_composer import render_message
+    from app.services.messaging.messaging import send_whatsapp_message
+    from app.services.conversation.state_machine import transition
 
     failure_reason = f"Unable to parse {field} after {MAX_FAILURES} attempts"
     transition(db, lead, STATUS_NEEDS_ARTIST_REPLY, reason=failure_reason)

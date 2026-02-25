@@ -73,7 +73,7 @@ Add a TODO and tracking reference in the workflow.
 ```diff
       - name: Run mypy
 -        run: mypy app --ignore-missing-imports
-+        # TODO: Remove continue-on-error once mypy errors are fixed (track: docs/MYPY_TRIAGE_PLAN.md)
++        # TODO: Remove continue-on-error once mypy errors are fixed (track: docs/misc/MYPY_TRIAGE_PLAN.md)
 +        run: mypy app --ignore-missing-imports
 +        continue-on-error: true
 ```

@@ -97,8 +97,8 @@ Successfully split `app/services/conversation.py` (~1800 lines) into three focus
 - `tests/test_golden_transcript_phase1.py`
 - `tests/test_parse_repair.py`
 - `tests/test_production_hardening.py`
-- `docs/MYPY_TRIAGE_PLAN.md`
-- `docs/OPS_QUICKSTART.md`
+- `docs/misc/MYPY_TRIAGE_PLAN.md`
+- `docs/runbooks/OPS_QUICKSTART.md`
 
 ## Code Quality
 - ✅ Ruff format: 2 files reformatted, 162 unchanged

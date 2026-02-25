@@ -46,12 +46,12 @@ async def test_send_failure_does_not_advance_step(db):
 
     with (
         patch(
-            "app.services.conversation.send_whatsapp_message",
+            "app.services.messaging.messaging.send_whatsapp_message",
             new_callable=AsyncMock,
             side_effect=Exception("Send failed"),
         ),
-        patch("app.services.tour_service.is_city_on_tour", return_value=True),
-        patch("app.services.handover_service.should_handover", return_value=(False, None)),
+        patch("app.services.conversation.tour_service.is_city_on_tour", return_value=True),
+        patch("app.services.conversation.handover_service.should_handover", return_value=(False, None)),
     ):
         with pytest.raises(Exception, match="Send failed"):
             await handle_inbound_message(
@@ -105,11 +105,11 @@ async def test_out_of_order_message_does_not_advance_or_reprompt(db):
 
     with (
         patch(
-            "app.services.conversation.send_whatsapp_message",
+            "app.services.messaging.messaging.send_whatsapp_message",
             new_callable=AsyncMock,
         ) as mock_send,
-        patch("app.services.tour_service.is_city_on_tour", return_value=True),
-        patch("app.services.handover_service.should_handover", return_value=(False, None)),
+        patch("app.services.conversation.tour_service.is_city_on_tour", return_value=True),
+        patch("app.services.conversation.handover_service.should_handover", return_value=(False, None)),
     ):
         mock_request = MagicMock()
         mock_request.body = AsyncMock(return_value=json.dumps(payload).encode("utf-8"))
@@ -140,7 +140,7 @@ async def test_optout_restart_resets_step_and_handover_timestamps(db):
     db.refresh(lead)
 
     with patch(
-        "app.services.conversation.send_whatsapp_message",
+        "app.services.messaging.messaging.send_whatsapp_message",
         new_callable=AsyncMock,
     ) as mock_send:
         await handle_inbound_message(
@@ -197,15 +197,15 @@ async def test_duplicate_message_id_different_text_is_ignored(db):
     mock_wa = AsyncMock(return_value={"id": "wamock_1", "status": "sent"})
     with (
         patch(
-            "app.services.conversation.send_whatsapp_message",
+            "app.services.messaging.messaging.send_whatsapp_message",
             mock_wa,
         ),
         patch(
-            "app.services.messaging.send_whatsapp_message",
+            "app.services.messaging.messaging.send_whatsapp_message",
             mock_wa,
         ),
-        patch("app.services.tour_service.is_city_on_tour", return_value=True),
-        patch("app.services.handover_service.should_handover", return_value=(False, None)),
+        patch("app.services.conversation.tour_service.is_city_on_tour", return_value=True),
+        patch("app.services.conversation.handover_service.should_handover", return_value=(False, None)),
         patch.object(settings, "pilot_mode_enabled", False),
     ):
         mock_request = MagicMock()
@@ -268,9 +268,9 @@ async def test_stripe_duplicate_events_do_not_double_transition(db):
     )
 
     with (
-        patch("app.services.stripe_service.verify_webhook_signature") as mock_verify,
+        patch("app.services.integrations.stripe_service.verify_webhook_signature") as mock_verify,
         patch(
-            "app.services.whatsapp_window.send_with_window_check",
+            "app.services.messaging.whatsapp_window.send_with_window_check",
             new_callable=AsyncMock,
         ) as mock_send,
     ):

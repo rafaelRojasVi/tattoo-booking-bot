@@ -27,7 +27,7 @@ import pytest
 # Import models to ensure they're registered with Base.metadata
 from app.db.models import Attachment, Lead, ProcessedMessage  # noqa: F401
 from app.jobs.sweep_pending_uploads import run_sweep
-from app.services.media_upload import attempt_upload_attachment
+from app.services.integrations.media_upload import attempt_upload_attachment
 
 
 @pytest.fixture
@@ -77,8 +77,8 @@ async def test_status_transition_pending_to_uploaded_success(db, lead):
     db.refresh(attachment)
 
     with (
-        patch("app.services.media_upload._download_whatsapp_media") as mock_download,
-        patch("app.services.media_upload._upload_to_supabase") as mock_upload,
+        patch("app.services.integrations.media_upload._download_whatsapp_media") as mock_download,
+        patch("app.services.integrations.media_upload._upload_to_supabase") as mock_upload,
     ):
         mock_download.return_value = (b"image_data", "image/jpeg")
         mock_upload.return_value = None
@@ -109,8 +109,8 @@ async def test_status_transition_pending_to_failed_after_5_attempts(db, lead):
     db.refresh(attachment)
 
     with (
-        patch("app.services.media_upload._download_whatsapp_media") as mock_download,
-        patch("app.services.system_event_service.error") as mock_error,
+        patch("app.services.integrations.media_upload._download_whatsapp_media") as mock_download,
+        patch("app.services.metrics.system_event_service.error") as mock_error,
     ):
         mock_download.side_effect = Exception("Persistent error")
 
@@ -138,8 +138,8 @@ async def test_status_remains_pending_before_5_attempts(db, lead):
     db.refresh(attachment)
 
     with (
-        patch("app.services.media_upload._download_whatsapp_media") as mock_download,
-        patch("app.services.system_event_service.error") as mock_error,
+        patch("app.services.integrations.media_upload._download_whatsapp_media") as mock_download,
+        patch("app.services.metrics.system_event_service.error") as mock_error,
     ):
         mock_download.side_effect = Exception("Temporary error")
 
@@ -168,7 +168,7 @@ async def test_status_corruption_recovery_already_uploaded(db, lead):
     db.commit()
     db.refresh(attachment)
 
-    with patch("app.services.media_upload._download_whatsapp_media") as mock_download:
+    with patch("app.services.integrations.media_upload._download_whatsapp_media") as mock_download:
         await attempt_upload_attachment(db, attachment.id)
 
         # Should skip without downloading
@@ -192,7 +192,7 @@ async def test_status_corruption_recovery_failed_but_retried(db, lead):
     db.commit()
     db.refresh(attachment)
 
-    with patch("app.services.media_upload._download_whatsapp_media") as mock_download:
+    with patch("app.services.integrations.media_upload._download_whatsapp_media") as mock_download:
         await attempt_upload_attachment(db, attachment.id)
 
         # Should skip failed attachments
@@ -219,8 +219,8 @@ async def test_concurrent_upload_attempts_same_attachment(db, lead):
     db.refresh(attachment)
 
     with (
-        patch("app.services.media_upload._download_whatsapp_media") as mock_download,
-        patch("app.services.media_upload._upload_to_supabase") as mock_upload,
+        patch("app.services.integrations.media_upload._download_whatsapp_media") as mock_download,
+        patch("app.services.integrations.media_upload._upload_to_supabase") as mock_upload,
     ):
         mock_download.return_value = (b"data", "image/jpeg")
 
@@ -258,8 +258,8 @@ async def test_concurrent_upload_different_attachments(db, lead):
     db.commit()
 
     with (
-        patch("app.services.media_upload._download_whatsapp_media") as mock_download,
-        patch("app.services.media_upload._upload_to_supabase") as mock_upload,
+        patch("app.services.integrations.media_upload._download_whatsapp_media") as mock_download,
+        patch("app.services.integrations.media_upload._upload_to_supabase") as mock_upload,
     ):
         mock_download.return_value = (b"data", "image/jpeg")
         mock_upload.return_value = None
@@ -292,8 +292,8 @@ async def test_whatsapp_media_expired(db, lead):
     db.refresh(attachment)
 
     with (
-        patch("app.services.media_upload._download_whatsapp_media") as mock_download,
-        patch("app.services.system_event_service.error") as mock_error,
+        patch("app.services.integrations.media_upload._download_whatsapp_media") as mock_download,
+        patch("app.services.metrics.system_event_service.error") as mock_error,
     ):
         from httpx import HTTPStatusError
 
@@ -328,8 +328,8 @@ async def test_whatsapp_media_invalid_response_no_url(db, lead):
     db.refresh(attachment)
 
     with (
-        patch("app.services.media_upload._download_whatsapp_media") as mock_download,
-        patch("app.services.system_event_service.error") as mock_error,
+        patch("app.services.integrations.media_upload._download_whatsapp_media") as mock_download,
+        patch("app.services.metrics.system_event_service.error") as mock_error,
     ):
         mock_download.side_effect = ValueError("No URL in WhatsApp media response: {}")
 
@@ -357,8 +357,8 @@ async def test_whatsapp_media_invalid_json_response(db, lead):
     db.refresh(attachment)
 
     with (
-        patch("app.services.media_upload._download_whatsapp_media") as mock_download,
-        patch("app.services.system_event_service.error") as mock_error,
+        patch("app.services.integrations.media_upload._download_whatsapp_media") as mock_download,
+        patch("app.services.metrics.system_event_service.error") as mock_error,
     ):
         import json
 
@@ -392,8 +392,8 @@ async def test_large_file_upload(db, lead):
     db.refresh(attachment)
 
     with (
-        patch("app.services.media_upload._download_whatsapp_media") as mock_download,
-        patch("app.services.media_upload._upload_to_supabase") as mock_upload,
+        patch("app.services.integrations.media_upload._download_whatsapp_media") as mock_download,
+        patch("app.services.integrations.media_upload._upload_to_supabase") as mock_upload,
     ):
         mock_download.return_value = (large_data, "image/jpeg")
         mock_upload.return_value = None
@@ -421,8 +421,8 @@ async def test_empty_file_upload(db, lead):
     db.refresh(attachment)
 
     with (
-        patch("app.services.media_upload._download_whatsapp_media") as mock_download,
-        patch("app.services.media_upload._upload_to_supabase") as mock_upload,
+        patch("app.services.integrations.media_upload._download_whatsapp_media") as mock_download,
+        patch("app.services.integrations.media_upload._upload_to_supabase") as mock_upload,
     ):
         mock_download.return_value = (b"", "image/jpeg")
         mock_upload.return_value = None
@@ -449,8 +449,8 @@ async def test_unknown_content_type(db, lead):
     db.refresh(attachment)
 
     with (
-        patch("app.services.media_upload._download_whatsapp_media") as mock_download,
-        patch("app.services.media_upload._upload_to_supabase") as mock_upload,
+        patch("app.services.integrations.media_upload._download_whatsapp_media") as mock_download,
+        patch("app.services.integrations.media_upload._upload_to_supabase") as mock_upload,
     ):
         mock_download.return_value = (b"data", "application/octet-stream")
         mock_upload.return_value = None
@@ -477,8 +477,8 @@ async def test_missing_content_type_header(db, lead):
     db.refresh(attachment)
 
     with (
-        patch("app.services.media_upload._download_whatsapp_media") as mock_download,
-        patch("app.services.media_upload._upload_to_supabase") as mock_upload,
+        patch("app.services.integrations.media_upload._download_whatsapp_media") as mock_download,
+        patch("app.services.integrations.media_upload._upload_to_supabase") as mock_upload,
     ):
         # Simulate missing content-type (defaults to application/octet-stream)
         mock_download.return_value = (b"data", "application/octet-stream")
@@ -509,8 +509,8 @@ async def test_network_timeout_during_download(db, lead):
     db.refresh(attachment)
 
     with (
-        patch("app.services.media_upload._download_whatsapp_media") as mock_download,
-        patch("app.services.system_event_service.error") as mock_error,
+        patch("app.services.integrations.media_upload._download_whatsapp_media") as mock_download,
+        patch("app.services.metrics.system_event_service.error") as mock_error,
     ):
         mock_download.side_effect = TimeoutError("Request timeout")
 
@@ -538,9 +538,9 @@ async def test_network_timeout_during_upload(db, lead):
     db.refresh(attachment)
 
     with (
-        patch("app.services.media_upload._download_whatsapp_media") as mock_download,
-        patch("app.services.media_upload._upload_to_supabase") as mock_upload,
-        patch("app.services.system_event_service.error") as mock_error,
+        patch("app.services.integrations.media_upload._download_whatsapp_media") as mock_download,
+        patch("app.services.integrations.media_upload._upload_to_supabase") as mock_upload,
+        patch("app.services.metrics.system_event_service.error") as mock_error,
     ):
         mock_download.return_value = (b"data", "image/jpeg")
         mock_upload.side_effect = TimeoutError("Upload timeout")
@@ -569,8 +569,8 @@ async def test_connection_error_during_download(db, lead):
     db.refresh(attachment)
 
     with (
-        patch("app.services.media_upload._download_whatsapp_media") as mock_download,
-        patch("app.services.system_event_service.error") as mock_error,
+        patch("app.services.integrations.media_upload._download_whatsapp_media") as mock_download,
+        patch("app.services.metrics.system_event_service.error") as mock_error,
     ):
         import httpx
 
@@ -599,8 +599,8 @@ async def test_partial_download_failure(db, lead):
     db.refresh(attachment)
 
     with (
-        patch("app.services.media_upload._download_whatsapp_media") as mock_download,
-        patch("app.services.system_event_service.error") as mock_error,
+        patch("app.services.integrations.media_upload._download_whatsapp_media") as mock_download,
+        patch("app.services.metrics.system_event_service.error") as mock_error,
     ):
         import httpx
 
@@ -632,9 +632,9 @@ async def test_supabase_bucket_not_found(db, lead):
     db.refresh(attachment)
 
     with (
-        patch("app.services.media_upload._download_whatsapp_media") as mock_download,
-        patch("app.services.media_upload._upload_to_supabase") as mock_upload,
-        patch("app.services.system_event_service.error") as mock_error,
+        patch("app.services.integrations.media_upload._download_whatsapp_media") as mock_download,
+        patch("app.services.integrations.media_upload._upload_to_supabase") as mock_upload,
+        patch("app.services.metrics.system_event_service.error") as mock_error,
     ):
         mock_download.return_value = (b"data", "image/jpeg")
         mock_upload.side_effect = Exception("Bucket 'reference-images' not found")
@@ -663,9 +663,9 @@ async def test_supabase_permission_denied(db, lead):
     db.refresh(attachment)
 
     with (
-        patch("app.services.media_upload._download_whatsapp_media") as mock_download,
-        patch("app.services.media_upload._upload_to_supabase") as mock_upload,
-        patch("app.services.system_event_service.error") as mock_error,
+        patch("app.services.integrations.media_upload._download_whatsapp_media") as mock_download,
+        patch("app.services.integrations.media_upload._upload_to_supabase") as mock_upload,
+        patch("app.services.metrics.system_event_service.error") as mock_error,
     ):
         mock_download.return_value = (b"data", "image/jpeg")
         mock_upload.side_effect = Exception("Permission denied: Insufficient storage access")
@@ -693,9 +693,9 @@ async def test_supabase_storage_full(db, lead):
     db.refresh(attachment)
 
     with (
-        patch("app.services.media_upload._download_whatsapp_media") as mock_download,
-        patch("app.services.media_upload._upload_to_supabase") as mock_upload,
-        patch("app.services.system_event_service.error") as mock_error,
+        patch("app.services.integrations.media_upload._download_whatsapp_media") as mock_download,
+        patch("app.services.integrations.media_upload._upload_to_supabase") as mock_upload,
+        patch("app.services.metrics.system_event_service.error") as mock_error,
     ):
         mock_download.return_value = (b"data", "image/jpeg")
         mock_upload.side_effect = Exception("Storage quota exceeded")
@@ -723,9 +723,9 @@ async def test_supabase_not_configured(db, lead):
     db.refresh(attachment)
 
     with (
-        patch("app.services.media_upload._download_whatsapp_media") as mock_download,
-        patch("app.services.media_upload._upload_to_supabase") as mock_upload,
-        patch("app.services.system_event_service.error") as mock_error,
+        patch("app.services.integrations.media_upload._download_whatsapp_media") as mock_download,
+        patch("app.services.integrations.media_upload._upload_to_supabase") as mock_upload,
+        patch("app.services.metrics.system_event_service.error") as mock_error,
     ):
         mock_download.return_value = (b"data", "image/jpeg")
         # Mock upload to raise the configuration error
@@ -783,7 +783,7 @@ def test_duplicate_media_id_same_lead(client, db, lead, monkeypatch):
 
     with (
         patch("app.api.webhooks.verify_whatsapp_signature", return_value=True),
-        patch("app.services.media_upload.attempt_upload_attachment_job"),
+        patch("app.services.integrations.media_upload.attempt_upload_attachment_job"),
     ):
         response = client.post(
             "/webhooks/whatsapp",
@@ -848,7 +848,7 @@ async def test_attachment_with_missing_lead(db):
     db.refresh(attachment)
 
     # Should handle gracefully (foreign key constraint may prevent this, but test the case)
-    with patch("app.services.media_upload._download_whatsapp_media") as mock_download:
+    with patch("app.services.integrations.media_upload._download_whatsapp_media") as mock_download:
         try:
             await attempt_upload_attachment(db, attachment.id)
         except Exception as e:
@@ -899,7 +899,7 @@ def test_retry_delay_respected_exactly(db, lead):
     db.add(attachment)
     db.commit()
 
-    with patch("app.services.media_upload.attempt_upload_attachment") as mock_upload:
+    with patch("app.services.integrations.media_upload.attempt_upload_attachment") as mock_upload:
         # Run sweep with 5 minute delay
         results = run_sweep(limit=10, retry_delay_minutes=5)
 
@@ -984,7 +984,7 @@ def test_sweeper_limit_zero(db, lead):
     db.add(attachment)
     db.commit()
 
-    with patch("app.services.media_upload.attempt_upload_attachment") as mock_upload:
+    with patch("app.services.integrations.media_upload.attempt_upload_attachment") as mock_upload:
         results = run_sweep(limit=0)
 
         assert results["checked"] == 0
@@ -1076,7 +1076,7 @@ def test_sweeper_skips_max_attempts(db, lead):
     db.add(attachment)
     db.commit()
 
-    with patch("app.services.media_upload.attempt_upload_attachment") as mock_upload:
+    with patch("app.services.integrations.media_upload.attempt_upload_attachment") as mock_upload:
         results = run_sweep(limit=10)
 
         # Should skip (5 attempts = max)
@@ -1196,7 +1196,7 @@ def test_webhook_multiple_images_most_recent_processed(client, db, lead, monkeyp
 
     with (
         patch("app.api.webhooks.verify_whatsapp_signature", return_value=True),
-        patch("app.services.media_upload.attempt_upload_attachment_job"),
+        patch("app.services.integrations.media_upload.attempt_upload_attachment_job"),
     ):
         response = client.post(
             "/webhooks/whatsapp",
@@ -1246,7 +1246,7 @@ def test_webhook_image_with_text_caption(client, db, lead, monkeypatch):
 
     with (
         patch("app.api.webhooks.verify_whatsapp_signature", return_value=True),
-        patch("app.services.media_upload.attempt_upload_attachment_job"),
+        patch("app.services.integrations.media_upload.attempt_upload_attachment_job"),
     ):
         response = client.post(
             "/webhooks/whatsapp",
@@ -1333,8 +1333,8 @@ async def test_object_key_format_correct(db, lead):
     db.refresh(attachment)
 
     with (
-        patch("app.services.media_upload._download_whatsapp_media") as mock_download,
-        patch("app.services.media_upload._upload_to_supabase") as mock_upload,
+        patch("app.services.integrations.media_upload._download_whatsapp_media") as mock_download,
+        patch("app.services.integrations.media_upload._upload_to_supabase") as mock_upload,
     ):
         mock_download.return_value = (b"data", "image/jpeg")
         mock_upload.return_value = None
@@ -1368,8 +1368,8 @@ async def test_object_key_collision_same_lead_different_attachments(db, lead):
     db.commit()
 
     with (
-        patch("app.services.media_upload._download_whatsapp_media") as mock_download,
-        patch("app.services.media_upload._upload_to_supabase") as mock_upload,
+        patch("app.services.integrations.media_upload._download_whatsapp_media") as mock_download,
+        patch("app.services.integrations.media_upload._upload_to_supabase") as mock_upload,
     ):
         mock_download.return_value = (b"data", "image/jpeg")
         mock_upload.return_value = None
@@ -1404,8 +1404,8 @@ async def test_error_message_truncation_long_error(db, lead):
     db.refresh(attachment)
 
     with (
-        patch("app.services.media_upload._download_whatsapp_media") as mock_download,
-        patch("app.services.system_event_service.error") as mock_error,
+        patch("app.services.integrations.media_upload._download_whatsapp_media") as mock_download,
+        patch("app.services.metrics.system_event_service.error") as mock_error,
     ):
         # Create very long error message
         long_error = "Error: " + "x" * 1000
@@ -1438,8 +1438,8 @@ async def test_system_event_logged_on_failure(db, lead):
     db.refresh(attachment)
 
     with (
-        patch("app.services.media_upload._download_whatsapp_media") as mock_download,
-        patch("app.services.system_event_service.error") as mock_error,
+        patch("app.services.integrations.media_upload._download_whatsapp_media") as mock_download,
+        patch("app.services.metrics.system_event_service.error") as mock_error,
     ):
         mock_download.side_effect = Exception("Test error")
 
@@ -1469,9 +1469,9 @@ async def test_system_event_not_logged_on_success(db, lead):
     db.refresh(attachment)
 
     with (
-        patch("app.services.media_upload._download_whatsapp_media") as mock_download,
-        patch("app.services.media_upload._upload_to_supabase") as mock_upload,
-        patch("app.services.system_event_service.error") as mock_error,
+        patch("app.services.integrations.media_upload._download_whatsapp_media") as mock_download,
+        patch("app.services.integrations.media_upload._upload_to_supabase") as mock_upload,
+        patch("app.services.metrics.system_event_service.error") as mock_error,
     ):
         mock_download.return_value = (b"data", "image/jpeg")
         mock_upload.return_value = None

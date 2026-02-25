@@ -74,8 +74,8 @@ async def send_with_window_check(
     Returns:
         dict with status, message_id, and window info
     """
-    from app.services.conversation import STATUS_OPTOUT
-    from app.services.messaging import send_whatsapp_message
+    from app.constants.statuses import STATUS_OPTOUT
+    from app.services.messaging.messaging import send_whatsapp_message
 
     # Check if lead has opted out - block all outbound messages
     if lead.status == STATUS_OPTOUT:
@@ -99,7 +99,7 @@ async def send_with_window_check(
 
         outbox = None
         if not dry_run:
-            from app.services.outbox_service import write_outbox
+            from app.services.messaging.outbox_service import write_outbox
 
             outbox = write_outbox(db, lead.id, lead.wa_from, message_with_voice)
 
@@ -110,7 +110,7 @@ async def send_with_window_check(
                 dry_run=dry_run,
             )
             if outbox:
-                from app.services.outbox_service import mark_outbox_sent
+                from app.services.messaging.outbox_service import mark_outbox_sent
 
                 mark_outbox_sent(db, outbox)
             result["window_status"] = "open"
@@ -120,11 +120,11 @@ async def send_with_window_check(
             return result
         except Exception as e:
             if outbox:
-                from app.services.outbox_service import mark_outbox_failed
+                from app.services.messaging.outbox_service import mark_outbox_failed
 
                 mark_outbox_failed(db, outbox, e)
             # Log WhatsApp send failure
-            from app.services.system_event_service import error
+            from app.services.metrics.system_event_service import error
 
             error(
                 db=db,
@@ -137,20 +137,20 @@ async def send_with_window_check(
     # Window closed - need template message
     elif template_name:
         # Check if template is configured (graceful degradation)
-        from app.services.template_registry import get_all_required_templates
+        from app.services.messaging.template_registry import get_all_required_templates
 
         required_templates = get_all_required_templates()
         if template_name not in required_templates:
             # Template not configured - graceful degradation
             from app.core.config import settings
-            from app.services.metrics import record_window_closed
+            from app.services.metrics.metrics import record_window_closed
 
             record_window_closed(
                 lead_id=lead.id, message_type=f"template_not_configured_{template_name}"
             )
 
             # Log SystemEvent (structured logging)
-            from app.services.system_event_service import warn
+            from app.services.metrics.system_event_service import warn
 
             warn(
                 db=db,
@@ -171,7 +171,7 @@ async def send_with_window_check(
             # Notify artist if notifications enabled
             if settings.feature_notifications_enabled and settings.artist_whatsapp_number:
                 try:
-                    from app.services.artist_notifications import send_system_alert
+                    from app.services.integrations.artist_notifications import send_system_alert
 
                     await send_system_alert(
                         message=(
@@ -199,7 +199,7 @@ async def send_with_window_check(
         # Template is configured - try to send
         outbox = None
         if not dry_run:
-            from app.services.outbox_service import write_outbox
+            from app.services.messaging.outbox_service import write_outbox
 
             outbox = write_outbox(
                 db,
@@ -217,7 +217,7 @@ async def send_with_window_check(
                 dry_run=dry_run,
             )
             if outbox:
-                from app.services.outbox_service import mark_outbox_sent
+                from app.services.messaging.outbox_service import mark_outbox_sent
 
                 mark_outbox_sent(db, outbox)
             result["window_status"] = "closed_template_used"
@@ -226,7 +226,7 @@ async def send_with_window_check(
             )
 
             # Log template fallback usage
-            from app.services.system_event_service import info
+            from app.services.metrics.system_event_service import info
 
             info(
                 db=db,
@@ -243,12 +243,12 @@ async def send_with_window_check(
             return result
         except Exception as e:
             if outbox:
-                from app.services.outbox_service import mark_outbox_failed
+                from app.services.messaging.outbox_service import mark_outbox_failed
 
                 mark_outbox_failed(db, outbox, e)
             # Template send failed - log and degrade gracefully
             from app.core.config import settings
-            from app.services.metrics import record_window_closed
+            from app.services.metrics.metrics import record_window_closed
 
             record_window_closed(
                 lead_id=lead.id, message_type=f"template_send_failed_{template_name}"
@@ -261,7 +261,7 @@ async def send_with_window_check(
             # Notify artist
             if settings.feature_notifications_enabled and settings.artist_whatsapp_number:
                 try:
-                    from app.services.artist_notifications import send_system_alert
+                    from app.services.integrations.artist_notifications import send_system_alert
 
                     await send_system_alert(
                         message=(
@@ -286,7 +286,7 @@ async def send_with_window_check(
             }
     else:
         # No template available - graceful degradation
-        from app.services.metrics import record_window_closed
+        from app.services.metrics.metrics import record_window_closed
 
         record_window_closed(lead_id=lead.id, message_type="no_template")
         logger.warning(
@@ -361,7 +361,7 @@ async def send_template_message(
                     }
                 )
 
-        from app.services.whatsapp_templates import TEMPLATE_LANGUAGE_CODE
+        from app.services.messaging.whatsapp_templates import TEMPLATE_LANGUAGE_CODE
 
         payload = {
             "messaging_product": "whatsapp",
@@ -380,14 +380,14 @@ async def send_template_message(
             if isinstance(tpl, dict):
                 tpl.pop("components", None)
 
-        from app.services.http_client import create_httpx_client
+        from app.services.integrations.http_client import create_httpx_client
 
         async with create_httpx_client() as client:
             response = await client.post(url, headers=headers, json=payload)
             response.raise_for_status()
             result = response.json()
 
-            from app.services.metrics import record_template_message_used
+            from app.services.metrics.metrics import record_template_message_used
 
             record_template_message_used(template_name=template_name, success=True)
 
@@ -398,7 +398,7 @@ async def send_template_message(
                 "template_name": template_name,
             }
     except Exception as e:
-        from app.services.metrics import record_template_message_used
+        from app.services.metrics.metrics import record_template_message_used
 
         record_template_message_used(template_name=template_name, success=False)
         logger.error(f"Failed to send WhatsApp template message: {e}")

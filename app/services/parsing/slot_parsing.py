@@ -99,7 +99,7 @@ def parse_slot_selection(
     if not message or not slots:
         return (None, {"reason": "no_message_or_slots"})
 
-    from app.services.text_normalization import normalize_text
+    from app.services.parsing.text_normalization import normalize_text
 
     message_lower = normalize_text(message).lower()
     slot_count = len(slots)
@@ -158,7 +158,7 @@ def parse_slot_selection_logged(
     index, metadata = parse_slot_selection(message, slots, max_slots)
 
     if db is not None:
-        from app.services.system_event_service import info
+        from app.services.metrics.system_event_service import info
 
         if index is not None:
             info(

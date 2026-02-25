@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 
 from app.constants.event_types import EVENT_MEDIA_UPLOAD_FAILURE
 from app.core.config import settings
+from app.db.helpers import commit_and_refresh
 from app.db.models import Attachment
 
 logger = logging.getLogger(__name__)
@@ -46,8 +47,7 @@ async def attempt_upload_attachment(db: Session, attachment_id: int) -> None:
     # Increment attempts and update timestamp
     attachment.upload_attempts += 1
     attachment.last_attempt_at = datetime.now(UTC)
-    db.commit()
-    db.refresh(attachment)
+    commit_and_refresh(db, attachment)
 
     media_id = attachment.whatsapp_media_id
     if not media_id:
@@ -77,8 +77,7 @@ async def attempt_upload_attachment(db: Session, attachment_id: int) -> None:
         attachment.content_type = content_type
         attachment.size_bytes = len(media_bytes)
         attachment.last_error = None
-        db.commit()
-        db.refresh(attachment)
+        commit_and_refresh(db, attachment)
 
         logger.info(f"Successfully uploaded attachment {attachment_id} to {bucket}/{object_key}")
 
@@ -97,7 +96,7 @@ async def attempt_upload_attachment(db: Session, attachment_id: int) -> None:
         db.commit()
 
         # Log system event
-        from app.services.system_event_service import error
+        from app.services.metrics.system_event_service import error
 
         error(
             db=db,
@@ -140,7 +139,7 @@ async def _download_whatsapp_media(media_id: str) -> tuple[bytes, str]:
     Returns:
         Tuple of (media_bytes, content_type)
     """
-    from app.services.http_client import create_httpx_client
+    from app.services.integrations.http_client import create_httpx_client
 
     # Get media URL from WhatsApp
     url = f"https://graph.facebook.com/v18.0/{media_id}"

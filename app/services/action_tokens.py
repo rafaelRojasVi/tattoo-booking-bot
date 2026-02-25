@@ -16,10 +16,48 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
+from app.db.helpers import commit_and_refresh
 from app.db.models import ActionToken, Lead
+from app.services.leads import get_lead_or_none
 from app.utils.datetime_utils import dt_replace_utc
 
 logger = logging.getLogger(__name__)
+
+# User-facing error messages (shared with safety.validate_and_mark_token_used_atomic)
+ERR_INVALID_TOKEN = "Invalid token"
+ERR_ALREADY_USED = "This action link has already been used"
+ERR_EXPIRED = "This action link has expired"
+ERR_LEAD_NOT_FOUND = "Lead not found"
+
+
+def _err_status_mismatch(lead_status: str, required_status: str) -> str:
+    """Exact user-facing message for status-locked validation."""
+    return (
+        f"Cannot perform this action. Lead is in status '{lead_status}', but requires '{required_status}'"
+    )
+
+
+def _validate_action_token_checks(
+    db: Session, action_token: ActionToken
+) -> tuple[ActionToken | None, str | None]:
+    """
+    Shared validation: expiry, lead exists, lead status matches.
+    Caller must have already resolved token and (for read-only flow) checked 'used'.
+    Returns (action_token, None) if valid, (None, error_message) otherwise.
+    """
+    now = datetime.now(UTC)
+    expires = dt_replace_utc(action_token.expires_at)
+    if expires is None or now > expires:
+        return None, ERR_EXPIRED
+
+    lead = get_lead_or_none(db, action_token.lead_id)
+    if not lead:
+        return None, ERR_LEAD_NOT_FOUND
+
+    if lead.status != action_token.required_status:
+        return None, _err_status_mismatch(lead.status, action_token.required_status)
+
+    return action_token, None
 
 
 def generate_action_token(
@@ -55,8 +93,7 @@ def generate_action_token(
         expires_at=expires_at,
     )
     db.add(action_token)
-    db.commit()
-    db.refresh(action_token)
+    commit_and_refresh(db, action_token)
 
     logger.info(f"Generated action token for lead {lead_id}, action {action_type}")
 
@@ -87,35 +124,16 @@ def validate_action_token(db: Session, token: str) -> tuple[ActionToken | None, 
     Returns:
         Tuple of (ActionToken object if valid, error message if invalid)
     """
-    # Find token
     stmt = select(ActionToken).where(ActionToken.token == token)
     action_token = db.execute(stmt).scalar_one_or_none()
 
     if not action_token:
-        return None, "Invalid token"
+        return None, ERR_INVALID_TOKEN
 
-    # Check if already used (single-use)
     if action_token.used:
-        return None, "This action link has already been used"
+        return None, ERR_ALREADY_USED
 
-    # Check expiry (handle both timezone-aware and naive datetimes)
-    now = datetime.now(UTC)
-    expires = dt_replace_utc(action_token.expires_at)
-    if expires is None or now > expires:
-        return None, "This action link has expired"
-
-    # Get lead and check status (status-locked)
-    lead = db.get(Lead, action_token.lead_id)
-    if not lead:
-        return None, "Lead not found"
-
-    if lead.status != action_token.required_status:
-        return (
-            None,
-            f"Cannot perform this action. Lead is in status '{lead.status}', but requires '{action_token.required_status}'",
-        )
-
-    return action_token, None
+    return _validate_action_token_checks(db, action_token)
 
 
 def mark_token_used(db: Session, token: str) -> bool:

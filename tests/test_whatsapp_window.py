@@ -8,7 +8,7 @@ import pytest
 
 from app.db.models import Lead
 from app.services.conversation import STATUS_QUALIFYING
-from app.services.whatsapp_window import (
+from app.services.messaging.whatsapp_window import (
     is_within_24h_window,
     send_with_window_check,
 )
@@ -100,7 +100,7 @@ async def test_send_with_window_check_expired_no_template(db):
 async def test_send_with_window_check_expired_with_template(db, monkeypatch):
     """Test sending message when window expired but template available."""
     # Patch get_all_required_templates to include test_template
-    from app.services.template_registry import get_all_required_templates
+    from app.services.messaging.template_registry import get_all_required_templates
 
     original_get = get_all_required_templates
 
@@ -111,7 +111,7 @@ async def test_send_with_window_check_expired_with_template(db, monkeypatch):
         return templates
 
     monkeypatch.setattr(
-        "app.services.template_registry.get_all_required_templates", mock_get_all_required_templates
+        "app.services.messaging.template_registry.get_all_required_templates", mock_get_all_required_templates
     )
 
     lead = Lead(

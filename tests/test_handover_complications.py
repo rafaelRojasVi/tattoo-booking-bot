@@ -26,7 +26,7 @@ from app.services.conversation import (
     STATUS_QUALIFYING,
     handle_inbound_message,
 )
-from app.services.handover_packet import build_handover_packet
+from app.services.conversation.handover_packet import build_handover_packet
 from tests.helpers.stripe_webhook import (
     build_stripe_webhook_request,
     create_checkout_completed_event,
@@ -47,7 +47,7 @@ async def test_opt_out_works_even_during_handover(db):
     db.refresh(lead)
 
     with patch(
-        "app.services.conversation.send_whatsapp_message", new_callable=AsyncMock
+        "app.services.messaging.messaging.send_whatsapp_message", new_callable=AsyncMock
     ) as mock_send:
         result = await handle_inbound_message(
             db=db,
@@ -76,7 +76,7 @@ async def test_handover_stop_does_not_send_holding_reply(db):
     db.refresh(lead)
 
     with patch(
-        "app.services.conversation.send_whatsapp_message", new_callable=AsyncMock
+        "app.services.messaging.messaging.send_whatsapp_message", new_callable=AsyncMock
     ) as mock_send:
         result = await handle_inbound_message(
             db=db,
@@ -110,7 +110,7 @@ async def test_handover_state_does_not_advance_on_inbound_message(db):
     step_before = lead.current_step
 
     with patch(
-        "app.services.conversation.send_whatsapp_message", new_callable=AsyncMock
+        "app.services.messaging.messaging.send_whatsapp_message", new_callable=AsyncMock
     ) as mock_send:
         result = await handle_inbound_message(
             db=db,
@@ -138,7 +138,7 @@ async def test_handover_state_does_not_send_questions(db):
     db.refresh(lead)
 
     with patch(
-        "app.services.conversation.send_whatsapp_message", new_callable=AsyncMock
+        "app.services.messaging.messaging.send_whatsapp_message", new_callable=AsyncMock
     ) as mock_send:
         await handle_inbound_message(
             db=db,
@@ -168,7 +168,7 @@ async def test_handover_holding_reply_rate_limited(db):
     db.refresh(lead)
 
     with patch(
-        "app.services.conversation.send_whatsapp_message", new_callable=AsyncMock
+        "app.services.messaging.messaging.send_whatsapp_message", new_callable=AsyncMock
     ) as mock_send:
         await handle_inbound_message(
             db=db,
@@ -204,7 +204,7 @@ async def test_handover_holding_reply_sent_again_after_cooldown(db):
     db.refresh(lead)
 
     with patch(
-        "app.services.conversation.send_whatsapp_message", new_callable=AsyncMock
+        "app.services.messaging.messaging.send_whatsapp_message", new_callable=AsyncMock
     ) as mock_send:
         await handle_inbound_message(
             db=db,
@@ -233,7 +233,7 @@ async def test_handover_holding_reply_cooldown_boundary(db):
     db.refresh(lead)
 
     with patch(
-        "app.services.conversation.send_whatsapp_message", new_callable=AsyncMock
+        "app.services.messaging.messaging.send_whatsapp_message", new_callable=AsyncMock
     ) as mock_send:
         await handle_inbound_message(
             db=db,
@@ -266,15 +266,15 @@ async def test_handover_notification_idempotent_duplicate_message_id(db):
 
     with (
         patch(
-            "app.services.conversation.send_whatsapp_message", new_callable=AsyncMock
+            "app.services.messaging.messaging.send_whatsapp_message", new_callable=AsyncMock
         ) as mock_whatsapp,
-        patch("app.services.tour_service.is_city_on_tour", return_value=True),
+        patch("app.services.conversation.tour_service.is_city_on_tour", return_value=True),
         patch(
-            "app.services.handover_service.should_handover",
+            "app.services.conversation.handover_service.should_handover",
             return_value=(True, "Client requested artist handover"),
         ),
         patch(
-            "app.services.artist_notifications.notify_artist_needs_reply",
+            "app.services.integrations.artist_notifications.notify_artist_needs_reply",
             new_callable=AsyncMock,
         ) as mock_notify,
     ):
@@ -333,7 +333,7 @@ async def test_handover_resume_returns_to_correct_question(db):
     db.refresh(lead)
 
     with patch(
-        "app.services.conversation.send_whatsapp_message", new_callable=AsyncMock
+        "app.services.messaging.messaging.send_whatsapp_message", new_callable=AsyncMock
     ) as mock_send:
         result = await handle_inbound_message(
             db=db,
@@ -378,12 +378,12 @@ async def test_stripe_webhook_updates_status_even_if_handover_active(db):
     )
 
     with (
-        patch("app.services.stripe_service.verify_webhook_signature") as mock_verify,
+        patch("app.services.integrations.stripe_service.verify_webhook_signature") as mock_verify,
         patch(
-            "app.services.whatsapp_window.send_with_window_check", new_callable=AsyncMock
+            "app.services.messaging.whatsapp_window.send_with_window_check", new_callable=AsyncMock
         ) as mock_send,
         patch(
-            "app.services.artist_notifications.notify_artist", new_callable=AsyncMock
+            "app.services.integrations.artist_notifications.notify_artist", new_callable=AsyncMock
         ) as mock_notify,
     ):
         mock_verify.return_value = webhook_event
@@ -427,7 +427,7 @@ def test_handover_packet_includes_name_and_contact(db):
 async def test_notify_artist_needs_reply_includes_name_and_contact(db):
     """Artist notification message includes Contact (wa_from) and Name (from answers or —)."""
     from app.core.config import settings
-    from app.services.artist_notifications import notify_artist_needs_reply
+    from app.services.integrations.artist_notifications import notify_artist_needs_reply
 
     lead = Lead(
         id=1,
@@ -444,7 +444,7 @@ async def test_notify_artist_needs_reply_includes_name_and_contact(db):
 
     with (
         patch(
-            "app.services.artist_notifications.send_whatsapp_message", new_callable=AsyncMock
+            "app.services.integrations.artist_notifications.send_whatsapp_message", new_callable=AsyncMock
         ) as mock_send,
         patch.object(settings, "artist_whatsapp_number", "+449999999999"),
     ):

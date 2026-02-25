@@ -61,7 +61,7 @@ mypy .
 ### Full mypy status (expected known failures)
 
 - **Count:** 49 errors in 14 files (all in tests + a few app modules).
-- **Cause:** Known SQLAlchemy DateTime / `func.now()` assignment and operator issues; per-module overrides exist for conversation/state_machine etc. (see `pyproject.toml` and `docs/MYPY_TRIAGE_PLAN.md`).
+- **Cause:** Known SQLAlchemy DateTime / `func.now()` assignment and operator issues; per-module overrides exist for conversation/state_machine etc. (see `pyproject.toml` and `docs/misc/MYPY_TRIAGE_PLAN.md`).
 - **Conversation policy:** `app/services/conversation_policy.py` has **no mypy errors** and is not in the override list; the new module is clean. No new errors were introduced by the conversation_policy extraction.
 
 ## How to add new keywords safely
@@ -77,7 +77,7 @@ mypy .
 ## CI and mypy
 
 - **Current behavior:** `.github/workflows/quality.yml` runs `mypy app` with no `continue-on-error`. With 49 existing errors (all in tests/ORM), the mypy step **fails the pipeline** unless the workflow was already set to allow failure elsewhere.
-- **Proposal (smallest change):** Add `continue-on-error: true` to the mypy step and a short comment (e.g. “Known SQLAlchemy DateTime / test assignment errors; see docs/MYPY_TRIAGE_PLAN.md”). Alternative: run `mypy app/services/conversation_policy.py` as a “canary” that must pass, and keep full `mypy app` as advisory (e.g. in a separate job with continue-on-error). No CI change was made in this pass; document or adjust as needed for your branch.
+- **Proposal (smallest change):** Add `continue-on-error: true` to the mypy step and a short comment (e.g. “Known SQLAlchemy DateTime / test assignment errors; see docs/misc/MYPY_TRIAGE_PLAN.md”). Alternative: run `mypy app/services/conversation_policy.py` as a “canary” that must pass, and keep full `mypy app` as advisory (e.g. in a separate job with continue-on-error). No CI change was made in this pass; document or adjust as needed for your branch.
 
 ## Not done (possible future extractions)
 

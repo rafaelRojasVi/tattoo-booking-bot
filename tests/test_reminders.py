@@ -12,7 +12,7 @@ from app.services.conversation import (
     STATUS_DEPOSIT_PAID,
     STATUS_QUALIFYING,
 )
-from app.services.reminders import (
+from app.services.messaging.reminders import (
     check_and_send_booking_reminder,
     check_and_send_qualifying_reminder,
 )

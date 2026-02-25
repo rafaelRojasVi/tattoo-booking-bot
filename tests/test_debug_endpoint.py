@@ -6,7 +6,7 @@ from datetime import UTC, datetime
 
 from app.db.models import Lead, LeadAnswer, ProcessedMessage
 from app.services.conversation import STATUS_BOOKED, STATUS_NEEDS_ARTIST_REPLY
-from app.services.system_event_service import warn
+from app.services.metrics.system_event_service import warn
 
 
 def test_debug_endpoint_returns_comprehensive_info(client, db):

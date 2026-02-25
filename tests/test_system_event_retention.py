@@ -5,7 +5,7 @@ Tests for SystemEvent retention cleanup.
 from datetime import UTC, datetime, timedelta
 
 from app.db.models import Lead, SystemEvent
-from app.services.system_event_service import cleanup_old_events, info
+from app.services.metrics.system_event_service import cleanup_old_events, info
 
 
 def test_cleanup_old_events_deletes_older_than_cutoff(db):

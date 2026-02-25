@@ -44,7 +44,7 @@ curl -X POST "https://YOUR-DOMAIN/admin/outbox/retry?limit=10" \
 
 1. Check `/health` — it reports `templates_configured` and any missing templates.
 2. Missing templates cause fallbacks (e.g. outside 24h window, reminders) to fail or degrade.
-3. Add templates in [Meta Business Suite](https://business.facebook.com/) → WhatsApp Manager → Message Templates. See `docs/ops_runbook.md` for exact template names and bodies.
+3. Add templates in [Meta Business Suite](https://business.facebook.com/) → WhatsApp Manager → Message Templates. See `docs/runbooks/ops_runbook.md` for exact template names and bodies.
 
 ---
 
@@ -54,8 +54,8 @@ curl -X POST "https://YOUR-DOMAIN/admin/outbox/retry?limit=10" \
 |-----------|--------|
 | **Bot misbehaving** | Enable panic mode: `FEATURE_PANIC_MODE_ENABLED=true`. Bot stops automated replies but still logs messages. |
 | **DB or API issues** | Check `/health` and `/ready`. Review Render logs. |
-| **Need to fix something** | Contact your developer. Full runbook: `docs/ops_runbook.md`. Ship checklist: `docs/SHIP_READINESS_CHECK.md`. |
+| **Need to fix something** | Contact your developer. Full runbook: `docs/runbooks/ops_runbook.md`. Ship checklist: `docs/misc/SHIP_READINESS_CHECK.md`. |
 
 ---
 
-**Quick commands:** See `docs/ops_runbook.md` → Quick Reference for more curl examples.
+**Quick commands:** See `docs/runbooks/ops_runbook.md` → Quick Reference for more curl examples.

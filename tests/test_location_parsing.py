@@ -2,7 +2,7 @@
 Tests for location parsing service.
 """
 
-from app.services.location_parsing import (
+from app.services.parsing.location_parsing import (
     FLEXIBLE_KEYWORDS,
     is_valid_location,
     parse_location_input,

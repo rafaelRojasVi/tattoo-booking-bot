@@ -281,8 +281,8 @@ is_duplicate, processed = check_and_record_processed_event(
 | **Health checks** | `app/main.py` L111: `@app.get("/health")`; L137: `@app.get("/ready")`; L148: `db.execute(text("SELECT 1"))` for DB connectivity | ✅ Verified |
 | **Render deployment** | `render.yaml` L10: `healthCheckPath: /health`; L3–8: web service + Dockerfile; L22–27: managed PostgreSQL | ✅ Verified |
 | **~840 tests** | 845 collected, 840 passed, 1 skipped, 4 xfailed | ✅ Verified |
-| **Runbook** | `docs/runbook_go_live.md` — pre-launch checklist, health checks, guardrail tests, launch procedures | ✅ Verified |
-| **System events** | `app/services/system_event_service.py` — `info()`, `warn()`, `error()`; `docs/SYSTEM_EVENTS.md`; events at webhook failures, atomic conflicts | ✅ Verified |
+| **Runbook** | `docs/runbooks/runbook_go_live.md` — pre-launch checklist, health checks, guardrail tests, launch procedures | ✅ Verified |
+| **System events** | `app/services/system_event_service.py` — `info()`, `warn()`, `error()`; `docs/architecture/SYSTEM_EVENTS.md`; events at webhook failures, atomic conflicts | ✅ Verified |
 | **WhatsApp 24h template fallback** | `app/services/whatsapp_window.py` L50–186: `send_with_window_check()`; L186: `send_template_message()` when outside 24h. Test: `test_golden_transcript_outside_24h_template_then_resume` asserts template path used after simulated 25h gap. | ✅ Verified |
 
 ---

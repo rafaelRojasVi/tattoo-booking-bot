@@ -119,7 +119,7 @@
 
 ### Recommendations
 1. For higher traffic: set `WEB_CONCURRENCY=4` or higher in Render.
-2. Consider Gunicorn + Uvicorn workers for production (see `docs/FAILURE_ISOLATION_ANALYSIS.md`).
+2. Consider Gunicorn + Uvicorn workers for production (see `docs/audits/FAILURE_ISOLATION_ANALYSIS.md`).
 3. Ensure DB connection pool size matches worker count (SQLAlchemy pool).
 
 ---

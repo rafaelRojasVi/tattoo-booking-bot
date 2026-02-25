@@ -31,7 +31,7 @@ from app.services.conversation import (
     get_lead_summary,
     handle_inbound_message,
 )
-from app.services.parse_repair import (
+from app.services.parsing.parse_repair import (
     get_failure_count,
     increment_parse_failure,
     should_handover_after_failure,
@@ -283,7 +283,7 @@ async def test_soft_repair_three_strikes_handover_dimensions(db):
     assert should_handover_after_failure(lead, "dimensions")
 
     # Verify handover would be triggered
-    from app.services.parse_repair import trigger_handover_after_parse_failure
+    from app.services.parsing.parse_repair import trigger_handover_after_parse_failure
 
     result = await trigger_handover_after_parse_failure(db, lead, "dimensions", dry_run=True)
 
@@ -360,11 +360,11 @@ async def test_deposit_locking_preserves_amount(client, db):
     with (
         patch.object(settings, "admin_api_key", "test_key"),
         patch(
-            "app.services.stripe_service.create_checkout_session",
+            "app.services.integrations.stripe_service.create_checkout_session",
             return_value=checkout_return,
         ),
         patch(
-            "app.services.whatsapp_window.send_with_window_check",
+            "app.services.messaging.whatsapp_window.send_with_window_check",
             new_callable=AsyncMock,
         ),
     ):
@@ -386,11 +386,11 @@ async def test_deposit_locking_preserves_amount(client, db):
     with (
         patch.object(settings, "admin_api_key", "test_key"),
         patch(
-            "app.services.stripe_service.create_checkout_session",
+            "app.services.integrations.stripe_service.create_checkout_session",
             return_value=checkout_return,
         ),
         patch(
-            "app.services.whatsapp_window.send_with_window_check",
+            "app.services.messaging.whatsapp_window.send_with_window_check",
             new_callable=AsyncMock,
         ),
     ):
@@ -416,13 +416,13 @@ async def test_template_window_behavior_outside_24h(client, db):
     db.commit()
 
     # Try to send message
-    from app.services.message_composer import render_message
-    from app.services.whatsapp_window import send_with_window_check
+    from app.services.messaging.message_composer import render_message
+    from app.services.messaging.whatsapp_window import send_with_window_check
 
     message = render_message("qualifying_question", lead_id=lead.id)
 
     # Mock template check - render_message is in message_composer, not whatsapp_window
-    with patch("app.services.message_composer.render_message") as mock_render:
+    with patch("app.services.messaging.message_composer.render_message") as mock_render:
         mock_render.return_value = "Template message"
 
         result = await send_with_window_check(
@@ -448,7 +448,7 @@ async def test_template_window_behavior_within_24h(client, db):
     db.add(lead)
     db.commit()
 
-    from app.services.whatsapp_window import send_with_window_check
+    from app.services.messaging.whatsapp_window import send_with_window_check
 
     result = await send_with_window_check(
         db=db,
@@ -540,7 +540,7 @@ async def test_slot_selection_out_of_range(db):
 
     from datetime import datetime
 
-    from app.services.slot_parsing import parse_slot_selection_logged
+    from app.services.parsing.slot_parsing import parse_slot_selection_logged
 
     slots = [
         {
@@ -580,7 +580,7 @@ async def test_slot_selection_ambiguous_tuesday_afternoon(db):
     """Guardrail: Slot selection handles ambiguous 'Tuesday afternoon'."""
     from datetime import datetime
 
-    from app.services.slot_parsing import parse_slot_selection_logged
+    from app.services.parsing.slot_parsing import parse_slot_selection_logged
 
     slots = [
         {
@@ -726,11 +726,11 @@ async def test_payment_expired_session_resend(client, db):
     with (
         patch.object(settings, "admin_api_key", "test_key"),
         patch(
-            "app.services.stripe_service.create_checkout_session",
+            "app.services.integrations.stripe_service.create_checkout_session",
             return_value=checkout_return,
         ),
         patch(
-            "app.services.whatsapp_window.send_with_window_check",
+            "app.services.messaging.whatsapp_window.send_with_window_check",
             new_callable=AsyncMock,
         ),
     ):
@@ -841,9 +841,9 @@ async def test_sheet_logging_uses_latest_per_key(db):
     db.add(LeadAnswer(lead_id=lead.id, question_key="budget", answer_text="550"))
     db.commit()
 
-    from app.services.sheets import log_lead_to_sheets
+    from app.services.integrations.sheets import log_lead_to_sheets
 
-    with patch("app.services.sheets._get_sheets_service", return_value=None):
+    with patch("app.services.integrations.sheets._get_sheets_service", return_value=None):
         # Just ensure it runs; sheets uses same ordered query as get_lead_summary now
         result = log_lead_to_sheets(db, lead)
     # When sheets disabled or stub, may return False; we only care it didn't raise
@@ -857,7 +857,7 @@ async def test_sheet_logging_uses_latest_per_key(db):
 async def test_whatsapp_missing_credentials_prevents_send(db):
     """Guardrail: Missing WhatsApp credentials prevents message sending."""
     from app.core.config import settings
-    from app.services.messaging import send_whatsapp_message
+    from app.services.messaging.messaging import send_whatsapp_message
 
     # Save original values
     original_token = settings.whatsapp_access_token
@@ -893,7 +893,7 @@ async def test_whatsapp_outside_24h_template_missing_logs_blocked(db):
     db.commit()
 
     from app.db.models import SystemEvent
-    from app.services.whatsapp_window import send_with_window_check
+    from app.services.messaging.whatsapp_window import send_with_window_check
 
     # Try to send without template
     result = await send_with_window_check(
@@ -941,7 +941,7 @@ async def test_build_handover_packet_includes_last_5_messages(db):
         db.add(answer)
     db.commit()
 
-    from app.services.handover_packet import build_handover_packet
+    from app.services.conversation.handover_packet import build_handover_packet
 
     packet = build_handover_packet(db, lead)
 
@@ -964,7 +964,7 @@ async def test_build_handover_packet_includes_parse_failures(db):
     db.add(lead)
     db.commit()
 
-    from app.services.handover_packet import build_handover_packet
+    from app.services.conversation.handover_packet import build_handover_packet
 
     packet = build_handover_packet(db, lead)
 
@@ -987,7 +987,7 @@ async def test_build_handover_packet_includes_category_deposit_price_range(db):
     db.add(lead)
     db.commit()
 
-    from app.services.handover_packet import build_handover_packet
+    from app.services.conversation.handover_packet import build_handover_packet
 
     packet = build_handover_packet(db, lead)
 
@@ -1011,7 +1011,7 @@ async def test_build_handover_packet_includes_tour_conversion_context(db):
     db.add(lead)
     db.commit()
 
-    from app.services.handover_packet import build_handover_packet
+    from app.services.conversation.handover_packet import build_handover_packet
 
     packet = build_handover_packet(db, lead)
 
@@ -1032,7 +1032,7 @@ async def test_build_handover_packet_includes_status_question_key(db):
     db.add(lead)
     db.commit()
 
-    from app.services.handover_packet import build_handover_packet
+    from app.services.conversation.handover_packet import build_handover_packet
 
     packet = build_handover_packet(db, lead)
 

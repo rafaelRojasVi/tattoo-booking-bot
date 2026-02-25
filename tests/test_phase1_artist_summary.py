@@ -9,7 +9,7 @@ import pytest
 
 from app.core.config import settings
 from app.db.models import Lead
-from app.services.artist_notifications import (
+from app.services.integrations.artist_notifications import (
     format_artist_summary,
     notify_artist,
     send_artist_summary,
@@ -130,7 +130,7 @@ async def test_send_artist_summary_sends_message(db):
     action_tokens = {"approve": "https://example.com/a/abc123"}
 
     with patch(
-        "app.services.artist_notifications.send_whatsapp_message", new_callable=AsyncMock
+        "app.services.integrations.artist_notifications.send_whatsapp_message", new_callable=AsyncMock
     ) as mock_send:
         mock_send.return_value = {"status": "sent"}
 
@@ -192,7 +192,7 @@ async def test_notify_artist_sends_notification(db):
     db.refresh(lead)
 
     with patch(
-        "app.services.artist_notifications.send_whatsapp_message", new_callable=AsyncMock
+        "app.services.integrations.artist_notifications.send_whatsapp_message", new_callable=AsyncMock
     ) as mock_send:
         mock_send.return_value = {"status": "sent"}
 
@@ -230,7 +230,7 @@ async def test_notify_artist_deposit_paid(db):
     db.refresh(lead)
 
     with patch(
-        "app.services.artist_notifications.send_whatsapp_message", new_callable=AsyncMock
+        "app.services.integrations.artist_notifications.send_whatsapp_message", new_callable=AsyncMock
     ) as mock_send:
         mock_send.return_value = {"status": "sent"}
 

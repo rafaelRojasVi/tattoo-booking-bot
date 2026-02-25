@@ -64,10 +64,10 @@ async def test_stripe_deposit_paid_unexpected_status_no_transition(db):
 
     with (
         patch(
-            "app.services.whatsapp_window.send_with_window_check", new_callable=AsyncMock
+            "app.services.messaging.whatsapp_window.send_with_window_check", new_callable=AsyncMock
         ) as mock_whatsapp,
         patch(
-            "app.services.artist_notifications.notify_artist", new_callable=AsyncMock
+            "app.services.integrations.artist_notifications.notify_artist", new_callable=AsyncMock
         ) as mock_notify,
     ):
         request = build_stripe_webhook_request(event_data)
@@ -220,10 +220,10 @@ async def test_slot_chosen_but_unavailable_recheck_and_fallback(db):
     # Mock calendar service to return empty slots (slot1 is now unavailable)
     with (
         patch(
-            "app.services.calendar_service.get_available_slots", return_value=[]
+            "app.services.integrations.calendar_service.get_available_slots", return_value=[]
         ) as mock_get_slots,
-        patch("app.services.messaging.send_whatsapp_message", new_callable=AsyncMock) as mock_send,
-        patch("app.services.message_composer.render_message") as mock_render,
+        patch("app.services.messaging.messaging.send_whatsapp_message", new_callable=AsyncMock) as mock_send,
+        patch("app.services.messaging.message_composer.render_message") as mock_render,
     ):
         mock_render.return_value = (
             "That slot is no longer available. Let me check for other options."
@@ -277,15 +277,15 @@ async def test_window_closed_templates_missing_no_crash(db):
     db.commit()
 
     # Try to send message with missing template
-    from app.services.whatsapp_window import send_with_window_check
+    from app.services.messaging.whatsapp_window import send_with_window_check
 
     with (
         patch(
-            "app.services.template_registry.get_all_required_templates",
+            "app.services.messaging.template_registry.get_all_required_templates",
             return_value=[],  # No templates configured
         ),
         patch(
-            "app.services.artist_notifications.send_system_alert", new_callable=AsyncMock
+            "app.services.integrations.artist_notifications.send_system_alert", new_callable=AsyncMock
         ) as mock_alert,
     ):
         result = await send_with_window_check(
@@ -354,10 +354,10 @@ async def test_whatsapp_webhook_duplicate_delivery_idempotency(db):
 
     with (
         patch(
-            "app.services.conversation.send_whatsapp_message", new_callable=AsyncMock
+            "app.services.messaging.messaging.send_whatsapp_message", new_callable=AsyncMock
         ) as mock_whatsapp,
-        patch("app.services.tour_service.is_city_on_tour", return_value=True),
-        patch("app.services.handover_service.should_handover", return_value=(False, None)),
+        patch("app.services.conversation.tour_service.is_city_on_tour", return_value=True),
+        patch("app.services.conversation.handover_service.should_handover", return_value=(False, None)),
     ):
         mock_whatsapp.return_value = {"id": "wamock_123", "status": "sent"}
 

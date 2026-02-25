@@ -61,7 +61,7 @@ async def send_whatsapp_message(
         }
 
     try:
-        from app.services.http_client import create_httpx_client
+        from app.services.integrations.http_client import create_httpx_client
 
         url = f"https://graph.facebook.com/v18.0/{settings.whatsapp_phone_number_id}/messages"
         headers = {
@@ -106,7 +106,7 @@ def format_summary_message(answers: dict) -> str:
     Returns:
         Formatted summary string
     """
-    from app.services.summary import format_summary_message_legacy
+    from app.services.conversation.summary import format_summary_message_legacy
 
     return format_summary_message_legacy(answers)
 
@@ -127,7 +127,7 @@ def format_deposit_link_message(
     Returns:
         Formatted message string
     """
-    from app.services.message_composer import render_message
+    from app.services.messaging.message_composer import render_message
 
     amount_gbp = amount_pence / 100
     return render_message(
@@ -152,7 +152,7 @@ def format_payment_confirmation_message(
     Returns:
         Formatted message string
     """
-    from app.services.message_composer import render_message
+    from app.services.messaging.message_composer import render_message
 
     amount_gbp = amount_pence / 100
     return render_message(

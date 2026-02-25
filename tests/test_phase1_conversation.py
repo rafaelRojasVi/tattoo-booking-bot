@@ -17,8 +17,8 @@ from app.services.conversation import (
     STATUS_WAITLISTED,
     handle_inbound_message,
 )
-from app.services.questions import get_total_questions
-from app.services.tour_service import load_tour_schedule
+from app.services.conversation.questions import get_total_questions
+from app.services.conversation.tour_service import load_tour_schedule
 
 
 @pytest.fixture
@@ -130,7 +130,7 @@ async def test_phase1_below_min_budget_sets_needs_follow_up(client, db):
     db.add(location_answer)
 
     # Set current_step to last question (timing) and add budget answer
-    from app.services.questions import CONSULTATION_QUESTIONS
+    from app.services.conversation.questions import CONSULTATION_QUESTIONS
 
     timing_index = len(CONSULTATION_QUESTIONS) - 1
     budget_index = next(i for i, q in enumerate(CONSULTATION_QUESTIONS) if q.key == "budget")
@@ -204,7 +204,7 @@ async def test_phase1_tour_conversion_offered(client, db, tour_schedule):
     db.refresh(lead)
 
     # Add budget answer (above minimum - £500)
-    from app.services.questions import CONSULTATION_QUESTIONS
+    from app.services.conversation.questions import CONSULTATION_QUESTIONS
 
     timing_index = len(CONSULTATION_QUESTIONS) - 1
     budget_answer = LeadAnswer(lead_id=lead.id, question_key="budget", answer_text="500")

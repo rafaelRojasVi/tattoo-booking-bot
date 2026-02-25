@@ -4,7 +4,7 @@ Tests for XL deposit logic - per-day calculation with 0.5-day increments.
 Tests that XL deposits are calculated as £200 × estimated_days.
 """
 
-from app.services.estimation_service import (
+from app.services.parsing.estimation_service import (
     estimate_days_for_xl,
     estimate_project,
     get_deposit_amount,

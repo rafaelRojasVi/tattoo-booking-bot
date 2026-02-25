@@ -886,4 +886,4 @@ The codebase is now **production-ready** for the critical concerns addressed. Re
 
 **Document Version:** 1.0  
 **Last Updated:** Development Session Summary  
-**Related Documents:** `docs/QUALITY_AUDIT.md`, `requirements.in`, `Dockerfile`
+**Related Documents:** `docs/audits/QUALITY_AUDIT.md`, `requirements.in`, `Dockerfile`

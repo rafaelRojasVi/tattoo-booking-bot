@@ -1,11 +1,13 @@
 """
 Split-regression tests: lock invariants introduced by the conversation split.
 
-- Late-binding: qualifying and booking resolve send_whatsapp from conversation at call time,
-  so tests that patch conversation.send_whatsapp_message keep working.
+- Late-binding: qualifying and booking resolve send_whatsapp from conversation_deps at call time,
+  so tests that patch messaging.send_whatsapp_message keep working.
 - Dispatch: orchestrator routes by lead.status to the correct handler module
   (qualifying vs booking).
 """
+
+from unittest.mock import patch
 
 import pytest
 
@@ -14,13 +16,14 @@ from app.db.models import Lead
 
 
 def test_split_late_binding_respects_conversation_send_whatsapp_patch(monkeypatch):
-    """Split invariant: _get_send_whatsapp() in qualifying and booking resolve at call time from conversation."""
-    from app.services import conversation, conversation_booking, conversation_qualifying
+    """Split invariant: _get_send_whatsapp() in qualifying and booking resolve at call time from conversation_deps."""
+    from app.services.conversation import conversation_booking, conversation_qualifying
+    from app.services.messaging import messaging
 
     def fake_send(*args, **kwargs):
         return None
 
-    monkeypatch.setattr(conversation, "send_whatsapp_message", fake_send, raising=True)
+    monkeypatch.setattr(messaging, "send_whatsapp_message", fake_send, raising=True)
 
     assert conversation_qualifying._get_send_whatsapp() is fake_send
     assert conversation_booking._get_send_whatsapp() is fake_send
@@ -31,9 +34,8 @@ async def test_handle_inbound_message_dispatches_by_status_to_qualifying_and_boo
     db, monkeypatch
 ):
     """Split invariant: QUALIFYING routes to _handle_qualifying_lead, BOOKING_PENDING to _handle_booking_pending."""
-    # Disable panic mode so we hit the status dispatcher
     from app.core.config import settings
-    from app.services import conversation
+    from app.services.conversation import handle_inbound_message
 
     monkeypatch.setattr(settings, "feature_panic_mode_enabled", False)
 
@@ -57,11 +59,18 @@ async def test_handle_inbound_message_dispatches_by_status_to_qualifying_and_boo
         lead = args[1]
         return {"status": "ok", "lead_status": lead.status}
 
-    monkeypatch.setattr(conversation, "_handle_qualifying_lead", mock_qualifying, raising=True)
-    monkeypatch.setattr(conversation, "_handle_booking_pending", mock_booking_pending, raising=True)
-
-    await conversation.handle_inbound_message(db=db, lead=lead_q, message_text="hi", dry_run=True)
-    await conversation.handle_inbound_message(db=db, lead=lead_b, message_text="hi", dry_run=True)
+    with (
+        patch(
+            "app.services.conversation.conversation._handle_qualifying_lead",
+            new=mock_qualifying,
+        ),
+        patch(
+            "app.services.conversation.conversation._handle_booking_pending",
+            new=mock_booking_pending,
+        ),
+    ):
+        await handle_inbound_message(db=db, lead=lead_q, message_text="hi", dry_run=True)
+        await handle_inbound_message(db=db, lead=lead_b, message_text="hi", dry_run=True)
 
     assert calls["qualifying"] == 1
     assert calls["booking_pending"] == 1

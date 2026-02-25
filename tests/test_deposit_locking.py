@@ -10,7 +10,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from app.db.models import Lead
-from app.services.stripe_service import create_checkout_session
+from app.services.integrations.stripe_service import create_checkout_session
 
 
 @pytest.fixture
@@ -50,7 +50,7 @@ def test_send_deposit_locks_amount_from_estimated(db, client, lead_with_estimate
     """Test that send_deposit locks amount from estimated_deposit_amount."""
     from app.core.config import settings
 
-    with patch("app.services.stripe_service.create_checkout_session") as mock_create:
+    with patch("app.services.integrations.stripe_service.create_checkout_session") as mock_create:
         from datetime import UTC, datetime, timedelta
 
         mock_create.return_value = {
@@ -88,7 +88,7 @@ def test_send_deposit_uses_locked_amount_if_already_set(db, client, lead_with_lo
     """Test that send_deposit uses already locked deposit_amount_pence if set."""
     from app.core.config import settings
 
-    with patch("app.services.stripe_service.create_checkout_session") as mock_create:
+    with patch("app.services.integrations.stripe_service.create_checkout_session") as mock_create:
         from datetime import UTC, datetime, timedelta
 
         mock_create.return_value = {
@@ -218,7 +218,7 @@ def test_deposit_locking_preference_order(db, client):
     db.commit()
     db.refresh(lead)
 
-    with patch("app.services.stripe_service.create_checkout_session") as mock_create:
+    with patch("app.services.integrations.stripe_service.create_checkout_session") as mock_create:
         from datetime import UTC, datetime, timedelta
 
         mock_create.return_value = {

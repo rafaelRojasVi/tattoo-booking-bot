@@ -31,7 +31,7 @@ INTENT_TO_KEY = {
 }
 
 # Path to copy files
-COPY_DIR = Path(__file__).parent.parent / "copy"
+COPY_DIR = Path(__file__).resolve().parent.parent.parent / "copy"
 DEFAULT_LOCALE = "en_GB"
 
 

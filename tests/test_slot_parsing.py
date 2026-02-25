@@ -10,7 +10,7 @@ from zoneinfo import ZoneInfo
 import pytest
 
 from app.db.models import Lead, SystemEvent
-from app.services.slot_parsing import (
+from app.services.parsing.slot_parsing import (
     format_slot_selection_prompt,
     get_slot_parse_stats,
     parse_slot_selection,

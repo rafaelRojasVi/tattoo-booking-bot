@@ -2,7 +2,7 @@
 Test template configuration check.
 """
 
-from app.services.template_check import (
+from app.services.messaging.template_check import (
     REQUIRED_TEMPLATES,
     startup_check_templates,
 )

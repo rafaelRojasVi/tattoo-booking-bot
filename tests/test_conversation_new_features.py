@@ -16,7 +16,7 @@ from app.services.conversation import (
     STATUS_STALE,
     handle_inbound_message,
 )
-from app.services.questions import get_total_questions
+from app.services.conversation.questions import get_total_questions
 
 
 @pytest.mark.asyncio
@@ -226,7 +226,7 @@ async def test_completion_sets_pending_approval(client, db):
     db.commit()
 
     # Add previous answers
-    from app.services.questions import CONSULTATION_QUESTIONS
+    from app.services.conversation.questions import CONSULTATION_QUESTIONS
 
     for _i, question in enumerate(CONSULTATION_QUESTIONS[:-1]):  # All except last
         answer = LeadAnswer(
@@ -264,7 +264,7 @@ async def test_completion_sets_pending_approval(client, db):
     db.refresh(lead)
 
     # Mock tour service to ensure city is on tour
-    with patch("app.services.tour_service.is_city_on_tour", return_value=True):
+    with patch("app.services.conversation.tour_service.is_city_on_tour", return_value=True):
         # Answer last question
         result = await handle_inbound_message(
             db=db,

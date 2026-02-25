@@ -6,7 +6,7 @@ import json
 
 from app.db.models import Lead
 from app.services.conversation import STATUS_AWAITING_DEPOSIT, STATUS_DEPOSIT_PAID
-from app.services.stripe_service import create_checkout_session
+from app.services.integrations.stripe_service import create_checkout_session
 
 
 def test_create_checkout_session_test_mode(db):

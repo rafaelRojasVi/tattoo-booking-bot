@@ -51,12 +51,12 @@ def mock_lead(db):
 async def test_stripe_webhook_awaits_send_with_window_check(db, mock_stripe_event, mock_lead):
     """Test that Stripe webhook handler awaits send_with_window_check."""
     # Mock signature verification to always succeed
-    with patch("app.services.stripe_service.verify_webhook_signature") as mock_verify:
+    with patch("app.services.integrations.stripe_service.verify_webhook_signature") as mock_verify:
         mock_verify.return_value = mock_stripe_event
 
         # Mock send_with_window_check as AsyncMock (it's imported inside the function)
         with patch(
-            "app.services.whatsapp_window.send_with_window_check", new_callable=AsyncMock
+            "app.services.messaging.whatsapp_window.send_with_window_check", new_callable=AsyncMock
         ) as mock_send:
             mock_send.return_value = {
                 "status": "sent",
@@ -65,7 +65,7 @@ async def test_stripe_webhook_awaits_send_with_window_check(db, mock_stripe_even
 
             # Mock notify_artist as well (it's also awaited, imported inside function)
             with patch(
-                "app.services.artist_notifications.notify_artist", new_callable=AsyncMock
+                "app.services.integrations.artist_notifications.notify_artist", new_callable=AsyncMock
             ) as mock_notify:
                 mock_notify.return_value = {"status": "sent"}
 
@@ -101,18 +101,18 @@ async def test_stripe_webhook_awaits_send_with_window_check(db, mock_stripe_even
 async def test_stripe_webhook_awaits_notify_artist(db, mock_stripe_event, mock_lead):
     """Test that Stripe webhook handler awaits notify_artist."""
     # Mock signature verification
-    with patch("app.services.stripe_service.verify_webhook_signature") as mock_verify:
+    with patch("app.services.integrations.stripe_service.verify_webhook_signature") as mock_verify:
         mock_verify.return_value = mock_stripe_event
 
         # Mock send_with_window_check
         with patch(
-            "app.services.whatsapp_window.send_with_window_check", new_callable=AsyncMock
+            "app.services.messaging.whatsapp_window.send_with_window_check", new_callable=AsyncMock
         ) as mock_send:
             mock_send.return_value = {"status": "sent"}
 
             # Mock notify_artist as AsyncMock
             with patch(
-                "app.services.artist_notifications.notify_artist", new_callable=AsyncMock
+                "app.services.integrations.artist_notifications.notify_artist", new_callable=AsyncMock
             ) as mock_notify:
                 mock_notify.return_value = {"status": "sent"}
 

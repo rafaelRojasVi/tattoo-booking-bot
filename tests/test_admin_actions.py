@@ -131,7 +131,7 @@ def test_send_deposit_success(client, db):
     mock_session.id = "cs_test_123"
     mock_session.url = "https://checkout.stripe.com/test/cs_test_123"
 
-    with patch("app.services.stripe_service.stripe.checkout.Session.create") as mock_stripe_create:
+    with patch("app.services.integrations.stripe_service.stripe.checkout.Session.create") as mock_stripe_create:
         mock_stripe_create.return_value = mock_session
 
         response = client.post(f"/admin/leads/{lead.id}/send-deposit", json={"amount_pence": 5000})

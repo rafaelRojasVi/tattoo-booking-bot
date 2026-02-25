@@ -59,23 +59,23 @@ async def test_e2e_happy_path_city_on_tour_new_to_booked(db, frozen_time):
     # Mock external services (conversation + messaging so _maybe_send_confirmation_summary uses mock)
     with (
         patch(
-            "app.services.conversation.send_whatsapp_message", new_callable=AsyncMock
+            "app.services.messaging.messaging.send_whatsapp_message", new_callable=AsyncMock
         ) as mock_whatsapp,
         patch(
-            "app.services.messaging.send_whatsapp_message", new_callable=AsyncMock
+            "app.services.messaging.messaging.send_whatsapp_message", new_callable=AsyncMock
         ) as mock_whatsapp_messaging,
-        patch("app.services.calendar_service.get_available_slots") as mock_slots,
-        patch("app.services.stripe_service.create_checkout_session") as mock_stripe,
-        patch("app.services.sheets.log_lead_to_sheets") as mock_sheets,
+        patch("app.services.integrations.calendar_service.get_available_slots") as mock_slots,
+        patch("app.services.integrations.stripe_service.create_checkout_session") as mock_stripe,
+        patch("app.services.integrations.sheets.log_lead_to_sheets") as mock_sheets,
         patch(
-            "app.services.artist_notifications.send_artist_summary", new_callable=AsyncMock
+            "app.services.integrations.artist_notifications.send_artist_summary", new_callable=AsyncMock
         ) as mock_artist_notify,
         patch(
-            "app.services.whatsapp_window.send_with_window_check", new_callable=AsyncMock
+            "app.services.messaging.whatsapp_window.send_with_window_check", new_callable=AsyncMock
         ) as mock_window_send,
-        patch("app.services.tour_service.is_city_on_tour", return_value=True),
-        patch("app.services.tour_service.closest_upcoming_city", return_value=None),
-        patch("app.services.handover_service.should_handover", return_value=(False, None)),
+        patch("app.services.conversation.tour_service.is_city_on_tour", return_value=True),
+        patch("app.services.conversation.tour_service.closest_upcoming_city", return_value=None),
+        patch("app.services.conversation.handover_service.should_handover", return_value=(False, None)),
     ):
         # Setup mocks
         mock_whatsapp.return_value = {"id": "wamock_123", "status": "sent"}
@@ -110,7 +110,8 @@ async def test_e2e_happy_path_city_on_tour_new_to_booked(db, frozen_time):
         )
         db.refresh(lead)
         assert lead.status == STATUS_QUALIFYING
-        assert mock_whatsapp.called
+        # _handle_new_lead uses _get_send_whatsapp() (messaging.send_whatsapp_message); second patch wins
+        assert mock_whatsapp_messaging.called
 
         # Step 2: Answer all consultation questions (in order from questions.py)
         answers = [
@@ -144,7 +145,7 @@ async def test_e2e_happy_path_city_on_tour_new_to_booked(db, frozen_time):
 
         # Mock auth to bypass security (send_slot_suggestions_to_client uses mock_slots + mock_window_send)
         with patch("app.api.admin.get_admin_auth", return_value=True):
-            approve_result = await approve_lead(lead.id, db=db)
+            approve_result = await approve_lead(lead=lead, db=db)
 
         db.refresh(lead)
 
@@ -167,7 +168,7 @@ async def test_e2e_happy_path_city_on_tour_new_to_booked(db, frozen_time):
         deposit_request = SendDepositRequest()
         # Mock auth to bypass security
         with patch("app.api.admin.get_admin_auth", return_value=True):
-            deposit_result = await send_deposit(lead.id, request=deposit_request, db=db)
+            deposit_result = await send_deposit(lead=lead, request=deposit_request, db=db)
 
         db.refresh(lead)
 
@@ -199,10 +200,10 @@ async def test_e2e_happy_path_city_on_tour_new_to_booked(db, frozen_time):
 
         with (
             patch(
-                "app.services.stripe_service.verify_webhook_signature", return_value=webhook_event
+                "app.services.integrations.stripe_service.verify_webhook_signature", return_value=webhook_event
             ),
             patch(
-                "app.services.whatsapp_window.send_with_window_check", new_callable=AsyncMock
+                "app.services.messaging.whatsapp_window.send_with_window_check", new_callable=AsyncMock
             ) as mock_webhook_send,
         ):
             mock_webhook_send.return_value = {"id": "wamock_456", "status": "sent"}
@@ -222,7 +223,7 @@ async def test_e2e_happy_path_city_on_tour_new_to_booked(db, frozen_time):
 
         # Mock auth to bypass security
         with patch("app.api.admin.get_admin_auth", return_value=True):
-            booked_result = mark_booked(lead.id, db=db)
+            booked_result = mark_booked(lead=lead, db=db)
 
         db.refresh(lead)
 
@@ -256,15 +257,15 @@ async def test_e2e_no_unexpected_statuses(db, frozen_time):
 
     with (
         patch(
-            "app.services.conversation.send_whatsapp_message", new_callable=AsyncMock
+            "app.services.messaging.messaging.send_whatsapp_message", new_callable=AsyncMock
         ) as mock_whatsapp,
         patch(
-            "app.services.messaging.send_whatsapp_message", new_callable=AsyncMock
+            "app.services.messaging.messaging.send_whatsapp_message", new_callable=AsyncMock
         ) as mock_whatsapp_messaging,
-        patch("app.services.sheets.log_lead_to_sheets", return_value=True) as mock_sheets,
-        patch("app.services.handover_service.should_handover", return_value=(False, None)),
-        patch("app.services.tour_service.is_city_on_tour", return_value=True),
-        patch("app.services.tour_service.closest_upcoming_city", return_value=None),
+        patch("app.services.integrations.sheets.log_lead_to_sheets", return_value=True) as mock_sheets,
+        patch("app.services.conversation.handover_service.should_handover", return_value=(False, None)),
+        patch("app.services.conversation.tour_service.is_city_on_tour", return_value=True),
+        patch("app.services.conversation.tour_service.closest_upcoming_city", return_value=None),
     ):  # Disable tour conversion
         mock_whatsapp.return_value = {"id": "wamock_123", "status": "sent"}
         mock_whatsapp_messaging.return_value = {"id": "wamock_123", "status": "sent"}

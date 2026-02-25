@@ -23,7 +23,7 @@ from app.services.conversation import (
     handle_inbound_message,
 )
 from app.services.leads import get_or_create_lead
-from app.services.questions import get_total_questions
+from app.services.conversation.questions import get_total_questions
 from tests.helpers.golden_transcript import (
     PHASE1_HAPPY_PATH_ANSWERS,
     format_transcript,
@@ -60,13 +60,13 @@ async def test_golden_transcript_phase1_happy_path(db):
 
     with (
         patch(
-            "app.services.conversation.send_whatsapp_message",
+            "app.services.messaging.messaging.send_whatsapp_message",
             new_callable=AsyncMock,
             side_effect=capturing_send,
         ),
-        patch("app.services.tour_service.is_city_on_tour", return_value=True),
-        patch("app.services.tour_service.closest_upcoming_city", return_value=None),
-        patch("app.services.handover_service.should_handover", return_value=(False, None)),
+        patch("app.services.conversation.tour_service.is_city_on_tour", return_value=True),
+        patch("app.services.conversation.tour_service.closest_upcoming_city", return_value=None),
+        patch("app.services.conversation.handover_service.should_handover", return_value=(False, None)),
     ):
         # 1) Initial message -> welcome + first question
         user_messages.append("Hi, I'd like to book a tattoo")
@@ -149,13 +149,13 @@ async def test_golden_transcript_repair_once_flow(db):
 
     with (
         patch(
-            "app.services.conversation.send_whatsapp_message",
+            "app.services.messaging.messaging.send_whatsapp_message",
             new_callable=AsyncMock,
             side_effect=capturing_send,
         ),
-        patch("app.services.tour_service.is_city_on_tour", return_value=True),
-        patch("app.services.tour_service.closest_upcoming_city", return_value=None),
-        patch("app.services.handover_service.should_handover", return_value=(False, None)),
+        patch("app.services.conversation.tour_service.is_city_on_tour", return_value=True),
+        patch("app.services.conversation.tour_service.closest_upcoming_city", return_value=None),
+        patch("app.services.conversation.handover_service.should_handover", return_value=(False, None)),
     ):
         # 1) Initial -> welcome + first question
         user_messages.append("Hi, I want a tattoo")
@@ -259,13 +259,13 @@ async def test_golden_transcript_handover_cooldown_and_continue_flow(db):
 
     with (
         patch(
-            "app.services.conversation.send_whatsapp_message",
+            "app.services.messaging.messaging.send_whatsapp_message",
             new_callable=AsyncMock,
             side_effect=capturing_send,
         ),
-        patch("app.services.tour_service.is_city_on_tour", return_value=True),
-        patch("app.services.tour_service.closest_upcoming_city", return_value=None),
-        patch("app.services.handover_service.should_handover", return_value=(False, None)),
+        patch("app.services.conversation.tour_service.is_city_on_tour", return_value=True),
+        patch("app.services.conversation.tour_service.closest_upcoming_city", return_value=None),
+        patch("app.services.conversation.handover_service.should_handover", return_value=(False, None)),
     ):
         # 1) Initial -> welcome + first question (step 0)
         user_messages.append("Hi")
@@ -360,13 +360,13 @@ async def test_golden_transcript_media_wrong_step_ack_and_reprompt_flow(db):
 
     with (
         patch(
-            "app.services.conversation.send_whatsapp_message",
+            "app.services.messaging.messaging.send_whatsapp_message",
             new_callable=AsyncMock,
             side_effect=capturing_send,
         ),
-        patch("app.services.tour_service.is_city_on_tour", return_value=True),
-        patch("app.services.tour_service.closest_upcoming_city", return_value=None),
-        patch("app.services.handover_service.should_handover", return_value=(False, None)),
+        patch("app.services.conversation.tour_service.is_city_on_tour", return_value=True),
+        patch("app.services.conversation.tour_service.closest_upcoming_city", return_value=None),
+        patch("app.services.conversation.handover_service.should_handover", return_value=(False, None)),
     ):
         # 1) Initial -> welcome + first question (step 0)
         user_messages.append("Hi")
@@ -450,13 +450,13 @@ async def test_golden_transcript_multi_answer_bundle_reprompts_and_no_advance(db
 
     with (
         patch(
-            "app.services.conversation.send_whatsapp_message",
+            "app.services.messaging.messaging.send_whatsapp_message",
             new_callable=AsyncMock,
             side_effect=capturing_send,
         ),
-        patch("app.services.tour_service.is_city_on_tour", return_value=True),
-        patch("app.services.tour_service.closest_upcoming_city", return_value=None),
-        patch("app.services.handover_service.should_handover", return_value=(False, None)),
+        patch("app.services.conversation.tour_service.is_city_on_tour", return_value=True),
+        patch("app.services.conversation.tour_service.closest_upcoming_city", return_value=None),
+        patch("app.services.conversation.handover_service.should_handover", return_value=(False, None)),
     ):
         # 1) Hi -> welcome + Q0
         user_messages.append("Hi")
@@ -545,7 +545,7 @@ async def test_golden_transcript_outside_24h_template_then_resume(db):
     """
     from datetime import UTC, datetime, timedelta
 
-    from app.services.whatsapp_templates import TEMPLATE_NEXT_STEPS_REPLY_TO_CONTINUE
+    from app.services.messaging.whatsapp_templates import TEMPLATE_NEXT_STEPS_REPLY_TO_CONTINUE
 
     bot_messages: list[str] = []
     wa_from = "447700123461"
@@ -573,18 +573,18 @@ async def test_golden_transcript_outside_24h_template_then_resume(db):
 
     with (
         patch(
-            "app.services.conversation.send_whatsapp_message",
+            "app.services.messaging.messaging.send_whatsapp_message",
             new_callable=AsyncMock,
             side_effect=capturing_send,
         ),
         patch(
-            "app.services.whatsapp_window.send_template_message",
+            "app.services.messaging.whatsapp_window.send_template_message",
             new_callable=AsyncMock,
             side_effect=capturing_template_send,
         ),
-        patch("app.services.tour_service.is_city_on_tour", return_value=True),
-        patch("app.services.tour_service.closest_upcoming_city", return_value=None),
-        patch("app.services.handover_service.should_handover", return_value=(False, None)),
+        patch("app.services.conversation.tour_service.is_city_on_tour", return_value=True),
+        patch("app.services.conversation.tour_service.closest_upcoming_city", return_value=None),
+        patch("app.services.conversation.handover_service.should_handover", return_value=(False, None)),
     ):
         # 1) Hi -> welcome + Q0
         user_messages.append("Hi")
@@ -695,13 +695,13 @@ async def test_golden_transcript_multi_answer_single_message_one_at_a_time(db):
 
     with (
         patch(
-            "app.services.conversation.send_whatsapp_message",
+            "app.services.messaging.messaging.send_whatsapp_message",
             new_callable=AsyncMock,
             side_effect=capturing_send,
         ),
-        patch("app.services.tour_service.is_city_on_tour", return_value=True),
-        patch("app.services.tour_service.closest_upcoming_city", return_value=None),
-        patch("app.services.handover_service.should_handover", return_value=(False, None)),
+        patch("app.services.conversation.tour_service.is_city_on_tour", return_value=True),
+        patch("app.services.conversation.tour_service.closest_upcoming_city", return_value=None),
+        patch("app.services.conversation.handover_service.should_handover", return_value=(False, None)),
     ):
         # 1) Hi -> welcome + Q0 (idea)
         user_messages.append("Hi")
@@ -744,7 +744,7 @@ async def test_golden_transcript_multi_answer_single_message_one_at_a_time(db):
             f"Reprompt must include current question text 'What tattoo do you want?'.\n\n{transcript}"
         )
         # Snapshot: message must come from copy/YAML key (one_at_a_time_reprompt)
-        from app.services.message_composer import compose_message
+        from app.services.messaging.message_composer import compose_message
 
         canonical = compose_message(
             "ONE_AT_A_TIME_REPROMPT",
@@ -793,7 +793,7 @@ async def test_golden_transcript_user_goes_quiet_then_returns_later(db):
     """
     from datetime import UTC, datetime, timedelta
 
-    from app.services.reminders import check_and_mark_abandoned
+    from app.services.messaging.reminders import check_and_mark_abandoned
 
     bot_messages: list[str] = []
     wa_from = "447700123463"
@@ -807,13 +807,13 @@ async def test_golden_transcript_user_goes_quiet_then_returns_later(db):
 
     with (
         patch(
-            "app.services.conversation.send_whatsapp_message",
+            "app.services.messaging.messaging.send_whatsapp_message",
             new_callable=AsyncMock,
             side_effect=capturing_send,
         ),
-        patch("app.services.tour_service.is_city_on_tour", return_value=True),
-        patch("app.services.tour_service.closest_upcoming_city", return_value=None),
-        patch("app.services.handover_service.should_handover", return_value=(False, None)),
+        patch("app.services.conversation.tour_service.is_city_on_tour", return_value=True),
+        patch("app.services.conversation.tour_service.closest_upcoming_city", return_value=None),
+        patch("app.services.conversation.handover_service.should_handover", return_value=(False, None)),
     ):
         # 1) Hi -> welcome + Q0
         user_messages.append("Hi")
@@ -928,13 +928,13 @@ async def test_golden_transcript_dimensions_accepts_10x15cm_currency_advances_to
 
     with (
         patch(
-            "app.services.conversation.send_whatsapp_message",
+            "app.services.messaging.messaging.send_whatsapp_message",
             new_callable=AsyncMock,
             side_effect=capturing_send,
         ),
-        patch("app.services.tour_service.is_city_on_tour", return_value=True),
-        patch("app.services.tour_service.closest_upcoming_city", return_value=None),
-        patch("app.services.handover_service.should_handover", return_value=(False, None)),
+        patch("app.services.conversation.tour_service.is_city_on_tour", return_value=True),
+        patch("app.services.conversation.tour_service.closest_upcoming_city", return_value=None),
+        patch("app.services.conversation.handover_service.should_handover", return_value=(False, None)),
     ):
         user_messages.append("Hi")
         n_bot_before = len(bot_messages)
@@ -1009,13 +1009,13 @@ async def test_golden_transcript_reference_images_accepts_realism_at_advances_to
 
     with (
         patch(
-            "app.services.conversation.send_whatsapp_message",
+            "app.services.messaging.messaging.send_whatsapp_message",
             new_callable=AsyncMock,
             side_effect=capturing_send,
         ),
-        patch("app.services.tour_service.is_city_on_tour", return_value=True),
-        patch("app.services.tour_service.closest_upcoming_city", return_value=None),
-        patch("app.services.handover_service.should_handover", return_value=(False, None)),
+        patch("app.services.conversation.tour_service.is_city_on_tour", return_value=True),
+        patch("app.services.conversation.tour_service.closest_upcoming_city", return_value=None),
+        patch("app.services.conversation.handover_service.should_handover", return_value=(False, None)),
     ):
         user_messages.append("Hi")
         await handle_inbound_message(db, lead, user_messages[-1], dry_run=True)
@@ -1065,7 +1065,7 @@ async def test_restart_then_new_answers_override_old_answers_in_summary(db):
     """
     from datetime import UTC, datetime, timedelta
 
-    from app.services.reminders import check_and_mark_abandoned
+    from app.services.messaging.reminders import check_and_mark_abandoned
 
     bot_messages: list[str] = []
     wa_from = "447700123466"
@@ -1079,13 +1079,13 @@ async def test_restart_then_new_answers_override_old_answers_in_summary(db):
 
     with (
         patch(
-            "app.services.conversation.send_whatsapp_message",
+            "app.services.messaging.messaging.send_whatsapp_message",
             new_callable=AsyncMock,
             side_effect=capturing_send,
         ),
-        patch("app.services.tour_service.is_city_on_tour", return_value=True),
-        patch("app.services.tour_service.closest_upcoming_city", return_value=None),
-        patch("app.services.handover_service.should_handover", return_value=(False, None)),
+        patch("app.services.conversation.tour_service.is_city_on_tour", return_value=True),
+        patch("app.services.conversation.tour_service.closest_upcoming_city", return_value=None),
+        patch("app.services.conversation.handover_service.should_handover", return_value=(False, None)),
     ):
         # 1) Hi -> Q0
         user_messages.append("Hi")

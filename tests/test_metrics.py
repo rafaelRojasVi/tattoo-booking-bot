@@ -2,7 +2,7 @@
 Tests for metrics and monitoring.
 """
 
-from app.services.metrics import (
+from app.services.metrics.metrics import (
     get_metrics,
     get_metrics_summary,
     record_duplicate_event,

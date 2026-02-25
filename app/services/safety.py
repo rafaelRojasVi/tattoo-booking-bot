@@ -16,7 +16,14 @@ from sqlalchemy.orm import Session
 
 from app.constants.event_types import EVENT_ATOMIC_UPDATE_CONFLICT
 from app.constants.providers import PROVIDER_STRIPE
+from app.db.helpers import commit_and_refresh
 from app.db.models import ActionToken, Lead, ProcessedMessage
+from app.services.action_tokens import (
+    ERR_ALREADY_USED,
+    ERR_INVALID_TOKEN,
+    _validate_action_token_checks,
+)
+from app.services.leads import get_lead_or_none
 
 logger = logging.getLogger(__name__)
 
@@ -52,13 +59,13 @@ def update_lead_status_if_matches(
 
     if getattr(result, "rowcount", 0) == 0:
         # Either lead not found or status didn't match
-        lead = db.get(Lead, lead_id)
+        lead = get_lead_or_none(db, lead_id)
         if not lead:
             logger.warning(f"Lead {lead_id} not found for status update")
             return False, None
         else:
             # Record failed atomic update for monitoring
-            from app.services.metrics import record_failed_atomic_update
+            from app.services.metrics.metrics import record_failed_atomic_update
 
             record_failed_atomic_update(
                 operation="update_lead_status",
@@ -71,7 +78,7 @@ def update_lead_status_if_matches(
             )
 
             # Log system event for atomic update conflict
-            from app.services.system_event_service import warn
+            from app.services.metrics.system_event_service import warn
 
             warn(
                 db=db,
@@ -88,7 +95,7 @@ def update_lead_status_if_matches(
             return False, lead
 
     # Refresh and return updated lead
-    lead = db.get(Lead, lead_id)
+    lead = get_lead_or_none(db, lead_id)
     if not lead:
         return False, None
     db.refresh(lead)
@@ -120,7 +127,7 @@ def check_processed_event(
     if existing:
         logger.info(f"Event {event_id} already processed at {existing.processed_at}")
         # Record duplicate event for monitoring
-        from app.services.metrics import record_duplicate_event
+        from app.services.metrics.metrics import record_duplicate_event
 
         record_duplicate_event(event_type=existing.event_type or "unknown", event_id=event_id)
         return True, existing
@@ -162,8 +169,7 @@ def record_processed_event(
             lead_id=lead_id,
         )
         db.add(processed)
-        db.commit()
-        db.refresh(processed)
+        commit_and_refresh(db, processed)
         return processed
     except IntegrityError:
         # Race condition: another request processed it between check and insert
@@ -249,36 +255,17 @@ def validate_and_mark_token_used_atomic(
         stmt_select = select(ActionToken).where(ActionToken.token == token)
         action_token = db.execute(stmt_select).scalar_one_or_none()
         if not action_token:
-            return None, "Invalid token"
+            return None, ERR_INVALID_TOKEN
         if action_token.used:
-            return None, "This action link has already been used"
+            return None, ERR_ALREADY_USED
         # Shouldn't reach here, but handle gracefully
         return None, "Token validation failed"
 
-    # Token was successfully marked as used, now validate it
+    # Token was successfully marked as used, now validate expiry/lead/status
     stmt_select = select(ActionToken).where(ActionToken.token == token)
     action_token = db.execute(stmt_select).scalar_one_or_none()
 
     if not action_token:
         return None, "Token not found after marking as used"
 
-    # Check expiry
-    from app.utils.datetime_utils import dt_replace_utc
-
-    now = datetime.now(UTC)
-    expires = dt_replace_utc(action_token.expires_at)
-    if expires is None or now > expires:
-        return None, "This action link has expired"
-
-    # Check lead status
-    lead = db.get(Lead, action_token.lead_id)
-    if not lead:
-        return None, "Lead not found"
-
-    if lead.status != action_token.required_status:
-        return (
-            None,
-            f"Cannot perform this action. Lead is in status '{lead.status}', but requires '{action_token.required_status}'",
-        )
-
-    return action_token, None
+    return _validate_action_token_checks(db, action_token)

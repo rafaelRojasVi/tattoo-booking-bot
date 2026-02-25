@@ -4,7 +4,7 @@ Tests for message composer - variant selection and rendering.
 
 import pytest
 
-from app.services.message_composer import MessageComposer, render_message, reset_cache
+from app.services.messaging.message_composer import MessageComposer, render_message, reset_cache
 
 
 def _write_copy(copy_file, content: str) -> None:
@@ -30,7 +30,7 @@ test_welcome:
 """
     )
     # Mock the copy directory before creating composer
-    import app.services.message_composer as mc
+    import app.services.messaging.message_composer as mc
 
     original_dir = mc.COPY_DIR
     mc.COPY_DIR = copy_file.parent
@@ -53,7 +53,7 @@ test_message:
   - "Variant 3"
 """
     )
-    import app.services.message_composer as mc
+    import app.services.messaging.message_composer as mc
 
     original_dir = mc.COPY_DIR
     mc.COPY_DIR = copy_file.parent
@@ -82,7 +82,7 @@ test_template:
   - "Hello {name}! Your budget is £{budget}."
 """,
     )
-    import app.services.message_composer as mc
+    import app.services.messaging.message_composer as mc
 
     reset_cache()
     original_dir = mc.COPY_DIR
@@ -99,7 +99,7 @@ test_template:
 def test_message_composer_missing_key_returns_placeholder(copy_file, monkeypatch):
     """Test that missing keys return placeholder."""
     copy_file.write_text("other_key: 'test'")
-    import app.services.message_composer as mc
+    import app.services.messaging.message_composer as mc
 
     original_dir = mc.COPY_DIR
     mc.COPY_DIR = copy_file.parent
@@ -115,7 +115,7 @@ def test_message_composer_missing_key_returns_placeholder(copy_file, monkeypatch
 def test_message_composer_empty_variants_returns_placeholder(copy_file, monkeypatch):
     """Test that empty variant list returns placeholder."""
     copy_file.write_text("empty_key: []")
-    import app.services.message_composer as mc
+    import app.services.messaging.message_composer as mc
 
     original_dir = mc.COPY_DIR
     mc.COPY_DIR = copy_file.parent
@@ -138,7 +138,7 @@ test:
 """
     )
     # Mock the copy directory
-    import app.services.message_composer as mc
+    import app.services.messaging.message_composer as mc
 
     original_dir = mc.COPY_DIR
     mc.COPY_DIR = copy_file.parent
@@ -158,7 +158,7 @@ test_single:
   "Just one variant"
 """
     )
-    import app.services.message_composer as mc
+    import app.services.messaging.message_composer as mc
 
     original_dir = mc.COPY_DIR
     mc.COPY_DIR = copy_file.parent
@@ -181,7 +181,7 @@ test_distribution:
   - "Variant 3"
 """
     )
-    import app.services.message_composer as mc
+    import app.services.messaging.message_composer as mc
 
     original_dir = mc.COPY_DIR
     mc.COPY_DIR = copy_file.parent
@@ -222,7 +222,7 @@ test_missing_var:
   - "Hello {name}! Budget: £{budget}."
 """,
     )
-    import app.services.message_composer as mc
+    import app.services.messaging.message_composer as mc
 
     reset_cache()
     original_dir = mc.COPY_DIR
@@ -249,7 +249,7 @@ test_price:
   - "Amount: £{amount:.2f}"
 """,
     )
-    import app.services.message_composer as mc
+    import app.services.messaging.message_composer as mc
 
     reset_cache()
     original_dir = mc.COPY_DIR

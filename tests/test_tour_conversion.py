@@ -34,18 +34,18 @@ async def test_city_not_on_tour_offers_conversion(db):
     # Patch both: conversation uses module-level import; _maybe_send_confirmation_summary imports from messaging
     mock_whatsapp_fn = AsyncMock(return_value={"id": "wamock_123", "status": "sent"})
     with (
-        patch("app.services.conversation.send_whatsapp_message", mock_whatsapp_fn),
-        patch("app.services.messaging.send_whatsapp_message", mock_whatsapp_fn),
-        patch("app.services.tour_service.is_city_on_tour", return_value=False),
-        patch("app.services.tour_service.closest_upcoming_city") as mock_closest,
-        patch("app.services.handover_service.should_handover", return_value=(False, None)),
+        patch("app.services.messaging.messaging.send_whatsapp_message", mock_whatsapp_fn),
+        patch("app.services.messaging.messaging.send_whatsapp_message", mock_whatsapp_fn),
+        patch("app.services.conversation.tour_service.is_city_on_tour", return_value=False),
+        patch("app.services.conversation.tour_service.closest_upcoming_city") as mock_closest,
+        patch("app.services.conversation.handover_service.should_handover", return_value=(False, None)),
     ):
         mock_whatsapp = mock_whatsapp_fn
 
         # Mock closest city to return a tour stop
         from datetime import datetime, timedelta
 
-        from app.services.tour_service import TourStop
+        from app.services.conversation.tour_service import TourStop
 
         mock_tour_stop = TourStop(
             city="Manchester",
@@ -99,7 +99,7 @@ async def test_tour_offer_declined_waitlisted(db):
     wa_from = "8888888888"
 
     with patch(
-        "app.services.conversation.send_whatsapp_message", new_callable=AsyncMock
+        "app.services.messaging.messaging.send_whatsapp_message", new_callable=AsyncMock
     ) as mock_whatsapp:
         mock_whatsapp.return_value = {"id": "wamock_123", "status": "sent"}
 
@@ -134,10 +134,10 @@ async def test_tour_offer_accepted_continues(db):
 
     with (
         patch(
-            "app.services.conversation.send_whatsapp_message", new_callable=AsyncMock
+            "app.services.messaging.messaging.send_whatsapp_message", new_callable=AsyncMock
         ) as mock_whatsapp,
-        patch("app.services.tour_service.is_city_on_tour", return_value=True),
-        patch("app.services.handover_service.should_handover", return_value=(False, None)),
+        patch("app.services.conversation.tour_service.is_city_on_tour", return_value=True),
+        patch("app.services.conversation.handover_service.should_handover", return_value=(False, None)),
     ):
         mock_whatsapp.return_value = {"id": "wamock_123", "status": "sent"}
 

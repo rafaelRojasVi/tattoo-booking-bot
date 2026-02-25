@@ -4,13 +4,13 @@ Tests for pricing service - price range calculations.
 Tests all region/category combinations to ensure correct price calculations.
 """
 
-from app.services.estimation_service import Category
-from app.services.pricing_service import (
+from app.services.parsing.estimation_service import Category
+from app.services.parsing.pricing_service import (
     PriceRange,
     calculate_price_range,
     get_category_time_range,
 )
-from app.services.region_service import RegionBucket
+from app.services.parsing.region_service import RegionBucket
 
 
 def test_get_category_time_range_small():

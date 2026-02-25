@@ -17,6 +17,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
+from app.db.helpers import commit_and_refresh
 from app.db.models import OutboxMessage
 
 logger = logging.getLogger(__name__)
@@ -53,8 +54,7 @@ def write_outbox(
         attempts=0,
     )
     db.add(outbox)
-    db.commit()
-    db.refresh(outbox)
+    commit_and_refresh(db, outbox)
     return outbox
 
 
@@ -115,8 +115,8 @@ def retry_due_outbox_rows(db: Session, limit: int = 50) -> dict:
         try:
             import asyncio
 
-            from app.services.messaging import send_whatsapp_message
-            from app.services.whatsapp_window import send_template_message
+            from app.services.messaging.messaging import send_whatsapp_message
+            from app.services.messaging.whatsapp_window import send_template_message
 
             loop = asyncio.get_event_loop()
             if template_name:

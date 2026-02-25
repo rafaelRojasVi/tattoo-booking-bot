@@ -9,11 +9,11 @@ import pytest
 
 from app.core.config import settings
 from app.db.models import Lead
-from app.services.artist_notifications import notify_artist
-from app.services.calendar_service import send_slot_suggestions_to_client
+from app.services.integrations.artist_notifications import notify_artist
+from app.services.integrations.calendar_service import send_slot_suggestions_to_client
 from app.services.conversation import handle_inbound_message
-from app.services.reminders import check_and_send_qualifying_reminder
-from app.services.sheets import log_lead_to_sheets
+from app.services.messaging.reminders import check_and_send_qualifying_reminder
+from app.services.integrations.sheets import log_lead_to_sheets
 
 
 def test_sheets_disabled_by_feature_flag(db):
@@ -46,7 +46,7 @@ def test_calendar_disabled_by_feature_flag(db):
     db.refresh(lead)
 
     with patch.object(settings, "feature_calendar_enabled", False):
-        with patch("app.services.calendar_service.get_available_slots") as mock_slots:
+        with patch("app.services.integrations.calendar_service.get_available_slots") as mock_slots:
             result = asyncio.run(send_slot_suggestions_to_client(db, lead, dry_run=True))
             # Should return False (not sent) and not call get_available_slots
             assert result is False
@@ -115,11 +115,11 @@ async def test_panic_mode_pauses_automation(db):
     with patch.object(settings, "feature_panic_mode_enabled", True):
         with patch.object(settings, "feature_notifications_enabled", True):
             with patch(
-                "app.services.artist_notifications.notify_artist", new_callable=AsyncMock
+                "app.services.integrations.artist_notifications.notify_artist", new_callable=AsyncMock
             ) as mock_notify:
                 mock_notify.return_value = True
                 with patch(
-                    "app.services.messaging.send_whatsapp_message", new_callable=AsyncMock
+                    "app.services.messaging.messaging.send_whatsapp_message", new_callable=AsyncMock
                 ) as mock_send:
                     result = await handle_inbound_message(
                         db=db,

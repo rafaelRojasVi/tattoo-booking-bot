@@ -4,7 +4,7 @@ Tests for Outbox-lite (feature-flagged).
 
 from app.core.config import settings
 from app.db.models import Lead
-from app.services.outbox_service import mark_outbox_failed, mark_outbox_sent, write_outbox
+from app.services.messaging.outbox_service import mark_outbox_failed, mark_outbox_sent, write_outbox
 
 
 def test_write_outbox_returns_none_when_disabled(db, monkeypatch):

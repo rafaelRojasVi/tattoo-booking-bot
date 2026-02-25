@@ -16,7 +16,7 @@ from app.services.conversation import (
 
 def _reset_message_composer_cache():
     """Reset global composer so real app/copy is loaded (other tests may have cached temp copy)."""
-    import app.services.message_composer as mc
+    import app.services.messaging.message_composer as mc
 
     mc._composer = None
 
@@ -87,7 +87,7 @@ async def test_opt_out_variations(db):
 @pytest.mark.asyncio
 async def test_opted_out_lead_blocks_messages(db):
     """Test that opted-out leads don't receive automated messages."""
-    from app.services.whatsapp_window import send_with_window_check
+    from app.services.messaging.whatsapp_window import send_with_window_check
 
     lead = Lead(wa_from="1234567890", status=STATUS_OPTOUT)
     db.add(lead)
@@ -152,7 +152,7 @@ async def test_reminder_skips_opted_out(db):
     """Test that reminders skip opted-out leads."""
     from datetime import datetime, timedelta
 
-    from app.services.reminders import check_and_send_qualifying_reminder
+    from app.services.messaging.reminders import check_and_send_qualifying_reminder
 
     lead = Lead(
         wa_from="1234567890",

@@ -13,7 +13,7 @@ All main entry points of the Tattoo Booking Bot API, with code. Routes are under
 async def lifespan(app: FastAPI):
     """Startup and shutdown lifecycle."""
     from app.core.config import settings
-    from app.services.template_check import startup_check_templates
+    from app.services.messaging.template_check import startup_check_templates
 
     required_settings = [
         "database_url",
@@ -56,7 +56,7 @@ app.add_middleware(CorrelationIdMiddleware)
 
 @app.get("/health")
 def health():
-    from app.services.template_check import REQUIRED_TEMPLATES
+    from app.services.messaging.template_check import REQUIRED_TEMPLATES
     return {
         "ok": True,
         "templates_configured": REQUIRED_TEMPLATES,
@@ -288,7 +288,7 @@ def list_outbox_messages(status: str | None = None, limit: int = 50, db: Session
 
 @router.post("/outbox/retry")
 def retry_outbox_messages(limit: int = 50, db=..., _auth=...):
-    from app.services.outbox_service import retry_due_outbox_rows
+    from app.services.messaging.outbox_service import retry_due_outbox_rows
     results = retry_due_outbox_rows(db, limit=limit)
     return {"outbox_retry": results}
 ```

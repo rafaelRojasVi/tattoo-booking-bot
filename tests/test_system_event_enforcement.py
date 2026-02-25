@@ -3,7 +3,7 @@ Enforce that SystemEvent is only instantiated via the log_event helper.
 
 SystemEvent(...) must only appear in:
 - app/db/models.py (model definition)
-- app/services/system_event_service.py (the single creation path)
+- app/services/metrics/system_event_service.py (the single creation path)
 
 All other code must use log_event, info, warn, or error from system_event_service.
 """
@@ -15,7 +15,7 @@ import pytest
 # Files allowed to contain SystemEvent( instantiation
 ALLOWED_FILES = {
     "app/db/models.py",
-    "app/services/system_event_service.py",
+    "app/services/metrics/system_event_service.py",
 }
 
 
@@ -54,7 +54,7 @@ def _collect_violations() -> list[tuple[str, int, str]]:
 
 def test_no_direct_system_event_creation_outside_allowlist():
     """
-    Fail if SystemEvent(...) is used outside app/db/models.py and app/services/system_event_service.py.
+    Fail if SystemEvent(...) is used outside app/db/models.py and app/services/metrics/system_event_service.py.
 
     All event logging must go through log_event/info/warn/error to ensure consistent payload shape.
     """
@@ -62,7 +62,7 @@ def test_no_direct_system_event_creation_outside_allowlist():
     if violations:
         msg_lines = [
             "SystemEvent(...) must only be used in app/db/models.py and app/services/system_event_service.py.",
-            "Use log_event, info, warn, or error from app.services.system_event_service instead.",
+            "Use log_event, info, warn, or error from app.services.metrics.system_event_service instead.",
             "",
             "Violations:",
         ]

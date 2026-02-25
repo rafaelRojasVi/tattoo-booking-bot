@@ -124,7 +124,7 @@ def test_outbox_retry_limit_50_only_50_attempted(
 
     # Mock send to always fail so we can observe attempts/backoff
     with patch(
-        "app.services.messaging.send_whatsapp_message",
+        "app.services.messaging.messaging.send_whatsapp_message",
         side_effect=Exception("Mock send failure"),
     ):
         response = client.post(
@@ -186,7 +186,7 @@ def test_outbox_retry_backoff_increments_next_retry_at(
     prev_next_retry = msg.next_retry_at
 
     with patch(
-        "app.services.messaging.send_whatsapp_message",
+        "app.services.messaging.messaging.send_whatsapp_message",
         side_effect=Exception("Mock failure"),
     ):
         client.post("/admin/outbox/retry?limit=1", headers=admin_headers)

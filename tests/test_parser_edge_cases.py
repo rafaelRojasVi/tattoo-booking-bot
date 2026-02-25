@@ -14,9 +14,9 @@ Best ROI tests (from checklist) are included and named explicitly.
 
 import pytest
 
-from app.services.estimation_service import parse_budget_from_text, parse_dimensions
-from app.services.location_parsing import is_valid_location, parse_location_input
-from app.services.slot_parsing import parse_slot_selection_logged
+from app.services.parsing.estimation_service import parse_budget_from_text, parse_dimensions
+from app.services.parsing.location_parsing import is_valid_location, parse_location_input
+from app.services.parsing.slot_parsing import parse_slot_selection_logged
 
 # ---------------------------------------------------------------------------
 # Budget parsing (parse_budget_from_text)
@@ -101,7 +101,7 @@ class TestBudgetMinimumInConversation:
         """At budget step, '4' or '£10' should trigger repair (not advance)."""
         from app.db.models import Lead, LeadAnswer
         from app.services.conversation import handle_inbound_message
-        from app.services.questions import CONSULTATION_QUESTIONS
+        from app.services.conversation.questions import CONSULTATION_QUESTIONS
 
         lead = Lead(wa_from="1234567890", status="QUALIFYING", current_step=7)  # budget step
         db.add(lead)
@@ -433,7 +433,7 @@ class TestMediaEdgeCases:
         """Media at reference_images step → no reprompt, accept."""
         from app.db.models import Lead
         from app.services.conversation import STATUS_QUALIFYING, handle_inbound_message
-        from app.services.questions import CONSULTATION_QUESTIONS
+        from app.services.conversation.questions import CONSULTATION_QUESTIONS
 
         ref_idx = next(
             i for i, q in enumerate(CONSULTATION_QUESTIONS) if q.key == "reference_images"

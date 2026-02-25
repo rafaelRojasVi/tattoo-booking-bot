@@ -3,7 +3,7 @@ Test Phase 1 summary formatting.
 """
 
 from app.db.models import Lead, LeadAnswer
-from app.services.summary import (
+from app.services.conversation.summary import (
     extract_phase1_summary_context,
     format_summary_message,
 )

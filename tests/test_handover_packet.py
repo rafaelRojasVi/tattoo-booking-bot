@@ -6,7 +6,7 @@ from datetime import UTC, datetime
 
 from app.db.models import Lead, LeadAnswer
 from app.services.conversation import STATUS_NEEDS_ARTIST_REPLY
-from app.services.handover_packet import build_handover_packet
+from app.services.conversation.handover_packet import build_handover_packet
 
 
 def test_build_handover_packet_basic(db):

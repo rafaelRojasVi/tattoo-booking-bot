@@ -2,7 +2,7 @@
 Tests for updated question set matching v1.4 proposal.
 """
 
-from app.services.questions import (
+from app.services.conversation.questions import (
     CONSULTATION_QUESTIONS,
     get_question_by_index,
     get_total_questions,

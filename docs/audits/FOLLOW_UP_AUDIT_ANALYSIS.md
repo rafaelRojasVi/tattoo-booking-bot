@@ -115,7 +115,7 @@
 - **Timing**: Use `not_due` for "not yet" and `already_*` for "already done".
 - **Reprompts**: Use `*_reprompt` suffix: `wrong_field_reprompt`, `one_at_a_time_reprompt`, `attachment_ack_reprompt`.
 - **Success**: Use `sent` for reminders; `question_sent`, `completed` for conversation.
-- Document in a single reference (e.g. `docs/STATUS_STRINGS.md`) for contract and log traceability.
+- Document in a single reference (e.g. [docs/architecture/STATUS_STRINGS.md](../architecture/STATUS_STRINGS.md)) for contract and log traceability.
 
 ---
 

@@ -12,6 +12,7 @@ from datetime import UTC, datetime, timedelta
 from sqlalchemy import delete
 from sqlalchemy.orm import Session
 
+from app.db.helpers import commit_and_refresh
 from app.db.models import SystemEvent
 
 logger = logging.getLogger(__name__)
@@ -73,8 +74,7 @@ def log_event(
         payload=normalized if normalized else None,
     )
     db.add(event)
-    db.commit()
-    db.refresh(event)
+    commit_and_refresh(db, event)
     return event
 
 

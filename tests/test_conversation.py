@@ -10,7 +10,7 @@ from app.services.conversation import (
     get_lead_summary,
     handle_inbound_message,
 )
-from app.services.questions import get_total_questions
+from app.services.conversation.questions import get_total_questions
 
 
 @pytest.mark.asyncio
@@ -136,7 +136,7 @@ async def test_complete_qualification_flow(client, db):
     db.refresh(lead)
 
     # Mock tour service to ensure city is on tour
-    with patch("app.services.tour_service.is_city_on_tour", return_value=True):
+    with patch("app.services.conversation.tour_service.is_city_on_tour", return_value=True):
         # Answer last question (timing)
         result = await handle_inbound_message(
             db=db,
@@ -244,7 +244,7 @@ async def test_conversation_dispatch_booked_returns_booked_no_send(db):
     db.commit()
     db.refresh(lead)
     with patch(
-        "app.services.conversation.send_whatsapp_message",
+        "app.services.messaging.messaging.send_whatsapp_message",
         new_callable=AsyncMock,
     ) as mock_send:
         result = await handle_inbound_message(
