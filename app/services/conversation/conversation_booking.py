@@ -14,15 +14,16 @@ from app.constants.statuses import (
     STATUS_QUALIFYING,
     STATUS_WAITLISTED,
 )
+from app.db.helpers import commit_and_refresh
 from app.db.models import Lead
-from app.services.conversation_policy import (
+from app.services.conversation.conversation_policy import (
     handover_hold_cooldown_elapsed,
     is_opt_out_message,
     normalize_message,
 )
-from app.services.questions import get_question_by_index
-from app.services.sheets import log_lead_to_sheets
-from app.services.state_machine import transition
+from app.services.conversation.questions import get_question_by_index
+from app.services.conversation.state_machine import transition
+from app.services.integrations.sheets import log_lead_to_sheets
 from app.utils.datetime_utils import dt_replace_utc
 
 # Rate-limit holding message during handover (avoid spamming client while artist replies)
@@ -31,9 +32,9 @@ HANDOVER_HOLD_REPLY_COOLDOWN_HOURS = 6
 
 def _get_send_whatsapp():
     """Late-binding so tests patching conversation.send_whatsapp_message take effect."""
-    from app.services.conversation import send_whatsapp_message
+    from app.services.conversation.conversation_deps import get_send_whatsapp_message
 
-    return send_whatsapp_message
+    return get_send_whatsapp_message()
 
 
 async def _handle_booking_pending(
@@ -49,7 +50,7 @@ async def _handle_booking_pending(
     # Check if client is selecting a slot
     if lead.suggested_slots_json:
         # Convert JSON slots back to datetime objects for parsing
-        from app.services.slot_parsing import parse_slot_selection_logged
+        from app.services.parsing.slot_parsing import parse_slot_selection_logged
 
         slots = []
         for slot_json in lead.suggested_slots_json:
@@ -74,7 +75,7 @@ async def _handle_booking_pending(
             slot_available = True  # Default: trust stored slots
 
             from app.core.config import settings
-            from app.services.calendar_service import get_available_slots
+            from app.services.integrations.calendar_service import get_available_slots
 
             if settings.feature_calendar_enabled and slots:
                 # Re-check availability for the selected time window
@@ -104,7 +105,7 @@ async def _handle_booking_pending(
 
                 if not slot_available:
                     # Slot no longer available - trigger fallback
-                    from app.services.system_event_service import warn
+                    from app.services.metrics.system_event_service import warn
 
                     warn(
                         db=db,
@@ -118,7 +119,7 @@ async def _handle_booking_pending(
                     )
 
                     # Trigger fallback: collect time windows or ask for another option
-                    from app.services.message_composer import render_message
+                    from app.services.messaging.message_composer import render_message
 
                     fallback_msg = render_message(
                         "slot_unavailable_fallback",
@@ -147,7 +148,7 @@ async def _handle_booking_pending(
             db.commit()
 
             # Send confirmation to client
-            from app.services.message_composer import render_message
+            from app.services.messaging.message_composer import render_message
 
             confirmation_msg = render_message(
                 "confirmation_slot",
@@ -163,7 +164,7 @@ async def _handle_booking_pending(
             db.commit()
 
             # Notify artist that slot was selected
-            from app.services.artist_notifications import notify_artist_slot_selected
+            from app.services.integrations.artist_notifications import notify_artist_slot_selected
 
             await notify_artist_slot_selected(
                 db=db,
@@ -181,7 +182,7 @@ async def _handle_booking_pending(
             }
         else:
             # Couldn't parse - send repair message
-            from app.services.parse_repair import (
+            from app.services.parsing.parse_repair import (
                 increment_parse_failure,
                 should_handover_after_failure,
                 trigger_handover_after_parse_failure,
@@ -193,8 +194,8 @@ async def _handle_booking_pending(
                 return await trigger_handover_after_parse_failure(db, lead, "slot", dry_run)
 
             # Send soft repair message (retry_count for short+boundary variant on retry 2)
-            from app.services.message_composer import compose_message, render_message
-            from app.services.parse_repair import get_failure_count
+            from app.services.messaging.message_composer import compose_message, render_message
+            from app.services.parsing.parse_repair import get_failure_count
 
             repair_msg = compose_message(
                 "REPAIR_SLOT",
@@ -216,7 +217,7 @@ async def _handle_booking_pending(
             }
 
     # No slots suggested yet, or just acknowledge
-    from app.services.message_composer import render_message
+    from app.services.messaging.message_composer import render_message
 
     return {
         "status": "booking_pending",
@@ -239,11 +240,10 @@ async def _handle_tour_conversion_offered(
         # Accept tour offer - continue with offered city
         lead.location_city = lead.offered_tour_city
         lead.tour_offer_accepted = True
-        db.commit()
-        db.refresh(lead)
+        commit_and_refresh(db, lead)
         transition(db, lead, STATUS_PENDING_APPROVAL)
 
-        from app.services.message_composer import render_message
+        from app.services.messaging.message_composer import render_message
 
         accept_msg = render_message(
             "tour_accept",
@@ -267,11 +267,10 @@ async def _handle_tour_conversion_offered(
         # Decline - waitlist for requested city
         lead.tour_offer_accepted = False
         lead.waitlisted = True
-        db.commit()
-        db.refresh(lead)
+        commit_and_refresh(db, lead)
         transition(db, lead, STATUS_WAITLISTED)
 
-        from app.services.message_composer import render_message
+        from app.services.messaging.message_composer import render_message
 
         decline_msg = render_message(
             "tour_decline",
@@ -293,7 +292,7 @@ async def _handle_tour_conversion_offered(
         }
     else:
         # Unclear response - ask for clarification
-        from app.services.message_composer import render_message
+        from app.services.messaging.message_composer import render_message
 
         return {
             "status": "tour_offer_pending",
@@ -311,7 +310,7 @@ async def _handle_needs_artist_reply(
     """
     Handle lead in NEEDS_ARTIST_REPLY - opt-out wins, CONTINUE resumes, else holding message.
     """
-    from app.services.conversation_qualifying import _handle_new_lead, _handle_opt_out
+    from app.services.conversation.conversation_qualifying import _handle_new_lead, _handle_opt_out
 
     # Opt-out wins even during handover (STOP/UNSUBSCRIBE must be honored)
     if is_opt_out_message(message_text):
@@ -324,7 +323,7 @@ async def _handle_needs_artist_reply(
         # Continue with current question
         next_question = get_question_by_index(lead.current_step)
         if next_question:
-            from app.services.message_composer import compose_message
+            from app.services.messaging.message_composer import compose_message
 
             continue_msg = compose_message(
                 "ASK_QUESTION",
@@ -347,8 +346,7 @@ async def _handle_needs_artist_reply(
             # No question found - reset to start
             transition(db, lead, STATUS_QUALIFYING)
             lead.current_step = 0
-            db.commit()
-            db.refresh(lead)
+            commit_and_refresh(db, lead)
             return await _handle_new_lead(db, lead, dry_run)
 
     # Handover to artist - bot paused (for any other message)

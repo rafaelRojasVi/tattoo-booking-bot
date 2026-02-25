@@ -16,24 +16,25 @@ from app.constants.statuses import (
     STATUS_TOUR_CONVERSION_OFFERED,
     STATUS_WAITLISTED,
 )
+from app.db.helpers import commit_and_refresh
 from app.db.models import Lead, LeadAnswer
 from app.services.action_tokens import generate_action_tokens_for_lead
-from app.services.conversation_policy import (
+from app.services.conversation.conversation_policy import (
     is_delete_data_request_message,
     is_human_request_message,
     is_opt_out_message,
     is_refund_request_message,
 )
-from app.services.questions import get_question_by_index, is_last_question
-from app.services.sheets import log_lead_to_sheets
-from app.services.state_machine import advance_step_if_at, transition
+from app.services.conversation.questions import get_question_by_index, is_last_question
+from app.services.conversation.state_machine import advance_step_if_at, transition
+from app.services.integrations.sheets import log_lead_to_sheets
 
 
 def _get_send_whatsapp():
     """Late-binding so tests patching conversation.send_whatsapp_message take effect."""
-    from app.services.conversation import send_whatsapp_message
+    from app.services.conversation.conversation_deps import get_send_whatsapp_message
 
-    return send_whatsapp_message
+    return get_send_whatsapp_message()
 
 
 async def _handle_new_lead(
@@ -45,8 +46,7 @@ async def _handle_new_lead(
     # Transition to QUALIFYING (state machine sets qualifying_started_at if not set)
     transition(db, lead, STATUS_QUALIFYING)
     lead.current_step = 0
-    db.commit()
-    db.refresh(lead)
+    commit_and_refresh(db, lead)
 
     # Get first question
     question = get_question_by_index(0)
@@ -57,7 +57,7 @@ async def _handle_new_lead(
         }
 
     # Send welcome message + first question (single message, voice applied)
-    from app.services.message_composer import compose_message
+    from app.services.messaging.message_composer import compose_message
 
     welcome_msg = compose_message(
         "WELCOME",
@@ -104,15 +104,15 @@ async def _handle_qualifying_lead(
         }
 
     # Outside 24h window: send template fallback, do not save or advance
-    from app.services.whatsapp_window import is_within_24h_window
+    from app.services.messaging.whatsapp_window import is_within_24h_window
 
     is_within, _ = is_within_24h_window(lead)
     if not is_within:
-        from app.services.whatsapp_templates import (
+        from app.services.messaging.whatsapp_templates import (
             get_template_for_next_steps,
             get_template_params_next_steps_reply_to_continue,
         )
-        from app.services.whatsapp_window import send_with_window_check
+        from app.services.messaging.whatsapp_window import send_with_window_check
 
         await send_with_window_check(
             db=db,
@@ -132,7 +132,7 @@ async def _handle_qualifying_lead(
     # Attachment at wrong step: if media-only (no caption), ack and reprompt; if caption present, parse it
     if has_media and current_question.key != "reference_images":
         if not (message_text and message_text.strip()):
-            from app.services.message_composer import compose_message
+            from app.services.messaging.message_composer import compose_message
 
             ack_msg = compose_message(
                 "ATTACHMENT_ACK_REPROMPT",
@@ -167,13 +167,13 @@ async def _handle_qualifying_lead(
         return await _handle_delete_data_request(db, lead, dry_run)
 
     # Wrong-field guard: at idea/placement, reject budget-only or dimensions-only
-    from app.services.bundle_guard import (
+    from app.services.messaging.bundle_guard import (
         looks_like_multi_answer_bundle,
         looks_like_wrong_field_single_answer,
     )
 
     if looks_like_wrong_field_single_answer(message_text, current_question.key):
-        from app.services.message_composer import compose_message
+        from app.services.messaging.message_composer import compose_message
 
         wrong_field_msg = compose_message(
             "ONE_AT_A_TIME_REPROMPT",
@@ -198,15 +198,15 @@ async def _handle_qualifying_lead(
     # Exception: if the message is a valid single answer for the current question, skip the guard
     def _is_valid_single_answer_for_current_question() -> bool:
         if current_question.key == "dimensions":
-            from app.services.estimation_service import parse_dimensions
+            from app.services.parsing.estimation_service import parse_dimensions
 
             return parse_dimensions(message_text) is not None
         if current_question.key == "budget":
-            from app.services.estimation_service import parse_budget_from_text
+            from app.services.parsing.estimation_service import parse_budget_from_text
 
             return parse_budget_from_text(message_text) is not None
         if current_question.key == "location_city":
-            from app.services.location_parsing import is_valid_location, parse_location_input
+            from app.services.parsing.location_parsing import is_valid_location, parse_location_input
 
             parsed = parse_location_input(message_text.strip())
             return not parsed["is_flexible"] and is_valid_location(message_text.strip())
@@ -216,7 +216,7 @@ async def _handle_qualifying_lead(
         looks_like_multi_answer_bundle(message_text, current_question_key=current_question.key)
         and not _is_valid_single_answer_for_current_question()
     ):
-        from app.services.message_composer import compose_message
+        from app.services.messaging.message_composer import compose_message
 
         one_at_a_time_msg = compose_message(
             "ONE_AT_A_TIME_REPROMPT",
@@ -238,14 +238,14 @@ async def _handle_qualifying_lead(
         }
 
     # Phase 1: Dynamic handover check (replaces keyword trigger)
-    from app.services.handover_service import get_handover_message, should_handover
+    from app.services.conversation.handover_service import get_handover_message, should_handover
 
     should_handover_flag, handover_reason = should_handover(message_text, lead)
     if should_handover_flag:
         transition(db, lead, STATUS_NEEDS_ARTIST_REPLY, reason=handover_reason)
 
         # Notify artist (idempotent - only notifies on transition)
-        from app.services.artist_notifications import notify_artist_needs_reply
+        from app.services.integrations.artist_notifications import notify_artist_needs_reply
 
         await notify_artist_needs_reply(
             db=db,
@@ -275,12 +275,12 @@ async def _handle_qualifying_lead(
 
     if current_question.key == "dimensions":
         # Try to parse dimensions
-        from app.services.estimation_service import parse_dimensions
+        from app.services.parsing.estimation_service import parse_dimensions
 
         parsed_dims = parse_dimensions(message_text)
         if parsed_dims is None:
             # Parse failed - increment failure count
-            from app.services.parse_repair import (
+            from app.services.parsing.parse_repair import (
                 increment_parse_failure,
                 should_handover_after_failure,
                 trigger_handover_after_parse_failure,
@@ -289,8 +289,8 @@ async def _handle_qualifying_lead(
             increment_parse_failure(db, lead, "dimensions")
             if should_handover_after_failure(lead, "dimensions"):
                 return await trigger_handover_after_parse_failure(db, lead, "dimensions", dry_run)
-            from app.services.message_composer import compose_message
-            from app.services.parse_repair import get_failure_count
+            from app.services.messaging.message_composer import compose_message
+            from app.services.parsing.parse_repair import get_failure_count
 
             repair_message = compose_message(
                 "REPAIR_SIZE",
@@ -299,14 +299,14 @@ async def _handle_qualifying_lead(
             parse_success = False
         else:
             # Parse succeeded - reset failures
-            from app.services.parse_repair import reset_parse_failures
+            from app.services.parsing.parse_repair import reset_parse_failures
 
             reset_parse_failures(db, lead, "dimensions")
 
     elif current_question.key == "budget":
         # Try to parse budget (digits, £400, 400gbp, $500, etc.)
-        from app.services.estimation_service import parse_budget_from_text
-        from app.services.parse_repair import (
+        from app.services.parsing.estimation_service import parse_budget_from_text
+        from app.services.parsing.parse_repair import (
             get_failure_count,
             increment_parse_failure,
             should_handover_after_failure,
@@ -321,7 +321,7 @@ async def _handle_qualifying_lead(
             increment_parse_failure(db, lead, "budget")
             if should_handover_after_failure(lead, "budget"):
                 return await trigger_handover_after_parse_failure(db, lead, "budget", dry_run)
-            from app.services.message_composer import compose_message
+            from app.services.messaging.message_composer import compose_message
 
             repair_message = compose_message(
                 "REPAIR_BUDGET",
@@ -329,14 +329,14 @@ async def _handle_qualifying_lead(
             )
             parse_success = False
         else:
-            from app.services.parse_repair import reset_parse_failures
+            from app.services.parsing.parse_repair import reset_parse_failures
 
             reset_parse_failures(db, lead, "budget")
 
     elif current_question.key == "location_city":
         # Parse location using hardened location parsing service
-        from app.services.location_parsing import is_valid_location, parse_location_input
-        from app.services.parse_repair import (
+        from app.services.parsing.location_parsing import is_valid_location, parse_location_input
+        from app.services.parsing.parse_repair import (
             increment_parse_failure,
             reset_parse_failures,
             should_handover_after_failure,
@@ -354,8 +354,8 @@ async def _handle_qualifying_lead(
                 return await trigger_handover_after_parse_failure(
                     db, lead, "location_city", dry_run
                 )
-            from app.services.message_composer import compose_message
-            from app.services.parse_repair import get_failure_count
+            from app.services.messaging.message_composer import compose_message
+            from app.services.parsing.parse_repair import get_failure_count
 
             repair_message = compose_message(
                 "REPAIR_LOCATION",
@@ -459,7 +459,7 @@ async def _handle_qualifying_lead(
                 "status": "error",
                 "message": "Lead not found after step advance",
             }
-        from app.services.message_composer import compose_message
+        from app.services.messaging.message_composer import compose_message
 
         next_msg = compose_message(
             "ASK_QUESTION",
@@ -505,7 +505,7 @@ async def _handle_qualifying_lead(
             "message": "Lead not found after step advance",
         }
 
-    from app.services.message_composer import compose_message
+    from app.services.messaging.message_composer import compose_message
 
     next_msg = compose_message(
         "ASK_QUESTION",
@@ -536,8 +536,8 @@ async def _handle_qualifying_lead(
 async def _handle_human_request(db: Session, lead: Lead, dry_run: bool) -> dict:
     """Handle 'human' / 'talk to someone' — handover to artist."""
     transition(db, lead, STATUS_NEEDS_ARTIST_REPLY, reason="Client requested human/artist")
-    from app.services.artist_notifications import notify_artist_needs_reply
-    from app.services.message_composer import compose_message
+    from app.services.integrations.artist_notifications import notify_artist_needs_reply
+    from app.services.messaging.message_composer import compose_message
 
     await notify_artist_needs_reply(
         db=db,
@@ -555,8 +555,8 @@ async def _handle_human_request(db: Session, lead: Lead, dry_run: bool) -> dict:
 async def _handle_refund_request(db: Session, lead: Lead, dry_run: bool) -> dict:
     """Handle 'refund' — ack and handover to artist."""
     transition(db, lead, STATUS_NEEDS_ARTIST_REPLY, reason="Client asked about refund")
-    from app.services.artist_notifications import notify_artist_needs_reply
-    from app.services.message_composer import compose_message
+    from app.services.integrations.artist_notifications import notify_artist_needs_reply
+    from app.services.messaging.message_composer import compose_message
 
     await notify_artist_needs_reply(
         db=db,
@@ -574,8 +574,8 @@ async def _handle_refund_request(db: Session, lead: Lead, dry_run: bool) -> dict
 async def _handle_delete_data_request(db: Session, lead: Lead, dry_run: bool) -> dict:
     """Handle 'delete my data' / GDPR — ack and handover to artist."""
     transition(db, lead, STATUS_NEEDS_ARTIST_REPLY, reason="Client requested data deletion / GDPR")
-    from app.services.artist_notifications import notify_artist_needs_reply
-    from app.services.message_composer import compose_message
+    from app.services.integrations.artist_notifications import notify_artist_needs_reply
+    from app.services.messaging.message_composer import compose_message
 
     await notify_artist_needs_reply(
         db=db,
@@ -601,7 +601,7 @@ async def _handle_opt_out(
     transition(db, lead, STATUS_OPTOUT)
 
     # Send confirmation from YAML (consistent with copy)
-    from app.services.message_composer import compose_message
+    from app.services.messaging.message_composer import compose_message
 
     optout_msg = compose_message("OPT_OUT", {"lead_id": lead.id})
 
@@ -651,8 +651,8 @@ def _get_confirmation_summary_message(
     if not (has_dimensions and has_budget and has_location):
         return None
 
-    from app.services.estimation_service import parse_dimensions
-    from app.services.message_composer import render_message
+    from app.services.parsing.estimation_service import parse_dimensions
+    from app.services.messaging.message_composer import render_message
 
     dimensions_text = answers_dict.get("dimensions", "")
     budget_text = answers_dict.get("budget", "")
@@ -714,7 +714,7 @@ async def _handle_artist_handover(
     transition(db, lead, STATUS_NEEDS_ARTIST_REPLY, reason="Client requested artist handover")
 
     # Notify artist (idempotent - only notifies on transition)
-    from app.services.artist_notifications import notify_artist_needs_reply
+    from app.services.integrations.artist_notifications import notify_artist_needs_reply
 
     await notify_artist_needs_reply(
         db=db,
@@ -724,7 +724,7 @@ async def _handle_artist_handover(
     )
 
     # Ask for handover preference
-    from app.services.message_composer import render_message
+    from app.services.messaging.message_composer import render_message
 
     handover_msg = render_message("handover_question", lead_id=lead.id)
 
@@ -752,9 +752,9 @@ async def _complete_qualification(
     """Complete qualification - Phase 1: run estimation, region checks, tour logic, then move to PENDING_APPROVAL."""
     import logging
 
-    from app.services.estimation_service import estimate_project
-    from app.services.region_service import country_to_region, region_min_budget
-    from app.services.tour_service import closest_upcoming_city, format_tour_offer, is_city_on_tour
+    from app.services.parsing.estimation_service import estimate_project
+    from app.services.conversation.tour_service import closest_upcoming_city, format_tour_offer, is_city_on_tour
+    from app.services.parsing.region_service import country_to_region, region_min_budget
 
     logger = logging.getLogger(__name__)
 
@@ -795,12 +795,11 @@ async def _complete_qualification(
     if is_coverup:
         handover_reason = "Cover-up/rework requires creative assessment"
         lead.qualifying_completed_at = func.now()
-        db.commit()
-        db.refresh(lead)
+        commit_and_refresh(db, lead)
         transition(db, lead, STATUS_NEEDS_ARTIST_REPLY, reason=handover_reason)
 
         # Notify artist (idempotent - only notifies on transition)
-        from app.services.artist_notifications import notify_artist_needs_reply
+        from app.services.integrations.artist_notifications import notify_artist_needs_reply
 
         await notify_artist_needs_reply(
             db=db,
@@ -809,7 +808,7 @@ async def _complete_qualification(
             dry_run=dry_run,
         )
 
-        from app.services.message_composer import render_message
+        from app.services.messaging.message_composer import render_message
 
         handover_msg = render_message("handover_coverup", lead_id=lead.id)
 
@@ -849,7 +848,7 @@ async def _complete_qualification(
     lead.min_budget_amount = min_budget
 
     # Compute and store pricing estimates (internal use only)
-    from app.services.pricing_service import calculate_price_range
+    from app.services.parsing.pricing_service import calculate_price_range
 
     if category and region:
         price_range = calculate_price_range(
@@ -879,8 +878,7 @@ async def _complete_qualification(
     if budget_amount and budget_amount < min_budget:
         lead.below_min_budget = True
         lead.qualifying_completed_at = func.now()
-        db.commit()
-        db.refresh(lead)
+        commit_and_refresh(db, lead)
         # Set NEEDS_FOLLOW_UP (do NOT auto-decline)
         transition(db, lead, STATUS_NEEDS_FOLLOW_UP)
 
@@ -888,7 +886,7 @@ async def _complete_qualification(
         budget_gbp = budget_amount / 100
 
         # Notify artist (idempotent - only notifies on transition)
-        from app.services.artist_notifications import notify_artist_needs_follow_up
+        from app.services.integrations.artist_notifications import notify_artist_needs_follow_up
 
         reason = f"Budget below minimum (Min £{min_gbp:.0f}, Budget £{budget_gbp:.0f})"
         await notify_artist_needs_follow_up(
@@ -897,7 +895,7 @@ async def _complete_qualification(
             reason=reason,
             dry_run=dry_run,
         )
-        from app.services.message_composer import render_message
+        from app.services.messaging.message_composer import render_message
 
         budget_msg = render_message(
             "budget_below_minimum",
@@ -934,8 +932,7 @@ async def _complete_qualification(
             lead.offered_tour_city = tour_stop.city
             lead.offered_tour_dates_text = f"{tour_stop.start_date.strftime('%B %d')} - {tour_stop.end_date.strftime('%B %d, %Y')}"
             lead.qualifying_completed_at = func.now()
-            db.commit()
-            db.refresh(lead)
+            commit_and_refresh(db, lead)
             transition(db, lead, STATUS_TOUR_CONVERSION_OFFERED)
 
             tour_msg = format_tour_offer(tour_stop)
@@ -956,8 +953,7 @@ async def _complete_qualification(
             # No upcoming tour - waitlist
             lead.waitlisted = True
             lead.qualifying_completed_at = func.now()
-            db.commit()
-            db.refresh(lead)
+            commit_and_refresh(db, lead)
             transition(db, lead, STATUS_WAITLISTED)
 
             waitlist_msg = (
@@ -980,15 +976,14 @@ async def _complete_qualification(
 
     # All checks passed - complete qualification
     lead.qualifying_completed_at = func.now()
-    db.commit()
-    db.refresh(lead)
+    commit_and_refresh(db, lead)
     transition(db, lead, STATUS_PENDING_APPROVAL)
 
     # Generate summary (Phase 1 format)
-    from app.services.summary import (
+    from app.services.conversation.summary import (
         extract_phase1_summary_context,
     )
-    from app.services.summary import (
+    from app.services.conversation.summary import (
         format_summary_message as format_phase1_summary,
     )
 
@@ -1013,8 +1008,7 @@ async def _complete_qualification(
     )
 
     lead.last_bot_message_at = func.now()
-    db.commit()
-    db.refresh(lead)
+    commit_and_refresh(db, lead)
 
     # Log to Sheets
     log_lead_to_sheets(db, lead)
@@ -1023,7 +1017,7 @@ async def _complete_qualification(
     action_tokens = generate_action_tokens_for_lead(db, lead.id, lead.status)
 
     # Phase 1: Send WhatsApp summary to artist (Mode B)
-    from app.services.artist_notifications import send_artist_summary
+    from app.services.integrations.artist_notifications import send_artist_summary
 
     try:
         await send_artist_summary(

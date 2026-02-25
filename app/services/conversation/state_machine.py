@@ -39,7 +39,9 @@ from app.constants.statuses import (
     STATUS_TOUR_CONVERSION_OFFERED,
     STATUS_WAITLISTED,
 )
+from app.db.helpers import commit_and_refresh
 from app.db.models import Lead
+from app.services.leads.leads import get_lead_or_none
 
 logger = logging.getLogger(__name__)
 
@@ -291,8 +293,7 @@ def transition(
         lead.handover_reason = reason
 
     # Commit the transition (side effects happen AFTER this)
-    db.commit()
-    db.refresh(lead)
+    commit_and_refresh(db, lead)
 
     logger.info(
         f"Lead {lead.id} transitioned: {from_status} -> {to_status}"
@@ -328,7 +329,7 @@ def advance_step_if_at(
     n_dirty = len(db.dirty)
     n_deleted = len(db.deleted)
     if n_new or n_dirty or n_deleted:
-        from app.services.system_event_service import warn
+        from app.services.metrics.system_event_service import warn
 
         warn(
             db=db,
@@ -350,9 +351,9 @@ def advance_step_if_at(
     result = db.execute(stmt)
     db.commit()
     if getattr(result, "rowcount", 0) == 0:
-        lead = db.get(Lead, lead_id)
+        lead = get_lead_or_none(db, lead_id)
         if lead and lead.current_step != expected_step:
-            from app.services.system_event_service import warn
+            from app.services.metrics.system_event_service import warn
 
             warn(
                 db=db,
@@ -365,7 +366,7 @@ def advance_step_if_at(
                 },
             )
         return False, None
-    lead = db.get(Lead, lead_id)
+    lead = get_lead_or_none(db, lead_id)
     if not lead:
         return False, None
     db.refresh(lead)

@@ -8,6 +8,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.constants.event_types import EVENT_NEEDS_ARTIST_REPLY
+from app.db.helpers import commit_and_refresh
 from app.constants.statuses import (
     STATUS_ABANDONED,
     STATUS_AWAITING_DEPOSIT,
@@ -32,21 +33,21 @@ from app.constants.statuses import (
     STATUS_WAITLISTED,
 )
 from app.db.models import Lead, LeadAnswer
-from app.services.conversation_booking import (
+from app.services.conversation.conversation_booking import (
     HANDOVER_HOLD_REPLY_COOLDOWN_HOURS,
     _handle_booking_pending,
     _handle_needs_artist_reply,
     _handle_tour_conversion_offered,
 )
-from app.services.conversation_policy import is_opt_back_in_message
-from app.services.conversation_qualifying import (
+from app.services.conversation.conversation_policy import is_opt_back_in_message
+from app.services.conversation.conversation_qualifying import (
     _complete_qualification,
     _handle_new_lead,
     _handle_qualifying_lead,
     _maybe_send_confirmation_summary,
 )
-from app.services.messaging import format_summary_message, send_whatsapp_message
-from app.services.state_machine import transition
+from app.services.conversation.state_machine import transition
+from app.services.messaging.messaging import format_summary_message, send_whatsapp_message
 from app.utils.datetime_utils import iso_or_none
 
 logger = logging.getLogger(__name__)
@@ -113,18 +114,17 @@ async def handle_inbound_message(
         )
 
         # Check window BEFORE updating timestamp (to see if we can send response)
-        from app.services.whatsapp_window import is_within_24h_window
+        from app.services.messaging.whatsapp_window import is_within_24h_window
 
         is_within, _ = is_within_24h_window(lead)
 
         # Still log the message
         lead.last_client_message_at = func.now()
-        db.commit()
-        db.refresh(lead)
+        commit_and_refresh(db, lead)
 
         # Notify artist (if notifications enabled)
         if settings.feature_notifications_enabled:
-            from app.services.artist_notifications import notify_artist
+            from app.services.integrations.artist_notifications import notify_artist
 
             await notify_artist(
                 db=db,
@@ -135,7 +135,7 @@ async def handle_inbound_message(
 
         # Send safe response (only if within 24h window)
         if is_within:
-            from app.services.message_composer import render_message
+            from app.services.messaging.message_composer import render_message
 
             safe_message = render_message("panic_mode_response", lead_id=lead.id)
             await send_whatsapp_message(
@@ -160,7 +160,7 @@ async def handle_inbound_message(
 
     elif lead.status == STATUS_PENDING_APPROVAL:
         # Waiting for artist approval - acknowledge
-        from app.services.message_composer import render_message
+        from app.services.messaging.message_composer import render_message
 
         return {
             "status": "pending_approval",
@@ -174,7 +174,7 @@ async def handle_inbound_message(
         # Check if client is selecting a slot (simple pattern matching)
         # In Phase 1, we'll handle basic slot selection responses
         # For now, acknowledge and remind about deposit
-        from app.services.message_composer import render_message
+        from app.services.messaging.message_composer import render_message
 
         return {
             "status": "awaiting_deposit",
@@ -184,7 +184,7 @@ async def handle_inbound_message(
 
     elif lead.status == STATUS_DEPOSIT_PAID:
         # Deposit paid, waiting for booking
-        from app.services.message_composer import render_message
+        from app.services.messaging.message_composer import render_message
 
         return {
             "status": "deposit_paid",
@@ -197,7 +197,7 @@ async def handle_inbound_message(
 
     elif lead.status == STATUS_COLLECTING_TIME_WINDOWS:
         # Collecting preferred time windows (fallback when no slots available)
-        from app.services.time_window_collection import collect_time_window
+        from app.services.conversation.time_window_collection import collect_time_window
 
         return await collect_time_window(db, lead, message_text, dry_run)
 
@@ -215,7 +215,7 @@ async def handle_inbound_message(
 
     elif lead.status == STATUS_WAITLISTED:
         # Client is waitlisted
-        from app.services.message_composer import render_message
+        from app.services.messaging.message_composer import render_message
 
         return {
             "status": "waitlisted",
@@ -254,12 +254,11 @@ async def handle_inbound_message(
         if is_opt_back_in_message(message_text):
             transition(db, lead, STATUS_NEW)
             lead.current_step = 0
-            db.commit()
-            db.refresh(lead)
+            commit_and_refresh(db, lead)
             return await _handle_new_lead(db, lead, dry_run)
         else:
             # Still opted out - acknowledge but don't send automated messages
-            from app.services.message_composer import render_message
+            from app.services.messaging.message_composer import render_message
 
             return {
                 "status": "opted_out",
@@ -273,16 +272,14 @@ async def handle_inbound_message(
         lead.last_client_message_at = func.now()
         transition(db, lead, STATUS_NEW)
         lead.current_step = 0
-        db.commit()
-        db.refresh(lead)
+        commit_and_refresh(db, lead)
         return await _handle_new_lead(db, lead, dry_run)
 
     else:
         # Unknown status - reset to NEW (bypass state machine for recovery; status not in ALLOWED_TRANSITIONS)
         lead.status = STATUS_NEW
         lead.current_step = 0
-        db.commit()
-        db.refresh(lead)
+        commit_and_refresh(db, lead)
         return await _handle_new_lead(db, lead, dry_run)
 
 

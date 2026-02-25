@@ -16,7 +16,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db.models import Lead, LeadAnswer
-from app.services.questions import get_question_by_index
+from app.services.conversation.questions import get_question_by_index
 from app.utils.datetime_utils import iso_or_none
 
 logger = logging.getLogger(__name__)

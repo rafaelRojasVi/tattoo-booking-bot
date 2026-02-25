@@ -7,9 +7,11 @@ import logging
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app.db.helpers import commit_and_refresh
 from app.db.models import Lead, LeadAnswer
-from app.services.conversation import STATUS_NEEDS_ARTIST_REPLY
-from app.services.messaging import send_whatsapp_message
+from app.constants.statuses import STATUS_NEEDS_ARTIST_REPLY
+
+from app.services.messaging.messaging import send_whatsapp_message
 
 logger = logging.getLogger(__name__)
 
@@ -27,7 +29,7 @@ def format_time_windows_request(lead_id: int | None = None) -> str:
     Returns:
         Formatted message string
     """
-    from app.services.message_composer import render_message
+    from app.services.messaging.message_composer import render_message
 
     return render_message("time_window_request", lead_id=lead_id)
 
@@ -70,8 +72,8 @@ async def collect_time_window(
         dict with status and next action
     """
     # Ensure status is COLLECTING_TIME_WINDOWS (enforced via state machine)
-    from app.services.conversation import STATUS_COLLECTING_TIME_WINDOWS
-    from app.services.state_machine import transition
+    from app.constants.statuses import STATUS_COLLECTING_TIME_WINDOWS
+    from app.services.conversation.state_machine import transition
 
     if lead.status != STATUS_COLLECTING_TIME_WINDOWS:
         transition(db, lead, STATUS_COLLECTING_TIME_WINDOWS)
@@ -84,8 +86,7 @@ async def collect_time_window(
     )
     db.add(answer)
     lead.last_client_message_at = func.now()
-    db.commit()
-    db.refresh(lead)
+    commit_and_refresh(db, lead)
 
     # Count collected windows
     window_count = count_time_windows(lead, db)
@@ -93,8 +94,8 @@ async def collect_time_window(
     # Check if we have enough (2-3 windows)
     if window_count >= 2:
         # We have enough - transition to NEEDS_ARTIST_REPLY and notify artist
-        from app.services.artist_notifications import notify_artist_needs_reply
-        from app.services.state_machine import transition
+        from app.services.conversation.state_machine import transition
+        from app.services.integrations.artist_notifications import notify_artist_needs_reply
 
         reason = f"Collected {window_count} preferred time windows - no calendar slots available"
         transition(db, lead, STATUS_NEEDS_ARTIST_REPLY, reason=reason)
@@ -111,7 +112,7 @@ async def collect_time_window(
             logger.error(f"Failed to notify artist for lead {lead.id}: {e}")
 
         # Send confirmation to client
-        from app.services.message_composer import render_message
+        from app.services.messaging.message_composer import render_message
 
         confirmation_msg = render_message(
             "time_window_collected",
@@ -126,7 +127,7 @@ async def collect_time_window(
         lead.last_bot_message_at = func.now()
         db.commit()
 
-        from app.services.sheets import log_lead_to_sheets
+        from app.services.integrations.sheets import log_lead_to_sheets
 
         log_lead_to_sheets(db, lead)
 
@@ -138,7 +139,7 @@ async def collect_time_window(
         }
     else:
         # Need more windows - ask for another
-        from app.services.message_composer import render_message
+        from app.services.messaging.message_composer import render_message
 
         remaining = 2 - window_count
         if window_count == 0:

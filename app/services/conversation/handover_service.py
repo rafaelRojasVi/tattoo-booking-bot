@@ -116,7 +116,7 @@ def get_handover_message(reason: str, lead_id: int | None = None) -> str:
     Returns:
         Formatted message
     """
-    from app.services.message_composer import render_message
+    from app.services.messaging.message_composer import render_message
 
     # Select message key based on reason
     if "cover" in reason.lower() or "coverup" in reason.lower():

@@ -10,6 +10,6 @@ this getter imports from conversation at call time.
 
 def get_send_whatsapp_message():
     """Return the send_whatsapp_message callable. Late-bound so test patches apply."""
-    from app.services.conversation import send_whatsapp_message
+    from app.services.messaging.messaging import send_whatsapp_message
 
     return send_whatsapp_message
